@@ -275,6 +275,7 @@ dependencies {
   implementation(libs.room.runtime)
   ksp(libs.room.compiler)
   implementation(libs.room.ktx)
+  testImplementation("junit:junit:4.13.2")
 
   implementation(libs.kotlinx.immutable.collections)
   implementation(libs.kotlinx.serialization.json)
