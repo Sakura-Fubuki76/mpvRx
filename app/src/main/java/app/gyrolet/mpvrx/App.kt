@@ -154,6 +154,9 @@ class App :
     if (!BuildConfig.MPV_SUPPORTS_VULKAN) {
       getKoin().get<DecoderPreferences>().useVulkan.set(false)
     }
+    // Keyframe index cache for the cloud MP4/MKV extractors. It lives in cacheDir so the OS can
+    // reclaim it under pressure; without this the parsed index would only ever live in memory.
+    runCatching { app.gyrolet.mpvrx.domain.cloud.MoovIndexCache.init(cacheDir) }
     registerActivityLifecycleCallbacks(this)
     PlaybackSession.addObserver(PlaybackPerformanceTrace)
     startPlaybackPerformanceTracing()

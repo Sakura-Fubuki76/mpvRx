@@ -23,6 +23,7 @@ import android.util.LruCache
 import app.gyrolet.mpvrx.data.network.client.NetworkMimeTypes
 import app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy
 import app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia
+import app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor
 import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.preferences.ThumbnailMode
@@ -82,6 +83,11 @@ class ThumbnailRepository(
   }
   private val networkRepository by lazy {
     KoinJavaComponent.get<NetworkRepository>(NetworkRepository::class.java)
+  }
+
+  /** Index-based MP4/MKV keyframe extraction for remote sources; resolved lazily through Koin. */
+  private val cloudKeyframes by lazy {
+    KoinJavaComponent.get<CloudKeyframeExtractor>(CloudKeyframeExtractor::class.java)
   }
 
   private val memoryCache: LruCache<String, Bitmap>
@@ -1171,12 +1177,14 @@ class ThumbnailRepository(
           val bitmap =
             networkGenerationSemaphore.withPermit {
               (
-                extractNetworkVideoFrame(
-                  url = path,
-                  strategy = strategy,
-                  targetWidth = widthPx.takeIf { it > 0 },
-                  targetHeight = heightPx.takeIf { it > 0 },
-                ) ?: generateFastNetworkThumbnail(path, widthPx, heightPx)
+                extractKeyframeByIndex(path, path, connection, strategy)
+                  ?: extractNetworkVideoFrame(
+                    url = path,
+                    strategy = strategy,
+                    targetWidth = widthPx.takeIf { it > 0 },
+                    targetHeight = heightPx.takeIf { it > 0 },
+                  )
+                  ?: generateFastNetworkThumbnail(path, widthPx, heightPx)
               )?.let { scaleBitmap(it, widthPx, heightPx) }
             }
 
@@ -1309,12 +1317,17 @@ class ThumbnailRepository(
           mimeType = mimeType ?: NetworkMimeTypes.forFileName(path) ?: "application/octet-stream",
         )
 
-      extractNetworkVideoFrame(
-        url = localUrl,
-        strategy = strategy,
-        targetWidth = targetWidth.takeIf { it > 0 },
-        targetHeight = targetHeight.takeIf { it > 0 },
-      ) ?: generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
+      // Index-based extraction downloads only the container index and one frame, while the
+      // streaming retriever below has to pull far more of the file — so try it first and keep the
+      // existing chain as the fallback for every container we cannot index.
+      extractKeyframeByIndex(localUrl, path, connection, strategy)
+        ?: extractNetworkVideoFrame(
+          url = localUrl,
+          strategy = strategy,
+          targetWidth = targetWidth.takeIf { it > 0 },
+          targetHeight = targetHeight.takeIf { it > 0 },
+        )
+        ?: generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (_: Exception) {
@@ -1323,6 +1336,50 @@ class ThumbnailRepository(
       proxy.unregisterStream(streamId)
     }
   }
+
+  /**
+   * Tries the keyframe index path for containers we can parse (MP4/MOV/M4V, MKV/WebM).
+   *
+   * [stableKey] is a durable identity rather than the loopback URL, whose port and token change on
+   * every registration, so the parsed index stays reusable across sessions.
+   */
+  private suspend fun extractKeyframeByIndex(
+    streamUrl: String,
+    path: String,
+    connection: NetworkConnection?,
+    strategy: ThumbnailStrategy,
+  ): Bitmap? {
+    val extension = path.substringAfterLast('.', "")
+    if (!cloudKeyframes.supports(extension)) return null
+
+    val (targetPercent, solidFallback) = keyframeTargets(strategy)
+    return try {
+      cloudKeyframes.extract(
+        streamUrl = streamUrl,
+        stableKey = "cloud|${connection?.id ?: 0L}|$path",
+        extension = extension,
+        targetPercent = targetPercent,
+        solidFallbackPercent = solidFallback,
+      )?.bitmap
+    } catch (cancellation: CancellationException) {
+      throw cancellation
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /**
+   * Maps the configured strategy onto an extractor position, plus the retry position used when the
+   * first frame is nearly a single flat colour (a black lead-in, most commonly).
+   */
+  private fun keyframeTargets(strategy: ThumbnailStrategy): Pair<Float, Float?> =
+    when (strategy) {
+      is ThumbnailStrategy.FirstFrame -> 0f to null
+      is ThumbnailStrategy.FrameAtPercentage -> strategy.percentage to null
+      is ThumbnailStrategy.Hybrid -> 0f to strategy.percentage
+      is ThumbnailStrategy.EmbeddedOrHybrid -> 0f to strategy.percentage
+      is ThumbnailStrategy.EmbeddedOrFirstFrame -> 0f to null
+    }
 
   /** The memory-cache key used by [getThumbnailForNetworkPath]. */
   fun thumbnailKeyForNetworkPath(

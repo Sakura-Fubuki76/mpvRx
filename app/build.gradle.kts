@@ -182,6 +182,14 @@ android {
     checkReleaseBuilds = false
     abortOnError = false
   }
+
+  testOptions {
+    // The cloud container parsers log through android.util.Log; without default values every JVM
+    // unit test that reaches that path would fail on the "not mocked" stub instead of its assertion.
+    unitTests {
+      isReturnDefaultValues = true
+    }
+  }
 }
 
 androidComponents {
