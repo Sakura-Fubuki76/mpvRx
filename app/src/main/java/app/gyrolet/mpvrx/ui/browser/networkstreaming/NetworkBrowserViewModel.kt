@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -71,6 +72,11 @@ class NetworkBrowserViewModel(
 ) : AndroidViewModel(application),
   KoinComponent {
   private val repository: NetworkRepository by inject()
+  private val cloudMetadata: app.gyrolet.mpvrx.repository.CloudMetadataRepository by inject()
+  private var directoryJob: Job? = null
+  private var metadataObserver: Job? = null
+  private var metadataProbe: Job? = null
+  private var loadGeneration = 0L
   private val playlistRepository: PlaylistRepository by inject()
   private val browserPreferences: BrowserPreferences by inject()
   private val playerPreferences: PlayerPreferences by inject()
@@ -94,7 +100,11 @@ class NetworkBrowserViewModel(
    * Load files in the current directory
    */
   fun loadFiles() {
-    viewModelScope.launch {
+    directoryJob?.cancel()
+    metadataObserver?.cancel()
+    metadataProbe?.cancel()
+    val generation = ++loadGeneration
+    directoryJob = viewModelScope.launch {
       _isLoading.value = true
       _error.value = null
 
@@ -104,24 +114,38 @@ class NetworkBrowserViewModel(
             ?: throw Exception("Connection not found")
         _connection.value = connection
 
+        suspend fun publish(fileList: List<NetworkFile>) {
+          if (generation != loadGeneration) return
+          metadataObserver?.cancel()
+          metadataProbe?.cancel()
+          val sorted = fileList.sortedWith(compareBy<NetworkFile> { !it.isDirectory }.thenBy { it.name.lowercase() })
+          _files.value = sorted
+          metadataObserver = viewModelScope.launch {
+            cloudMetadata.observeVideos(connectionId, sorted).collect { enriched ->
+              if (generation == loadGeneration) _files.value = enriched
+            }
+          }
+          metadataProbe = viewModelScope.launch { cloudMetadata.probeMissing(connection, sorted) }
+        }
+
+        cloudMetadata.cachedDirectory(connectionId, currentPath)?.let { publish(it) }
+
         repository
           .listFiles(connection, currentPath)
           .onSuccess { fileList ->
-            _files.value =
-              // A stable base order for consumers that do not re-sort. Display order is applied in
-              // NetworkBrowserScreen and the playback queue re-sorts in
-              // currentDirectoryPlayableFiles, so the preference-based sort that used to run here
-              // was always overwritten.
-              fileList.sortedWith(
-                compareBy<NetworkFile> { !it.isDirectory }.thenBy { it.name.lowercase() },
-              )
+            if (generation == loadGeneration) {
+              cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
+              publish(fileList)
+            }
           }.onFailure { e ->
             _error.value = e.message ?: "Unknown error"
           }
+      } catch (cancelled: CancellationException) {
+        throw cancelled
       } catch (e: Exception) {
         _error.value = e.message ?: "Unknown error"
       } finally {
-        _isLoading.value = false
+        if (generation == loadGeneration) _isLoading.value = false
       }
     }
   }

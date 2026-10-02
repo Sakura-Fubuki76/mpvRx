@@ -22,4 +22,5 @@ data class NetworkFile(
   val isDirectory: Boolean,
   val lastModified: Long = 0,
   val mimeType: String? = null,
+  val durationMs: Long = 0,
 )

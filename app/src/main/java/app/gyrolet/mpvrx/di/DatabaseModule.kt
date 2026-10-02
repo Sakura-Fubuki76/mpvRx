@@ -991,6 +991,28 @@ val MIGRATION_25_26 =
     }
   }
 
+val MIGRATION_31_32 =
+  object : Migration(31, 32) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("""CREATE TABLE `cloud_video_metadata` (
+        `connectionId` INTEGER NOT NULL, `path` TEXT NOT NULL, `size` INTEGER NOT NULL,
+        `lastModified` INTEGER NOT NULL, `durationMs` INTEGER NOT NULL, `width` INTEGER NOT NULL,
+        `height` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`connectionId`, `path`))""")
+      db.execSQL("""CREATE TABLE `cloud_directory_items` (
+        `connectionId` INTEGER NOT NULL, `parentPath` TEXT NOT NULL, `path` TEXT NOT NULL,
+        `name` TEXT NOT NULL, `size` INTEGER NOT NULL, `lastModified` INTEGER NOT NULL,
+        `isDirectory` INTEGER NOT NULL, `mimeType` TEXT, PRIMARY KEY(`connectionId`, `parentPath`, `path`))""")
+      db.execSQL("CREATE INDEX `index_cloud_directory_items_connectionId_parentPath` ON `cloud_directory_items` (`connectionId`, `parentPath`)")
+      db.execSQL("""CREATE TABLE `cloud_directory_state` (
+        `connectionId` INTEGER NOT NULL, `path` TEXT NOT NULL, `scannedAt` INTEGER NOT NULL,
+        PRIMARY KEY(`connectionId`, `path`))""")
+      db.execSQL("""CREATE TABLE `cloud_folder_metadata` (
+        `connectionId` INTEGER NOT NULL, `path` TEXT NOT NULL, `totalDurationMs` INTEGER NOT NULL,
+        `totalSize` INTEGER NOT NULL, `videoCount` INTEGER NOT NULL, `folderCount` INTEGER NOT NULL,
+        `scanComplete` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`connectionId`, `path`))""")
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -1037,6 +1059,7 @@ val DatabaseModule =
           MIGRATION_28_29,
           MIGRATION_29_30,
           MIGRATION_30_31,
+          MIGRATION_31_32,
         ).build()
     }
 
@@ -1047,6 +1070,8 @@ val DatabaseModule =
     }
 
     single { ThumbnailRepository(androidContext()) }
+    single { get<MpvRxDatabase>().cloudMetadataDao() }
+    single { app.gyrolet.mpvrx.repository.CloudMetadataRepository(get(), get()) }
     single { NetworkImageRepository(context = androidContext(), networkRepository = get()) }
     single { WatchStatsRepository(androidContext()) }
 
@@ -1093,6 +1118,7 @@ val DatabaseModule =
       app.gyrolet.mpvrx.repository.NetworkRepository(
         dao = get(),
         credentialCipher = get(),
+        cloudMetadataDao = get(),
       )
     }
 

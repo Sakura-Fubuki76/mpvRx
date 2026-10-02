@@ -71,12 +71,18 @@ import app.gyrolet.mpvrx.domain.network.NetworkConnection
     AudiobookshelfServerEntity::class,
     FrameCaptureEntity::class,
     SnapshotFolderEntity::class,
+    app.gyrolet.mpvrx.database.entities.CloudVideoMetadataEntity::class,
+    app.gyrolet.mpvrx.database.entities.CloudDirectoryItemEntity::class,
+    app.gyrolet.mpvrx.database.entities.CloudDirectoryStateEntity::class,
+    app.gyrolet.mpvrx.database.entities.CloudFolderMetadataEntity::class,
   ],
-  version = 31,
+  version = 32,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
 abstract class MpvRxDatabase : RoomDatabase() {
+  abstract fun cloudMetadataDao(): app.gyrolet.mpvrx.database.dao.CloudMetadataDao
+
   abstract fun videoDataDao(): PlaybackStateDao
 
   abstract fun recentlyPlayedDao(): RecentlyPlayedDao

@@ -83,6 +83,7 @@ fun NetworkVideoCard(
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showDuration by browserPreferences.showDurationField.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
   val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
   val showNetworkThumbs by appearancePreferences.showNetworkThumbnails.collectAsState()
@@ -256,6 +257,9 @@ fun NetworkVideoCard(
           verticalArrangement =
             androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp),
         ) {
+          if (showDuration && file.durationMs > 0) {
+            Text(formatCloudDuration(file.durationMs), style = MaterialTheme.typography.labelSmall)
+          }
           if (showSizeChip && file.size > 0) {
             Text(
               formatCardFileSize(file.size),
@@ -353,6 +357,9 @@ fun NetworkVideoCard(
               androidx.compose.foundation.layout.Arrangement
                 .spacedBy(4.dp),
           ) {
+            if (showDuration && file.durationMs > 0) {
+              Text(formatCloudDuration(file.durationMs), style = MaterialTheme.typography.labelSmall)
+            }
             if (showSizeChip && file.size > 0) {
               Text(
                 formatCardFileSize(file.size),
@@ -385,4 +392,12 @@ fun NetworkVideoCard(
       }
     }
   }
+}
+
+private fun formatCloudDuration(durationMs: Long): String {
+  val seconds = durationMs / 1000
+  val hours = seconds / 3600
+  val minutes = (seconds / 60) % 60
+  return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds % 60)
+  else "%d:%02d".format(minutes, seconds % 60)
 }
