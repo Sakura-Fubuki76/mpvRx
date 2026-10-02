@@ -2,13 +2,16 @@
 from pathlib import Path
 import re
 import sqlite3
+import tempfile
 
 root = Path(__file__).resolve().parents[1]
 base = root / "app/src/main/java/app/gyrolet/mpvrx"
 module = (base / "di/DatabaseModule.kt").read_text(encoding="utf-8")
 migration = module.split("val MIGRATION_31_32 =", 1)[1].split("val DatabaseModule =", 1)[0]
 statements = re.findall(r'db\.execSQL\((""".*?"""|"[^"\n]*")\)', migration, re.S)
-db = sqlite3.connect(":memory:")
+temporary = tempfile.TemporaryDirectory()
+database_path = Path(temporary.name) / "cloud.db"
+db = sqlite3.connect(database_path)
 db.execute("CREATE TABLE existing_data (value TEXT)")
 db.execute("INSERT INTO existing_data VALUES ('keep')")
 for statement in statements:
@@ -40,8 +43,9 @@ db.execute("INSERT INTO cloud_directory_state VALUES (1, '/empty', 1000)")
 assert db.execute("SELECT scannedAt FROM cloud_directory_state WHERE path='/empty'").fetchone()
 assert not db.execute("SELECT * FROM cloud_directory_items WHERE parentPath='/empty'").fetchall()
 db.commit()
-dump = "\n".join(db.iterdump())
-reopened = sqlite3.connect(":memory:")
-reopened.executescript(dump)
+db.close()
+reopened = sqlite3.connect(database_path)
 assert reopened.execute("SELECT durationMs FROM cloud_video_metadata WHERE connectionId=2").fetchone() == (7000,)
+reopened.close()
+temporary.cleanup()
 print("PASS: migration preserves data; merge, isolation, replacement, empty directories and persistence")
