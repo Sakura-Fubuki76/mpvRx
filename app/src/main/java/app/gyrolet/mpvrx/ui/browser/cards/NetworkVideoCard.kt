@@ -28,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -182,10 +183,20 @@ fun NetworkVideoCard(
   val displayName = if (showExtensionField) file.name else file.name.substringBeforeLast('.', file.name)
 
   if (connection.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) {
+    val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
+    val playbackKey = remember(connection.id, file.path) { app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path) }
+    val playback by remember(playbackKey) { playbackDao.observeVideoData(playbackKey) }
+      .collectAsState(initial = null)
+    val positionMs = (playback?.lastPosition ?: 0).coerceAtLeast(0).toLong() * 1000
+    val durationMs = file.durationMs.takeIf { it > 0 } ?: playback?.let { (it.lastPosition.toLong() + it.timeRemaining).coerceAtLeast(0) * 1000 } ?: 0
+    val progress = if (durationMs > 0 && positionMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else null
     val video = app.gyrolet.mpvrx.domain.media.model.Video(
       id = ("${connection.id}:${file.path}").hashCode().toLong(), title = displayName, displayName = file.name,
-      path = file.path, uri = android.net.Uri.parse(file.path), duration = file.durationMs,
-      durationFormatted = if (file.durationMs > 0) formatCloudDuration(file.durationMs) else "--",
+      path = file.path, uri = android.net.Uri.parse(file.path), duration = durationMs,
+      durationFormatted = if (durationMs > 0) {
+        if (positionMs > 0) "${formatCloudDuration(positionMs.coerceAtMost(durationMs))} / ${formatCloudDuration(durationMs)}"
+        else formatCloudDuration(durationMs)
+      } else "--",
       size = file.size, sizeFormatted = formatCardFileSize(file.size), dateModified = file.lastModified / 1000,
       dateAdded = 0, mimeType = file.mimeType ?: "video/*", bucketId = "cloud:${connection.id}",
       bucketDisplayName = connection.name, width = file.width, height = file.height, fps = 0f,
@@ -193,6 +204,7 @@ fun NetworkVideoCard(
     )
     VideoCard(video = video, onClick = onClick, modifier = modifier, onLongClick = onLongClick,
       isSelected = isSelected, onThumbClick = onThumbnailClick, isGridMode = isGridMode,
+      progressPercentage = progress, isWatched = playback?.hasBeenWatched == true, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig().copy(showThumbnails = displayThumb),
       showSubtitleIndicator = false)

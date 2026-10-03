@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -233,9 +234,22 @@ fun VideoCard(
   sourceSubtitle: String? = null,
   titleAction: (@Composable () -> Unit)? = null,
   externalThumbnail: Bitmap? = null,
+  playbackIdentity: String? = null,
 ) {
   // Screens hoist this once and pass it down; collecting per card would register a dozen
   // preference observers for every visible item in a grid.
+  val playbackDao = org.koin.compose.koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
+  val playbackKeys = remember(video.path, video.uri, playbackIdentity) {
+    (listOfNotNull(playbackIdentity) + app.gyrolet.mpvrx.ui.browser.videolist.videoPlaybackIdentifiers(video) + listOf(video.path, video.uri.toString())).distinct()
+  }
+  val storedPlayback by remember(playbackKeys) { playbackDao.observeVideoIdentifiers(playbackKeys, playbackKeys.first()) }
+    .collectAsState(initial = null)
+  val storedPositionMs = (storedPlayback?.lastPosition ?: 0).coerceAtLeast(0).toLong() * 1000
+  val playbackDurationMs = video.duration.takeIf { it > 0 } ?: storedPlayback?.let { (it.lastPosition.toLong() + it.timeRemaining).coerceAtLeast(0) * 1000 } ?: 0
+  val displayedProgress = if (storedPlayback != null && playbackDurationMs > 0) (storedPositionMs.toFloat() / playbackDurationMs).coerceIn(0f, 1f) else progressPercentage
+  val displayedDuration = if (storedPositionMs > 0 && playbackDurationMs > 0)
+    "${android.text.format.DateUtils.formatElapsedTime(storedPositionMs.coerceAtMost(playbackDurationMs) / 1000)} / ${android.text.format.DateUtils.formatElapsedTime(playbackDurationMs / 1000)}"
+    else video.durationFormatted
   val resolvedUiConfig = uiConfig ?: rememberVideoCardUiConfig()
   val maxLines = if (resolvedUiConfig.unlimitedNameLines) Int.MAX_VALUE else 2
 
@@ -249,7 +263,7 @@ fun VideoCard(
   val showDurationField = resolvedUiConfig.showDurationField
   val showSizeChip = overrideShowSizeChip ?: resolvedUiConfig.showSizeChip
   val showResolutionChip = overrideShowResolutionChip ?: resolvedUiConfig.showResolutionChip
-  val hasDuration = showDurationField && video.durationFormatted.isNotBlank() && video.durationFormatted != "--"
+  val hasDuration = showDurationField && displayedDuration.isNotBlank() && displayedDuration != "--"
   val hasSizeChip =
     showSizeChip &&
       video.sizeFormatted.isNotBlank() &&
@@ -495,7 +509,7 @@ fun VideoCard(
                     .padding(horizontal = 6.dp, vertical = 2.dp),
               ) {
                 Text(
-                  text = video.durationFormatted,
+                  text = displayedDuration,
                   style = MaterialTheme.typography.labelSmall,
                   color = Color.White,
                 )
@@ -522,7 +536,7 @@ fun VideoCard(
             }
 
             // Progress bar
-            if (progressPercentage != null && showProgressBar) {
+            if (displayedProgress != null && showProgressBar) {
               Box(
                 modifier =
                   Modifier
@@ -535,7 +549,7 @@ fun VideoCard(
                   modifier =
                     Modifier
                       .fillMaxHeight()
-                      .fillMaxWidth(progressPercentage)
+                      .fillMaxWidth(displayedProgress)
                       .background(MaterialTheme.colorScheme.primary),
                 )
               }
@@ -835,7 +849,7 @@ fun VideoCard(
                     .padding(horizontal = 6.dp, vertical = 2.dp),
               ) {
                 Text(
-                  text = video.durationFormatted,
+                  text = displayedDuration,
                   style = MaterialTheme.typography.labelSmall,
                   color = Color.White,
                 )
@@ -843,7 +857,7 @@ fun VideoCard(
             }
 
             // Progress bar at bottom of thumbnail
-            if (progressPercentage != null && showProgressBar) {
+            if (displayedProgress != null && showProgressBar) {
               Box(
                 modifier =
                   Modifier
@@ -863,7 +877,7 @@ fun VideoCard(
                   modifier =
                     Modifier
                       .fillMaxHeight()
-                      .fillMaxWidth(progressPercentage)
+                      .fillMaxWidth(displayedProgress)
                       .background(MaterialTheme.colorScheme.primary),
                 )
               }
