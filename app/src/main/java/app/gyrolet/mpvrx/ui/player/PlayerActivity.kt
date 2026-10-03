@@ -5824,7 +5824,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           }
           val item =
             if (!isTorrentRequest) {
-              requestedQueueItem?.copy(playableUri = resolvedPlayableUri, headers = requestedHeaders)
+              requestedQueueItem?.copy(playableUri = resolvedPlayableUri, headers = requestedHeaders,
+                networkSource = requestedQueueItem.networkSource ?: networkSource)
             } else {
               null
             }

@@ -71,3 +71,5 @@ adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/clou
 | 点击→playback-restart | 7069ms | 2637ms |
 
 首个视频 pathKey=9c398da4，第二个 379c8ca8。首个视频恢复点 Range offset=125904669 的首字节仅 322ms，早于 playback-restart 约 5.4 秒；不能把整个额外等待归因于该次 Range 打开。外置字幕引用字体日志出现在恢复播放之前，但没有旧日志证明暂停门具体在哪一阶段阻塞。新增 player.restore.begin/database/applied/release、subtitle.restore.begin/name/fonts/command/end，用于区分数据库、名称解析、字体准备、sub-add 与暂停释放；不记录字幕 URI 或认证信息。playback-restart 是 mpv 事件，不能直接等同用户实际看到首帧的时间。
+
+本次再播放：恢复 259 秒，network=false，externalCount=0；file-loaded=1791045042347，恢复暂停释放=1791045042492，restart=1791045049423。字幕恢复不是该次约 6.9 秒额外等待的原因。修复历史/队列入口的云端 connection/path 丢失，并增加 player.buffer.state（paused-for-cache/seeking）、player.native.restart（原生事件进入时刻）、player.render.begin/end；与 Activity 的 restart 对比可判断事件转发延迟，缓冲状态可判断 mpv 缓冲等待。仍需新版日志证明等待根因，未调整 cache-pause 或跳过初始化。
