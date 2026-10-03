@@ -6,17 +6,17 @@ import org.junit.Test
 class NaturalOrderComparatorTest {
   private val comparator = SortUtils.NaturalOrderComparator.DEFAULT
   @Test fun numericChunksDoNotOverflow() {
-    val values = listOf("µÚ999999999999999999999¼¯", "µÚ1000000000000000000000¼¯", "µÚ10¼¯", "µÚ2¼¯")
+    val values = listOf("ç¬¬999999999999999999999é›†", "ç¬¬1000000000000000000000é›†", "ç¬¬10é›†", "ç¬¬2é›†")
     assertEquals(listOf(values[3], values[2], values[0], values[1]), values.sortedWith(comparator))
   }
   @Test fun preservesYumeLeadingZerosCaseAndPunctuation() {
     assertTrue(comparator.compare("EP2", "ep02") < 0)
     assertEquals(0, comparator.compare("ABC2", "abc2"))
     assertTrue(comparator.compare("a b", "ab") < 0)
-    assertTrue(comparator.compare("Æ¬¶Î[2]", "Æ¬¶Î[10]") < 0)
+    assertTrue(comparator.compare("ç‰‡æ®µ[2]", "ç‰‡æ®µ[10]") < 0)
   }
   @Test fun comparatorIsAntisymmetricAndTransitive() {
-    val values = listOf("", "a", "A", "a 2", "a2", "a02", "a10", "a2147483648", "a99999999999999999999", "ÊÓÆµ2", "ÊÓÆµ10", "[2]")
+    val values = listOf("", "a", "A", "a 2", "a2", "a02", "a10", "a2147483648", "a99999999999999999999", "è§†é¢‘2", "è§†é¢‘10", "[2]")
     for (a in values) for (b in values) {
       assertEquals(-comparator.compare(b, a).sign(), comparator.compare(a, b).sign())
       for (c in values) if (comparator.compare(a, b) <= 0 && comparator.compare(b, c) <= 0) assertTrue(comparator.compare(a, c) <= 0)
