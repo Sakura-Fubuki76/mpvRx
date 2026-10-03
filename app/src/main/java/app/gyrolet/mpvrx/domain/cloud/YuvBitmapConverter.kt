@@ -69,6 +69,9 @@ internal object YuvBitmapConverter {
       bCb = 1.85560f,
     )
 
+  private val BT2020_LIMITED = Coefficients(1.16438f, 16f, 1.67867f, -0.18733f, -0.65042f, 2.14177f)
+  private val BT2020_FULL = Coefficients(1f, 0f, 1.47460f, -0.16455f, -0.57135f, 1.88140f)
+
   // MediaFormat.KEY_COLOR_STANDARD values.
   private const val COLOR_STANDARD_BT709 = 1
   private const val COLOR_STANDARD_BT601_PAL = 2
@@ -85,9 +88,8 @@ internal object YuvBitmapConverter {
     val full = colorRange == COLOR_RANGE_FULL
     return when (colorStandard) {
       COLOR_STANDARD_BT601_PAL, COLOR_STANDARD_BT601_NTSC -> if (full) BT601_FULL else BT601_LIMITED
-      // BT.2020 is approximated with BT.709 coefficients: thumbnails do not benefit from the
-      // extra precision, and a wrong-but-close matrix beats refusing to render a frame.
-      COLOR_STANDARD_BT709, COLOR_STANDARD_BT2020 -> if (full) BT709_FULL else BT709_LIMITED
+      COLOR_STANDARD_BT2020 -> if (full) BT2020_FULL else BT2020_LIMITED
+      COLOR_STANDARD_BT709 -> if (full) BT709_FULL else BT709_LIMITED
       else -> if (full) BT601_FULL else BT601_LIMITED
     }
   }
@@ -106,7 +108,27 @@ internal object YuvBitmapConverter {
    * Buffer positions are respected (`get(position + index)`), so planes that alias one shared
    * buffer — which is how several vendors expose semi-planar output — read correctly.
    */
+  internal data class PixelFrame(val width: Int, val height: Int, val pixels: IntArray)
+
+  internal fun thumbnailDimensions(width: Int, height: Int): Pair<Int, Int>? {
+    if (width !in 1..32768 || height !in 1..32768) return null
+    val scale = minOf(1f, 1024f / maxOf(width, height))
+    return (width * scale).roundToInt().coerceAtLeast(1) to (height * scale).roundToInt().coerceAtLeast(1)
+  }
+
   fun imageToBitmap(
+    yBuf: ByteBuffer, yRowStride: Int, yPixelStride: Int,
+    uBuf: ByteBuffer, uRowStride: Int, uPixelStride: Int,
+    vBuf: ByteBuffer, vRowStride: Int, vPixelStride: Int,
+    cropLeft: Int, cropTop: Int, cropWidth: Int, cropHeight: Int,
+    colorStandard: Int, colorRange: Int, forceNV21: Boolean,
+  ): Bitmap? {
+    val frame = imagePixels(yBuf, yRowStride, yPixelStride, uBuf, uRowStride, uPixelStride,
+      vBuf, vRowStride, vPixelStride, cropLeft, cropTop, cropWidth, cropHeight, colorStandard, colorRange, forceNV21) ?: return null
+    return Bitmap.createBitmap(frame.pixels, frame.width, frame.height, Bitmap.Config.ARGB_8888)
+  }
+
+  internal fun imagePixels(
     yBuf: ByteBuffer,
     yRowStride: Int,
     yPixelStride: Int,
@@ -123,8 +145,10 @@ internal object YuvBitmapConverter {
     colorStandard: Int,
     colorRange: Int,
     @Suppress("UNUSED_PARAMETER") forceNV21: Boolean,
-  ): Bitmap? {
-    if (cropWidth <= 0 || cropHeight <= 0) return null
+  ): PixelFrame? {
+    val dimensions = thumbnailDimensions(cropWidth, cropHeight) ?: return null
+    val (outWidth, outHeight) = dimensions
+    if (cropLeft < 0 || cropTop < 0 || yRowStride <= 0 || yPixelStride <= 0 || vRowStride <= 0 || vPixelStride <= 0) return null
 
     val yBase = yBuf.position()
     val uBase = uBuf.position()
@@ -137,14 +161,14 @@ internal object YuvBitmapConverter {
     val chromaPixelStride = if (uPixelStride > 0) uPixelStride else 1
     val coeff = coefficientsFor(colorStandard, colorRange)
 
-    val pixels = IntArray(cropWidth * cropHeight)
+    val pixels = IntArray(outWidth * outHeight)
     var out = 0
-    for (row in 0 until cropHeight) {
-      val sourceRow = cropTop + row
+    for (row in 0 until outHeight) {
+      val sourceRow = cropTop + row * cropHeight / outHeight
       val yRowOffset = yBase + sourceRow * yRowStride
       val chromaRowOffset = (sourceRow shr 1) * chromaRowStride
-      for (col in 0 until cropWidth) {
-        val sourceCol = cropLeft + col
+      for (col in 0 until outWidth) {
+        val sourceCol = cropLeft + col * cropWidth / outWidth
 
         val yIndex = yRowOffset + sourceCol * yPixelStride
         val y = if (yIndex < yLimit) yBuf.get(yIndex).toInt() and 0xFF else 0
@@ -158,15 +182,14 @@ internal object YuvBitmapConverter {
         pixels[out++] = yuvToArgb(y, u, v, coeff)
       }
     }
-    return Bitmap.createBitmap(pixels, cropWidth, cropHeight, Bitmap.Config.ARGB_8888)
+    return PixelFrame(outWidth, outHeight, pixels)
   }
 
   /**
    * Converts a raw `MediaCodec` byte buffer when the codec could not hand back an `Image`.
    *
    * `colorFormat` follows `MediaCodecInfo.CodecCapabilities.COLOR_Format*`. Planar (I420) and
-   * semi-planar (NV12/NV21) are supported; anything else falls back to the semi-planar layout,
-   * which is what essentially every hardware decoder emits.
+   * semi-planar (NV12/NV21) are supported; unknown vendor layouts are rejected.
    */
   fun bufferToBitmap(
     yuvBuffer: ByteBuffer,
@@ -185,9 +208,11 @@ internal object YuvBitmapConverter {
     if (cropWidth <= 0 || cropHeight <= 0 || stride <= 0 || sliceHeight <= 0) return null
     if (colorFormat !in setOf(19, 21, 39, 0x7FA30C00)) return null
 
+    val (outWidth, outHeight) = thumbnailDimensions(cropWidth, cropHeight) ?: return null
+    if (offset < 0 || cropLeft < 0 || cropTop < 0) return null
     val limit = yuvBuffer.limit()
     val coeff = coefficientsFor(colorStandard, colorRange)
-    val pixels = IntArray(cropWidth * cropHeight)
+    val pixels = IntArray(outWidth * outHeight)
 
     val isPlanar = colorFormat == COLOR_FORMAT_YUV420_PLANAR
     val chromaStride = if (isPlanar) stride / 2 else stride
@@ -197,12 +222,12 @@ internal object YuvBitmapConverter {
     val vPlaneOffset = if (isPlanar) uPlaneOffset + chromaStride * chromaHeight else uPlaneOffset
 
     var out = 0
-    for (row in 0 until cropHeight) {
-      val sourceRow = cropTop + row
+    for (row in 0 until outHeight) {
+      val sourceRow = cropTop + row * cropHeight / outHeight
       val yRowOffset = yPlaneOffset + sourceRow * stride
       val chromaRow = sourceRow shr 1
-      for (col in 0 until cropWidth) {
-        val sourceCol = cropLeft + col
+      for (col in 0 until outWidth) {
+        val sourceCol = cropLeft + col * cropWidth / outWidth
 
         val yIndex = yRowOffset + sourceCol
         val y = if (yIndex < limit) yuvBuffer.get(yIndex).toInt() and 0xFF else 0
@@ -230,7 +255,7 @@ internal object YuvBitmapConverter {
         pixels[out++] = yuvToArgb(y, u, v, coeff)
       }
     }
-    return Bitmap.createBitmap(pixels, cropWidth, cropHeight, Bitmap.Config.ARGB_8888)
+    return Bitmap.createBitmap(pixels, outWidth, outHeight, Bitmap.Config.ARGB_8888)
   }
 
   private fun yuvToArgb(

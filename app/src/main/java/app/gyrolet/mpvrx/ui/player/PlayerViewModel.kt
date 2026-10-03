@@ -110,6 +110,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -2277,6 +2278,22 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   )
 
   init {
+    viewModelScope.launch {
+      val sprites: app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository = getKoin().get()
+      val cloudPreferences: app.gyrolet.mpvrx.preferences.BrowserPreferences = getKoin().get()
+      combine(PlaybackSession.state, preciseDuration, cloudPreferences.cloudSpritePreviews.changes()) { state, duration, enabled ->
+        Triple(state.currentItem, (duration * 1000).toLong(), enabled)
+      }.distinctUntilChanged().collectLatest { (item, duration, enabled) ->
+        sprites.reset()
+        if (item != null && enabled && duration > 0 && item.audiobook == null && item.mimeType?.startsWith("audio/") != true) {
+          delay(3000)
+          try { kotlinx.coroutines.withTimeoutOrNull(180_000) { sprites.prepare(item, duration) } }
+          catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+          catch (error: Exception) { android.util.Log.w("CloudSprites", "Preview preparation failed", error) }
+        }
+      }
+    }
+
     viewModelScope.launch {
       decoderPreferences.gpuNext.changes().collect { enabled ->
         _isGpuNextEnabled.value = enabled

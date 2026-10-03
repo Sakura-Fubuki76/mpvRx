@@ -148,6 +148,20 @@ class CloudKeyframeExtractor(
       else -> null
     }
 
+  suspend fun frameTimes(url: String, key: String, extension: String, duration: Long): List<Long> {
+    val parsed = when (extension.lowercase()) {
+      in MP4_EXTENSIONS -> mp4.loadParsedMoov(url, key)
+      in MKV_EXTENSIONS -> mkv.loadParsedMkv(url, key)
+      else -> null
+    }
+    val times = parsed?.moovInfo?.keyframes?.map { it.timeMs }?.filter { it in 0..duration }?.distinct()?.sorted().orEmpty()
+    if (times.size <= 100) return times
+    return (0 until 100).map { index ->
+      val target = duration * index / 100
+      times.minBy { abs(it - target) }
+    }.distinct()
+  }
+
   private companion object {
     val MP4_EXTENSIONS = setOf("mp4", "mov", "m4v")
     val MKV_EXTENSIONS = setOf("mkv", "webm")

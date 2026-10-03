@@ -628,6 +628,9 @@ private fun SeekbarContent(
     modifier = modifier.then(seekKeyModifier),
     contentAlignment = Alignment.Center,
   ) {
+    if (isVisuallyInteracting && !showWavyVisualizer) {
+      CloudSeekPreview(safeThumbPosition, Modifier.align(Alignment.TopCenter).offset(y = (-116).dp))
+    }
     val waveSeekbarActive = showWavyVisualizer && waveFeatures != null && wavePalette != null
     if (waveSeekbarActive) {
       val waveTrackHeight = if (seekbarStyle == SeekbarStyle.Wavy) 5.dp else overlayTrackHeight
