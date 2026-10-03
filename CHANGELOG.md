@@ -2,6 +2,19 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.7.3 - WebDAV, Cloud Metadata, and Restore-only Anime4K
+
+- Added a dedicated WebDAV tab with multiple saved storages, OpenList/AList authentication, indexed search, and Baidu Netdisk request headers.
+- Added persistent cloud directory and video metadata, whole-storage background scanning, prioritized thumbnail and duration extraction, and filtering of folders without videos after scanning completes.
+- Added MP4/MKV keyframe extraction, native libyuv thumbnail processing, reusable WebP sprite sheets, seek previews, and notification artwork.
+- Added subtitle matching and ASS font selection, and isolated the full font bank from mpv's automatic font scan to prevent slow playback startup.
+- Added playback time and progress to local, cloud, and recent video cards.
+- Added Anime4K X: Clamp Highlights followed by Restore CNN at the selected S/M/L quality, without CNN upscaling. Pressure fallback preserves the X chain.
+- Integrated upstream playback prewarming, earlier file opening, subtitle positioning gestures, and library scan improvements while preserving cloud playback behavior.
+- Embedded libyuv as a pinned Git submodule and corrected native packaging for 16 KiB page compatibility.
+
+Native mpv disk caching remains an opt-in mpv.conf setting; it is not enabled globally by this release.
+
 ## 2.7.2 - Hotfixes - mpvlib 1.1.1, Track Badges, Pinned Videos, and Font Sharing
 
 ### Highlights
