@@ -54,7 +54,7 @@ class CloudSpriteRepository(
       val entry = source?.let { dao.getItem(it.connectionId, it.relativePath) }
       val path = source?.relativePath ?: item.originalUri
       val localFile = if (source == null && !path.contains("://")) File(path) else if (path.startsWith("file://")) File(android.net.Uri.parse(path).path.orEmpty()) else null
-      val identity = "sprite-yuv-v2|" + cloudMediaKey(connection, path, entry?.size ?: localFile?.length() ?: -1, entry?.lastModified ?: localFile?.lastModified() ?: 0)
+      val identity = "sprite-yuv-batch-v3|" + cloudMediaKey(connection, path, entry?.size ?: localFile?.length() ?: -1, entry?.lastModified ?: localFile?.lastModified() ?: 0)
       val key = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it) }
       val imageFile = File(directory, "$key.webp")
       val metaFile = File(directory, "$key.json")
@@ -64,6 +64,7 @@ class CloudSpriteRepository(
       var registered = false
       var retriever: MediaMetadataRetriever? = null
       var sheet: Bitmap? = null
+      val decodedBatch = mutableMapOf<Long, Bitmap>()
       try {
         val url = if (source != null && connection != null) {
           registered = true
@@ -88,11 +89,17 @@ class CloudSpriteRepository(
         val canvas = Canvas(canvasBitmap).apply { drawColor(Color.BLACK) }
         val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         val writtenTimes = mutableListOf<Long>()
-        for (time in targets) {
+        for ((targetIndex, time) in targets.withIndex()) {
+          if (targetIndex % 8 == 0 && times.isNotEmpty()) {
+            decodedBatch.values.forEach { it.recycle() }
+            decodedBatch.clear()
+            decodedBatch.putAll(extractor.spriteBatch(url, identity, extension, targets.drop(targetIndex).take(8)))
+          }
           currentCoroutineContext().ensureActive()
           var frame: Bitmap? = null
           try {
-            frame = if (times.isNotEmpty()) extractor.extract(url, identity, extension, time.toFloat() / durationMs)?.bitmap else null
+            frame = decodedBatch.remove(time)
+            if (frame == null) frame = if (times.isNotEmpty()) extractor.extract(url, identity, extension, time.toFloat() / durationMs)?.bitmap else null
             if (frame == null) {
               if (retriever == null) retriever = MediaMetadataRetriever().also { decoder ->
                 if (url.startsWith("content://")) decoder.setDataSource(context, android.net.Uri.parse(url))
@@ -104,6 +111,7 @@ class CloudSpriteRepository(
               else retriever!!.getFrameAtTime(time * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
             }
             val bitmap = frame ?: continue
+            CloudTrace.event("sprite.frame", source?.connectionId ?: 0, detail = "index=$targetIndex size=${bitmap.width}x${bitmap.height} config=${bitmap.config}")
             val index = writtenTimes.size
             val left = (index % 10) * 160
             val top = (index / 10) * 90
@@ -132,7 +140,7 @@ class CloudSpriteRepository(
         val pendingImage = File(directory, "$key.webp.tmp")
         val pendingMeta = File(directory, "$key.json.tmp")
         pendingImage.outputStream().use { check(canvasBitmap.compress(
-          if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP, 80, it)) }
+          if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP, 90, it)) }
         val verifiedMetadata = metadata.copy(imageHash = hashFile(pendingImage))
         pendingMeta.writeText(json.encodeToString(SpriteSheetMetadata.serializer(), verifiedMetadata))
         currentCoroutineContext().ensureActive()
@@ -142,8 +150,9 @@ class CloudSpriteRepository(
         sheet = null // StateFlow now owns the immutable sheet; UI references remain valid across eviction.
         trim()
       } catch (cancelled: CancellationException) { throw cancelled }
-      catch (_: Exception) { /* A preview failure never interrupts playback. */ }
+      catch (error: Exception) { CloudTrace.event("sprite.failed", detail = "error=${error.javaClass.simpleName}") }
       finally {
+        decodedBatch.values.forEach { it.recycle() }
         sheet?.recycle()
         retriever?.release()
         if (registered) proxy.unregisterStream(streamId)

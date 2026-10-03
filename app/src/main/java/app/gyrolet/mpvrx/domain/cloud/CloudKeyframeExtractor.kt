@@ -14,6 +14,7 @@ import android.graphics.Matrix
 import app.gyrolet.mpvrx.domain.thumbnail.isMostlySolidThumbnail
 import okhttp3.OkHttpClient
 import kotlin.math.abs
+import kotlinx.coroutines.ensureActive
 
 /**
  * Index-based frame extraction for remote MP4/MKV sources.
@@ -130,6 +131,54 @@ class CloudKeyframeExtractor(
       width = info.width.takeIf { it > 0 },
       height = info.height.takeIf { it > 0 },
     )
+  }
+
+  /** yume sprite path: bounded download batch, one decoder, YUV 320x180 -> 160x90 before RGB. */
+  suspend fun spriteBatch(url: String, stableKey: String, extension: String, targets: List<Long>): Map<Long, Bitmap> {
+    if (!YuvToBitmapBridge.available || targets.isEmpty()) return emptyMap()
+    val parsed = if (extension.lowercase() in MKV_EXTENSIONS) mkv.loadParsedMkv(url, stableKey)
+      else mp4.loadParsedMoov(url, stableKey)
+    val info = parsed?.moovInfo ?: return emptyMap()
+    val data = mutableListOf<Pair<Long, ByteArray>>()
+    val result = linkedMapOf<Long, Bitmap>()
+    val batchContext = kotlinx.coroutines.currentCoroutineContext()
+    try {
+      for (target in targets) {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val keyframe = info.keyframes.minByOrNull { abs(it.timeMs - target) } ?: continue
+        val bytes = if (extension.lowercase() in MKV_EXTENSIONS)
+          mkv.downloadMkvKeyframe(url, keyframe.byteOffset, keyframe.byteSize, parsed.videoTrackNumber)
+        else mp4.httpRange(url, keyframe.byteOffset, keyframe.byteSize)
+        if (bytes != null) data += target to bytes
+      }
+      mp4.decodeKeyframesRawImage(info, data.map { it.second }) { image, format, codec, index ->
+        batchContext.ensureActive()
+        val crop = android.graphics.Rect(image.cropRect)
+        val right = if (format.containsKey("crop-right")) format.getInteger("crop-right") + 1 else info.width
+        val bottom = if (format.containsKey("crop-bottom")) format.getInteger("crop-bottom") + 1 else info.height
+        if (crop.intersect(0, 0, minOf(image.width, right), minOf(image.height, bottom))) {
+          image.cropRect = crop
+          val scaled = YuvToBitmapBridge.scaleTwoPassFromImage(image, 320, 180, 160, 90)
+          CloudTrace.event("sprite.decode", detail = "codec=$codec image=${image.width}x${image.height} crop=${crop.width()}x${crop.height()} strides=${image.planes.joinToString(",") { "${it.rowStride}/${it.pixelStride}" }} native=${scaled != null} bytes=${data[index].second.size}")
+          if (scaled != null) {
+            val standard = if (format.containsKey(android.media.MediaFormat.KEY_COLOR_STANDARD)) format.getInteger(android.media.MediaFormat.KEY_COLOR_STANDARD) else 1
+            val range = if (format.containsKey(android.media.MediaFormat.KEY_COLOR_RANGE)) format.getInteger(android.media.MediaFormat.KEY_COLOR_RANGE) else 2
+            CloudTrace.event("sprite.color", detail = "standard=$standard range=$range output=160x90 filter=BOX")
+            val bitmap = YuvToBitmapBridge.imageToBitmap(scaled.y, scaled.strideY, 1,
+              scaled.u, scaled.strideU, 1, scaled.v, scaled.strideV, 1, 0, 0, 160, 90, standard, range, false)
+            if (bitmap != null) result[data[index].first] = bitmap
+          }
+        }
+      }
+      CloudTrace.event("sprite.batch", detail = "requested=${targets.size} downloaded=${data.size} decoded=${result.size}")
+      return result
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+      result.values.forEach { it.recycle() }
+      throw cancelled
+    } catch (error: Exception) {
+      CloudTrace.event("sprite.batch.failed", detail = "error=${error.javaClass.simpleName}")
+      return result
+    }
   }
 
   /** Simple duration probe that reuses the parsed index; returns null when the container is unknown. */
