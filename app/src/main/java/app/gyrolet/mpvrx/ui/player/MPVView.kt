@@ -425,6 +425,7 @@ class MPVView(
   }
 
   private fun applyFrameRate() {
+    if (PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return
     if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
       val fps = PlaybackSession.getPropertyDouble("container-fps") ?: 0.0
       // Only high frame rates map onto phone panels without a display mode switch. Requesting

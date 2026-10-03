@@ -202,6 +202,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var pendingEofSeekGeneration: Long? = null
   private var applicationContext: Context? = null
   private var desiredVideoOutput = "gpu"
+  private var appliedSurfaceSize: String? = null
   private var activeCoreConfigurationKey: String? = null
   private var activeUserScriptsKey: String? = null
   private var attachedSurfaceOwner: Any? = null
@@ -300,6 +301,7 @@ object PlaybackSession : MPVLib.EventObserver {
         resetAmbientShaderTrackingLocked()
         updateState { it.copy(phase = PlaybackPhase.INITIALIZING, error = null) }
         try {
+          appliedSurfaceSize = null
           MPVLib.create(context.applicationContext)
           MPVLib.setOptionString("config", "yes")
           MPVLib.setOptionString("config-dir", configDir)
@@ -380,7 +382,11 @@ object PlaybackSession : MPVLib.EventObserver {
       MPVLib.attachSurface(surface)
       width?.takeIf { it > 0 }?.let { resolvedWidth ->
         height?.takeIf { it > 0 }?.let { resolvedHeight ->
-          MPVLib.setPropertyString("android-surface-size", "${resolvedWidth}x$resolvedHeight")
+          val size = "${resolvedWidth}x$resolvedHeight"
+          if (appliedSurfaceSize != size) {
+            MPVLib.setPropertyString("android-surface-size", size)
+            appliedSurfaceSize = size
+          }
         }
       }
       MPVLib.setOptionString("force-window", "yes")
@@ -404,7 +410,12 @@ object PlaybackSession : MPVLib.EventObserver {
       if (width <= 0 || height <= 0 || attachedSurfaceOwner !== owner || !_state.value.surfaceAttached) {
         return@withCore false
       }
-      MPVLib.setPropertyString("android-surface-size", "${width}x$height")
+      val size = "${width}x$height"
+      if (appliedSurfaceSize == size) return@withCore true
+      val started = System.nanoTime()
+      MPVLib.setPropertyString("android-surface-size", size)
+      appliedSurfaceSize = size
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.surface.resize", detail = "elapsedMs=${(System.nanoTime() - started) / 1000000}")
       true
     }
 
@@ -429,6 +440,8 @@ object PlaybackSession : MPVLib.EventObserver {
     runCatching { MPVLib.setOptionString("force-window", "no") }
     runCatching { MPVLib.detachSurface() }
     attachedSurfaceOwner = null
+    appliedSurfaceSize = null
+    appliedSurfaceSize = null
     updateState { it.copy(surfaceAttached = false) }
   }
 
@@ -635,6 +648,7 @@ object PlaybackSession : MPVLib.EventObserver {
     runCatching { MPVLib.setPropertyString("vo", "null") }
     runCatching { MPVLib.detachSurface() }
     attachedSurfaceOwner = null
+    appliedSurfaceSize = null
     runCatching { MPVLib.removeObserver(this) }
     runCatching { MPVLib.destroy() }
       .onFailure { error -> Log.e(TAG, "Failed to destroy libmpv", error) }

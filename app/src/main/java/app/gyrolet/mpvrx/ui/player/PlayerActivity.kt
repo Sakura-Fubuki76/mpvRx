@@ -4287,6 +4287,9 @@ class PlayerActivity :
         }
       }
       "sub-scale" -> {
+        // Initial observed values arrive while mpv is still starting its renderer. A
+        // synchronous track query here blocks the UI before the media request can load.
+        if (PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return
         if (isSecondarySubtitleActive()) {
           val primaryPosition = subtitlesPreferences.subPos.get()
           applySubtitlePositions(primaryPosition)
