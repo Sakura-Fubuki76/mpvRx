@@ -34,6 +34,17 @@ abstract class CloudMetadataDao {
     durationMs: Long, width: Int, height: Int, updatedAt: Long,
   )
 
+  @Query("SELECT * FROM cloud_directory_items WHERE connectionId = :connectionId AND path = :path LIMIT 1")
+  abstract suspend fun getItem(connectionId: Long, path: String): CloudDirectoryItemEntity?
+
+  @Transaction
+  open suspend fun mergeCurrentVideo(connectionId: Long, path: String, size: Long, modified: Long,
+    duration: Long, width: Int, height: Int, updatedAt: Long) {
+    val current = getItem(connectionId, path)
+    if (current != null && (current.size != size || current.lastModified != modified)) return
+    mergeVideo(connectionId, path, size, modified, duration, width, height, updatedAt)
+  }
+
   @Query("SELECT * FROM cloud_directory_state WHERE connectionId = :connectionId AND path = :path")
   abstract suspend fun getDirectoryState(connectionId: Long, path: String): CloudDirectoryStateEntity?
 

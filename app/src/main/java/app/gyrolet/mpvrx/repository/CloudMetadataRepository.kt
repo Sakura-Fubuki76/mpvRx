@@ -37,6 +37,7 @@ import okhttp3.OkHttpClient
 class CloudMetadataRepository(
   private val dao: CloudMetadataDao,
   httpClient: OkHttpClient,
+  private val keyframes: app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor,
 ) {
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
@@ -91,19 +92,22 @@ class CloudMetadataRepository(
       // Retry incomplete rows after a bounded cooldown, including across process restarts.
       if (cached != null && cached.matches(file) && System.currentTimeMillis() - cached.updatedAt < 30_000) return
       if (cached != null && !cached.matches(file)) {
-        dao.mergeVideo(connection.id, path, file.size, file.lastModified, 0, 0, 0, 0)
+        publish(connection.id, path, file.size, file.lastModified, 0, 0, 0, 0)
       }
       val proxy = NetworkStreamingProxy.getInstance()
       val streamId = "metadata_${UUID.randomUUID()}"
       try {
         // Proxy owns credential resolution; requests never persist an authenticated URL.
         val url = proxy.registerStream(streamId, connection, path, file.size, file.mimeType ?: "application/octet-stream")
-        var duration = probeVideoDurationMs(url, http, file.name.substringAfterLast('.', "")) ?: 0
+        val extension = app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(file.name)
+        val key = app.gyrolet.mpvrx.domain.cloud.cloudMediaKey(connection, path, file.size, file.lastModified)
+        var duration = probeVideoDurationMs(url, http, extension) { keyframes.extractDurationMs(it, key, extension) } ?: 0
+        if (duration <= 0 && keyframes.supports(extension)) duration = keyframes.extractDurationMs(url, key, extension) ?: 0
         var width = 0
         var height = 0
         if (duration > 0) {
           currentCoroutineContext().ensureActive()
-          dao.mergeVideo(connection.id, path, file.size, file.lastModified, duration, 0, 0, System.currentTimeMillis())
+          publish(connection.id, path, file.size, file.lastModified, duration, 0, 0, System.currentTimeMillis())
         } else {
           withTimeoutOrNull(10_000) {
             runInterruptible(Dispatchers.IO) {
@@ -119,17 +123,22 @@ class CloudMetadataRepository(
             }
           }
           currentCoroutineContext().ensureActive()
-          dao.mergeVideo(connection.id, path, file.size, file.lastModified, duration, width, height, System.currentTimeMillis())
+          publish(connection.id, path, file.size, file.lastModified, duration, width, height, System.currentTimeMillis())
         }
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (_: Exception) {
         currentCoroutineContext().ensureActive()
-        dao.mergeVideo(connection.id, path, file.size, file.lastModified, 0, 0, 0, System.currentTimeMillis())
+        publish(connection.id, path, file.size, file.lastModified, 0, 0, 0, System.currentTimeMillis())
       } finally {
         proxy.unregisterStream(streamId)
       }
     }
+  }
+
+  suspend fun publish(connectionId: Long, path: String, size: Long, modified: Long,
+    duration: Long, width: Int, height: Int, updatedAt: Long = System.currentTimeMillis()) {
+    dao.mergeCurrentVideo(connectionId, NetworkPath.from(path).value, size, modified, duration, width, height, updatedAt)
   }
 
   private fun CloudVideoMetadataEntity.matches(file: NetworkFile): Boolean =

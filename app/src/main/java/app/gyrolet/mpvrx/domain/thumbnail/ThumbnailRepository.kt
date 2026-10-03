@@ -1135,11 +1135,12 @@ class ThumbnailRepository(
     connection: NetworkConnection? = null,
     fileSize: Long = -1L,
     mimeType: String? = null,
+    lastModified: Long = 0L,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
       if (!appearancePreferences.showNetworkThumbnails.get()) return@withContext null
 
-      val identity = networkThumbnailIdentity(path, connection)
+      val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
       val memKey = networkThumbnailMemoryKey(identity, widthPx, heightPx)
       synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return@withContext it }
       ongoingOperations[memKey]?.let { return@withContext it.await() }
@@ -1155,6 +1156,7 @@ class ThumbnailRepository(
               identity = identity,
               fileSize = fileSize,
               mimeType = mimeType,
+              lastModified = lastModified,
             )
           }
 
@@ -1177,7 +1179,7 @@ class ThumbnailRepository(
           val bitmap =
             networkGenerationSemaphore.withPermit {
               (
-                extractKeyframeByIndex(path, path, connection, strategy)
+                extractKeyframeByIndex(path, path, connection, strategy, fileSize, lastModified)
                   ?: extractNetworkVideoFrame(
                     url = path,
                     strategy = strategy,
@@ -1236,6 +1238,7 @@ class ThumbnailRepository(
     identity: String,
     fileSize: Long,
     mimeType: String?,
+    lastModified: Long,
   ): Bitmap? {
     if (hasRecentNetworkThumbnailFailure(identity)) {
       android.util.Log.d("ThumbnailRepository", "Skipping network thumbnail (previously failed): $path")
@@ -1272,6 +1275,7 @@ class ThumbnailRepository(
               targetHeight = heightPx,
               fileSize = fileSize,
               mimeType = mimeType,
+              lastModified = lastModified,
             )
           } else {
             generateFastNetworkThumbnail(path, widthPx, heightPx)
@@ -1303,6 +1307,7 @@ class ThumbnailRepository(
     targetHeight: Int,
     fileSize: Long,
     mimeType: String?,
+    lastModified: Long,
   ): Bitmap? {
     val proxy = NetworkStreamingProxy.getInstance()
     val streamId = "thumb_${path.hashCode()}_${System.nanoTime()}"
@@ -1320,7 +1325,7 @@ class ThumbnailRepository(
       // Index-based extraction downloads only the container index and one frame, while the
       // streaming retriever below has to pull far more of the file — so try it first and keep the
       // existing chain as the fallback for every container we cannot index.
-      extractKeyframeByIndex(localUrl, path, connection, strategy)
+      extractKeyframeByIndex(localUrl, path, connection, strategy, fileSize, lastModified)
         ?: extractNetworkVideoFrame(
           url = localUrl,
           strategy = strategy,
@@ -1348,19 +1353,26 @@ class ThumbnailRepository(
     path: String,
     connection: NetworkConnection?,
     strategy: ThumbnailStrategy,
+    fileSize: Long,
+    lastModified: Long,
   ): Bitmap? {
-    val extension = path.substringAfterLast('.', "")
+    val extension = app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(path)
     if (!cloudKeyframes.supports(extension)) return null
 
     val (targetPercent, solidFallback) = keyframeTargets(strategy)
     return try {
-      cloudKeyframes.extract(
+      val result = cloudKeyframes.extract(
         streamUrl = streamUrl,
-        stableKey = "cloud|${connection?.id ?: 0L}|$path",
+        stableKey = app.gyrolet.mpvrx.domain.cloud.cloudMediaKey(connection, path, fileSize, lastModified),
         extension = extension,
         targetPercent = targetPercent,
         solidFallbackPercent = solidFallback,
-      )?.bitmap
+      )
+      if (result != null && connection != null) {
+        KoinJavaComponent.get<app.gyrolet.mpvrx.repository.CloudMetadataRepository>(app.gyrolet.mpvrx.repository.CloudMetadataRepository::class.java)
+          .publish(connection.id, path, fileSize, lastModified, result.durationMs ?: 0L, result.width ?: 0, result.height ?: 0)
+      }
+      result?.bitmap
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (_: Exception) {
@@ -1387,9 +1399,11 @@ class ThumbnailRepository(
     widthPx: Int,
     heightPx: Int,
     connection: NetworkConnection? = null,
+    fileSize: Long = -1L,
+    lastModified: Long = 0L,
   ): String =
     networkThumbnailMemoryKey(
-      networkThumbnailIdentity(path, connection),
+      networkThumbnailIdentity(path, connection, fileSize, lastModified),
       widthPx,
       heightPx,
     )
@@ -1405,8 +1419,10 @@ class ThumbnailRepository(
     widthPx: Int,
     heightPx: Int,
     connection: NetworkConnection?,
+    fileSize: Long = -1L,
+    lastModified: Long = 0L,
   ): Bitmap? {
-    val identity = networkThumbnailIdentity(path, connection)
+    val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
     synchronized(memoryCache) { memoryCache.get(networkThumbnailKey(identity, widthPx, heightPx)) }
       ?.let { return it }
     val candidates =
@@ -1416,24 +1432,12 @@ class ThumbnailRepository(
     }
   }
 
-  /**
-   * Cache identity for a network thumbnail: the share endpoint plus the path, nothing else.
-   *
-   * Size and modification time are deliberately excluded. A playlist entry knows neither, so
-   * folding them in gave one file two different cache entries — one per screen showing it — and
-   * made the second screen download and extract the frame again. The trade-off is that replacing
-   * a file in place keeps serving the previous thumbnail until the cache is cleared.
-   */
   private fun networkThumbnailIdentity(
     path: String,
     connection: NetworkConnection?,
-  ): String {
-    val endpoint =
-      connection?.let {
-        "${it.id}|${it.protocol.name}|${it.host.lowercase()}|${it.port}|${it.path}|${it.useHttps}"
-      } ?: "direct"
-    return "$endpoint|$path"
-  }
+    fileSize: Long,
+    lastModified: Long,
+  ): String = app.gyrolet.mpvrx.domain.cloud.cloudMediaKey(connection, path, fileSize, lastModified)
 
   private fun networkThumbnailKey(
     identity: String,

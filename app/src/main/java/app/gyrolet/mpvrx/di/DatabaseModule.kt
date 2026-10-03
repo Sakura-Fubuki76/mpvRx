@@ -1071,7 +1071,7 @@ val DatabaseModule =
 
     single { ThumbnailRepository(androidContext()) }
     single { get<MpvRxDatabase>().cloudMetadataDao() }
-    single { app.gyrolet.mpvrx.repository.CloudMetadataRepository(get(), get()) }
+    single { app.gyrolet.mpvrx.repository.CloudMetadataRepository(get(), get(), get()) }
     single { app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor(get()) }
     single { NetworkImageRepository(context = androidContext(), networkRepository = get()) }
     single { WatchStatsRepository(androidContext()) }

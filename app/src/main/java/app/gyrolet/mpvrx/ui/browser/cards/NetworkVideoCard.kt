@@ -104,6 +104,8 @@ fun NetworkVideoCard(
           widthPx = thumbSizePx,
           heightPx = thumbSizePx,
           connection = connection,
+          fileSize = file.size,
+          lastModified = file.lastModified,
         )
       } else {
         null
@@ -118,6 +120,8 @@ fun NetworkVideoCard(
           widthPx = thumbSizePx,
           heightPx = thumbSizePx,
           connection = connection,
+          fileSize = file.size,
+          lastModified = file.lastModified,
         )
       } else {
         null
@@ -140,6 +144,7 @@ fun NetworkVideoCard(
                 connection = connection,
                 fileSize = file.size,
                 mimeType = file.mimeType,
+                lastModified = file.lastModified,
               )
             }
         }
@@ -160,6 +165,7 @@ fun NetworkVideoCard(
             connection = connection,
             fileSize = file.size,
             mimeType = file.mimeType,
+                lastModified = file.lastModified,
           )
         }
       if (thumbnail != null) return@LaunchedEffect
