@@ -148,6 +148,8 @@ object SubtitleOps : KoinComponent {
               fuzzyMatchNames(baseName, file.name.substringBeforeLast('.')))
         }
 
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.match", connection.id, directoryPath,
+        "files=${files.size} matched=${subtitles.size}")
       if (subtitles.isEmpty()) {
         Log.d(TAG, "No matching subtitle files found for: $baseName")
         return
@@ -184,8 +186,11 @@ object SubtitleOps : KoinComponent {
                 expectedGeneration = expectedGeneration,
               ) ?: return@forEachIndexed
             registeredProxyUrl = proxyUrl
-            app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareExternal(
-              org.koin.java.KoinJavaComponent.get<android.content.Context>(android.content.Context::class.java), proxyUrl, expectedGeneration, subtitle.name)
+            try {
+              app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareExternal(
+                org.koin.java.KoinJavaComponent.get<android.content.Context>(android.content.Context::class.java), proxyUrl, expectedGeneration, subtitle.name)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.fonts.failed", connection.id, detail = "error=${error.javaClass.simpleName}") }
 
             // Keep tracks available while respecting the user's current subtitle-off state.
             val flag = if (index == 0 && selectFirst) "select" else "auto"
@@ -201,6 +206,7 @@ object SubtitleOps : KoinComponent {
               registeredProxyUrl = null
               return@forEachIndexed
             }
+            app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.added", connection.id, detail = "success=true")
             Log.d(TAG, "Loaded network subtitle: '$displayName' via proxy (flag=$flag)")
             registeredProxyUrl = null
           } catch (cancellation: CancellationException) {
@@ -208,6 +214,7 @@ object SubtitleOps : KoinComponent {
             throw cancellation
           } catch (e: Exception) {
             registeredProxyUrl?.let(PlaybackSession::unregisterAuxiliaryNetworkStream)
+            app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.added", connection.id, detail = "success=false error=${e.javaClass.simpleName}")
             Log.e(TAG, "Failed to load subtitle ${subtitle.name}: ${e.message}", e)
           }
         }

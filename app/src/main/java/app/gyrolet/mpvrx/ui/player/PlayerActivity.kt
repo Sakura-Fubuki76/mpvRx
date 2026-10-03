@@ -2632,6 +2632,9 @@ class PlayerActivity :
     // Add observer after initialization
     PlaybackSession.addObserver(playerObserver)
 
+    lifecycleScope.launch(Dispatchers.IO) {
+      runCatching { app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prewarmSources(applicationContext) }
+    }
     // Fonts are selected per ASS track; do not import the entire font tree per playback.
     return null
   }
@@ -5964,7 +5967,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       throw IllegalStateException("Timed out waiting for previous playback to stop")
     }
     ensureCurrentMediaRequest(requestGeneration)
-    val selectedFonts = app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareMedia(this, item, resolveSubtitleFontFamily(subtitlesPreferences))
+    app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareMedia(this, item, resolveSubtitleFontFamily(subtitlesPreferences))
     ensureCurrentMediaRequest(requestGeneration)
     val generation =
       PlaybackSession.load(

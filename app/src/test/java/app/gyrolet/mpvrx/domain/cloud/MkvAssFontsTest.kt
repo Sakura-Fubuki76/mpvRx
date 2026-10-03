@@ -17,5 +17,8 @@ class MkvAssFontsTest {
     val extractor = MkvKeyframeExtractor(OkHttpClient())
     assertEquals(setOf("字幕字体"), extractor.parseAssFontsFromTracks(track, 0))
     assertEquals(emptySet<String>(), extractor.parseAssFontsFromTracks(track.copyOf(track.size - 1), 0))
+    val tracks = element(byteArrayOf(0x16, 0x54, 0xae.toByte(), 0x6b), track)
+    val segment = element(byteArrayOf(0x18, 0x53, 0x80.toByte(), 0x67), tracks)
+    assertEquals(setOf("字幕字体"), extractor.parseAssFontsFromHeader(segment))
   }
 }

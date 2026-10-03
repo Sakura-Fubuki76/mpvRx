@@ -551,7 +551,8 @@ class MkvKeyframeExtractor(
     val start = tracks.first.toInt()
     val size = tracks.second
     if (size < 0 || size > data.size - start) return emptySet()
-    return parseAssFontsFromTracks(data.copyOfRange(start, start + size.toInt()), 0)
+    val tracksBytes = data.copyOfRange(start, start + size.toInt())
+    return parseAssFontsFromTracks(tracksBytes, skipElementHeader(tracksBytes, 0))
   }
 
   suspend fun extractAssFontNames(url: String): Set<String> = withContext(Dispatchers.IO) {

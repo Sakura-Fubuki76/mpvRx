@@ -32,7 +32,7 @@ object SubtitleFontCache {
     return File(context.filesDir, "fonts-active/$key")
   }
 
-  suspend fun select(context: Context, mediaId: String, families: Set<String>, reset: Boolean = false): String =
+  suspend fun select(context: Context, mediaId: String, families: Set<String>, reset: Boolean = false, allowSourceScan: Boolean = false): String =
     withContext(Dispatchers.IO) { lock.withLock {
       val start = System.nanoTime()
       val bank = File(context.filesDir, "fonts")
@@ -44,7 +44,7 @@ object SubtitleFontCache {
       val missing = requestedNames.filter { family -> bankFiles.none { file ->
         AssFontNames.matches(file.name, family) || (old[file.name]?.families ?: FontNameReader.names(file)).any { it.equals(family.removePrefix("@"), true) }
       } }.toSet()
-      if (missing.isNotEmpty()) importRequestedFonts(context, bank, missing)
+      if (missing.isNotEmpty()) importRequestedFonts(context, bank, missing, allowSourceScan)
       val entries = bank.listFiles().orEmpty().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in extensions }.map { file ->
         old[file.name]?.takeIf { it.size == file.length() && it.modified == file.lastModified() }
           ?: Entry(file.name, file.length(), file.lastModified(), FontNameReader.names(file))
@@ -71,14 +71,16 @@ object SubtitleFontCache {
       active.path
     } }
 
-  private suspend fun importRequestedFonts(context: Context, bank: File, names: Set<String>) {
+  private suspend fun importRequestedFonts(context: Context, bank: File, names: Set<String>, allowSourceScan: Boolean) {
     val subtitles = org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.preferences.SubtitlesPreferences>(app.gyrolet.mpvrx.preferences.SubtitlesPreferences::class.java)
     val advanced = org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.preferences.AdvancedPreferences>(app.gyrolet.mpvrx.preferences.AdvancedPreferences::class.java)
     val roots = listOf(subtitles.fontsFolder.get(), advanced.mpvConfStorageUri.get()).filter { it.isNotBlank() }.distinct()
     if (roots.isEmpty()) return
     val catalogFile = File(context.filesDir, "font-sources.json")
     val cached = runCatching { json.decodeFromString<Sources>(catalogFile.readText()) }.getOrNull()
-    val catalog = if (cached != null && cached.roots == roots && System.currentTimeMillis() - cached.checkedAt in 0..86400000L) cached else {
+    val fresh = cached != null && cached.roots == roots && System.currentTimeMillis() - cached.checkedAt in 0..86400000L
+    if (!fresh && !allowSourceScan) return
+    val catalog = if (fresh) cached!! else {
       val files = mutableListOf<SourceFont>()
       val seen = hashSetOf<String>()
       suspend fun visit(tree: Uri, documentId: String, depth: Int) {
@@ -128,6 +130,11 @@ object SubtitleFontCache {
         if (font.modified > 0) target.setLastModified(font.modified)
       } finally { pending.delete() }
     }
+  }
+
+  suspend fun prewarmSources(context: Context) = withContext(Dispatchers.IO) {
+    // Source traversal never holds the font selection lock and never gates subtitle registration.
+    importRequestedFonts(context, File(context.filesDir, "fonts"), emptySet(), allowSourceScan = true)
   }
 
   suspend fun prepareMedia(context: Context, item: PlaybackItem, preferredFamily: String): String {
@@ -196,6 +203,7 @@ object SubtitleFontCache {
       }.getOrNull()
     } ?: return
     val names = AssFontNames.parse(text)
+    CloudTrace.event("fonts.external", detail = "referenced=${names.size}")
     if (names.isEmpty()) return
     val path = select(context, item.stableId, names)
     if (expectedGeneration == null || PlaybackSession.state.value.generation == expectedGeneration) {
