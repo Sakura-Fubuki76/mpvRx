@@ -121,7 +121,7 @@ internal fun ConnectionEditorSheet(
           password = if (isAnonymous) "" else password,
           path = path.trim().ifBlank { "/" },
           isAnonymous = isAnonymous,
-          useHttps = protocol == NetworkProtocol.WEBDAV && useHttps,
+          useHttps = protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) && useHttps,
         ),
         isAnonymous || clearPassword,
       )
@@ -185,7 +185,7 @@ internal fun ConnectionEditorSheet(
               onClick = {
                 protocol = selectedProtocol
                 port = selectedProtocol.defaultPort.toString()
-                if (selectedProtocol != NetworkProtocol.WEBDAV) useHttps = false
+                if (selectedProtocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)) useHttps = false
                 protocolMenuExpanded = false
               },
             )
@@ -242,7 +242,7 @@ internal fun ConnectionEditorSheet(
         label = stringResource(R.string.ui_anonymous_guest_access),
       )
 
-      if (protocol == NetworkProtocol.WEBDAV) {
+      if (protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)) {
         ConnectionToggle(
           checked = useHttps,
           onCheckedChange = { enabled ->

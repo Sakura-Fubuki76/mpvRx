@@ -258,6 +258,16 @@ class NetworkRepository(
       }
     }
 
+  suspend fun searchFiles(connection: NetworkConnection, path: String, query: String): Result<List<NetworkFile>> =
+    withContext(Dispatchers.IO) {
+      try {
+        val resolved = resolveCredential(dao.getConnectionById(connection.id) ?: connection)
+        val client = clientFactory(resolved)
+        try { client.searchFiles(path, query) } finally { client.disconnect() }
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (error: Exception) { Result.failure(error) }
+    }
+
   suspend fun listFiles(
     connection: NetworkConnection,
     path: String,

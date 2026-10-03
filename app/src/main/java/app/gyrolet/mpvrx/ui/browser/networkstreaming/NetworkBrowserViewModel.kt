@@ -150,6 +150,21 @@ class NetworkBrowserViewModel(
     }
   }
 
+  private var searchJob: Job? = null
+  private val _searchResults = MutableStateFlow<List<NetworkFile>?>(null)
+  val searchResults: StateFlow<List<NetworkFile>?> = _searchResults.asStateFlow()
+  fun searchIndex(query: String) {
+    searchJob?.cancel()
+    _searchResults.value = null
+    val connection = _connection.value ?: return
+    if (connection.protocol != NetworkProtocol.OPENLIST || query.isBlank()) return
+    searchJob = viewModelScope.launch {
+      kotlinx.coroutines.delay(350)
+      repository.searchFiles(connection, currentPath, query).onSuccess { _searchResults.value = it }
+        .onFailure { _error.value = it.message }
+    }
+  }
+
   /**
    * Play a video file
    */
@@ -324,7 +339,7 @@ class NetworkBrowserViewModel(
           NetworkProtocol.SMB -> "smb"
           NetworkProtocol.FTP -> "ftp"
           NetworkProtocol.SFTP -> "sftp"
-          NetworkProtocol.WEBDAV -> if (connection.useHttps) "https" else "http"
+          NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST -> if (connection.useHttps) "https" else "http"
         }
       if (!uri.scheme.equals(expectedScheme, ignoreCase = true) ||
         !uri.host.equals(connection.host.trim('[', ']'), ignoreCase = true) ||

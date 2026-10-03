@@ -58,7 +58,7 @@ fun sourceChipColor(
   isNetwork: Boolean = false,
 ): Color =
   when (protocol) {
-    NetworkProtocol.WEBDAV -> Color(0xFF1E88E5)
+    NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST -> Color(0xFF1E88E5)
     NetworkProtocol.SMB -> Color(0xFF8E24AA)
     NetworkProtocol.FTP -> Color(0xFFF4511E)
     NetworkProtocol.SFTP -> Color(0xFF00897B)

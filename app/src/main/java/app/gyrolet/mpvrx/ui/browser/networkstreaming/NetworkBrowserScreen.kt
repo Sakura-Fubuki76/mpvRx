@@ -158,7 +158,9 @@ data class NetworkBrowserScreen(
           ),
       )
 
-    val files by viewModel.files.collectAsState()
+    val directoryFiles by viewModel.files.collectAsState()
+    val indexResults by viewModel.searchResults.collectAsState()
+    val files = indexResults ?: directoryFiles
     val connection by viewModel.connection.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -168,6 +170,7 @@ data class NetworkBrowserScreen(
     val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearching by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(searchQuery, connection) { viewModel.searchIndex(searchQuery) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(isSearching) {
       if (isSearching) focusRequester.requestFocus()

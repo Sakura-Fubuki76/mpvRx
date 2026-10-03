@@ -18,6 +18,8 @@ object NetworkClientFactory {
       NetworkProtocol.SMB -> SmbClient(connection)
       NetworkProtocol.FTP -> FtpClient(connection)
       NetworkProtocol.WEBDAV -> WebDavClient(connection)
+      NetworkProtocol.OPENLIST -> OpenListClient(connection, tokenStore = OpenListTokenStore(
+        org.koin.java.KoinJavaComponent.get(android.content.Context::class.java)))
       NetworkProtocol.SFTP -> SftpClient(connection)
     }
 }

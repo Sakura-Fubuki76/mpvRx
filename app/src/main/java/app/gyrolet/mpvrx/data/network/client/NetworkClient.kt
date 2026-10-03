@@ -37,6 +37,10 @@ interface NetworkClient {
    */
   suspend fun listFiles(path: String): Result<List<NetworkFile>>
 
+  val supportsSearch: Boolean get() = false
+  suspend fun searchFiles(path: String, query: String): Result<List<NetworkFile>> =
+    Result.failure(UnsupportedOperationException("Server search is unavailable"))
+
   /**
    * Get input stream for a file
    */
