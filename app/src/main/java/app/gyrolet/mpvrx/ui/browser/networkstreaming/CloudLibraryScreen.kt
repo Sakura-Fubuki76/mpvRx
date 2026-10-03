@@ -22,6 +22,7 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.preferences.MediaServersPreferencesScreen
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
+import app.gyrolet.mpvrx.ui.theme.onWallpaper
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 
@@ -42,7 +43,7 @@ object CloudLibraryScreen : Screen {
     val storages = connections.filter { it.protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) && (selected.isEmpty() || it.id in selected) }
     val stack = LocalBackStack.current
     Scaffold(topBar = {
-      TopAppBar(title = { Text("WebDAV") }, actions = {
+      TopAppBar(title = { Text("WebDAV", style = MaterialTheme.typography.headlineMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary.onWallpaper()) }, actions = {
         IconButton(onClick = { stack.navigateTo(MediaServersPreferencesScreen) }) {
           Icon(Icons.RoundedFilled.Settings, contentDescription = stringResource(R.string.pref_media_servers_title))
         }
