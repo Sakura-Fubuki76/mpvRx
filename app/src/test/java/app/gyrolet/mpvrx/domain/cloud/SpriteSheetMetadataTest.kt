@@ -15,4 +15,13 @@ class SpriteSheetMetadataTest {
     assertFalse(restored.copy(timesMs = listOf(3000, 1000)).isValid())
     assertFalse(restored.copy(columns = 1000).isValid())
   }
+  @Test fun yumeGridUsesIntervalsRatherThanNearestFutureFrame() {
+    val meta = SpriteSheetMetadata(timesMs = listOf(0, 1000, 2000, 3000), durationMs = 4000, intervalMs = 1000.0)
+    assertEquals(0, meta.frameIndex(999))
+    assertEquals(1, meta.frameIndex(1000))
+    assertEquals(1, meta.frameIndex(1999))
+    assertEquals(3, meta.frameIndex(4000))
+    val restored = Json.decodeFromString(SpriteSheetMetadata.serializer(), Json.encodeToString(SpriteSheetMetadata.serializer(), meta))
+    assertEquals(1, restored.frameIndex(1999))
+  }
 }

@@ -2286,8 +2286,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       }.distinctUntilChanged().collectLatest { (item, duration, enabled) ->
         sprites.reset()
         if (item != null && enabled && duration > 0 && item.audiobook == null && item.mimeType?.startsWith("audio/") != true) {
-          delay(3000)
-          try { kotlinx.coroutines.withTimeoutOrNull(180_000) { sprites.prepare(item, duration) } }
+          try { sprites.prepare(item, duration) }
           catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
           catch (error: Exception) { android.util.Log.w("CloudSprites", "Preview preparation failed", error) }
         }

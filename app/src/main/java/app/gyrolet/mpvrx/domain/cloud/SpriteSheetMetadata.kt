@@ -12,9 +12,10 @@ data class SpriteSheetMetadata(
   val timesMs: List<Long>,
   val durationMs: Long,
   val imageHash: String = "",
+  val intervalMs: Double = 0.0,
 ) {
   fun isValid(): Boolean = columns in 1..10 && rows in 1..10 && cellWidth in 1..320 && cellHeight in 1..320 &&
     timesMs.isNotEmpty() && timesMs.size <= columns * rows && durationMs > 0 &&
     timesMs.all { it in 0..durationMs } && timesMs.zipWithNext().all { (a, b) -> a <= b }
-  fun frameIndex(timeMs: Long): Int = timesMs.indices.minByOrNull { abs(timesMs[it] - timeMs.coerceIn(0, durationMs)) } ?: 0
+  fun frameIndex(timeMs: Long): Int = if (intervalMs > 0) (timeMs.coerceIn(0, durationMs) / intervalMs).toInt().coerceIn(0, (timesMs.size - 1).coerceAtLeast(0)) else timesMs.indices.minByOrNull { abs(timesMs[it] - timeMs.coerceIn(0, durationMs)) } ?: 0
 }

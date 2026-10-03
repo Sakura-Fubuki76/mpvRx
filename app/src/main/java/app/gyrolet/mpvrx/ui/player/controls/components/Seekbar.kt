@@ -637,8 +637,9 @@ private fun SeekbarContent(
     contentAlignment = Alignment.Center,
   ) {
     if (isVisuallyInteracting && !showWavyVisualizer) {
-      val previewWidth = with(previewDensity) { 160.dp.roundToPx() }
-      val previewHeight = with(previewDensity) { 116.dp.roundToPx() }
+      val sheet by org.koin.compose.koinInject<app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository>().current.collectAsState()
+      val previewWidth = with(previewDensity) { (sheet?.metadata?.cellWidth ?: 160).dp.roundToPx() }
+      val previewHeight = with(previewDensity) { ((sheet?.metadata?.cellHeight ?: 90) + 26).dp.roundToPx() }
       val gap = with(previewDensity) { 8.dp.roundToPx() }
       val fraction = if (safeDuration > 0) safeThumbPosition / safeDuration else 0f
       val x = (previewAnchorSize.width * fraction - previewWidth / 2f).roundToInt()

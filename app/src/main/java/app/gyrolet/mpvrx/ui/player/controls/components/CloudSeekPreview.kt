@@ -29,7 +29,7 @@ internal fun CloudSeekPreview(position: Float, modifier: Modifier = Modifier) {
   val image = remember(current.bitmap) { current.bitmap.asImageBitmap() }
   Column(modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainer),
     horizontalAlignment = Alignment.CenterHorizontally) {
-    Canvas(Modifier.requiredSize(160.dp, 90.dp)) {
+    Canvas(Modifier.requiredSize(meta.cellWidth.dp, meta.cellHeight.dp)) {
       drawImage(image, srcOffset = IntOffset(index % meta.columns * meta.cellWidth, index / meta.columns * meta.cellHeight),
         srcSize = IntSize(meta.cellWidth, meta.cellHeight), dstSize = IntSize(size.width.toInt(), size.height.toInt()))
     }
