@@ -502,7 +502,7 @@ class MPVView(
     PlaybackSession.setOptionString("sub-file-paths", "")
     PlaybackSession.setOptionString("subs-fallback", "no")
 
-    val fontsDirPath = "${context.filesDir.path}/fonts/"
+    val fontsDirPath = java.io.File(context.filesDir, "fonts-active/default").apply { mkdirs() }.path
     PlaybackSession.setOptionString("sub-fonts-dir", fontsDirPath)
     // Auto-detect subtitle encoding
     PlaybackSession.setOptionString("sub-codepage", "auto")

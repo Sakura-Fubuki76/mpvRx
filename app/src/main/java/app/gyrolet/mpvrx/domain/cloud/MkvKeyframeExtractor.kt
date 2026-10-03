@@ -208,6 +208,7 @@ class MkvKeyframeExtractor(
         moovByteSize = 0,
         moovInfo = moovInfo,
         videoTrackNumber = trackNumber,
+        assFontNames = parseAssFontsFromTracks(tracksData, tracksBodyOff),
         durationMs =
           durationMs ?: if (moovInfo.timescale > 0) moovInfo.duration * 1000 / moovInfo.timescale else null,
       )
@@ -504,6 +505,67 @@ class MkvKeyframeExtractor(
     val scale = timecodeScale ?: defaultTimecodeScaleNs
     val durMs = duration?.let { (it * scale / 1_000_000.0).toLong() }
     return scale to durMs
+  }
+
+  /** ASS CodecPrivate contains the style header even before the first subtitle packet. */
+  internal fun parseAssFontsFromTracks(data: ByteArray, offset: Int): Set<String> {
+    val names = linkedSetOf<String>()
+    fun elements(start: Int, end: Int, visit: (Long, Int, Int) -> Unit) {
+      var position = start
+      while (position + 2 <= end) {
+        val (id, idLength) = readElementId(data, position)
+        if (idLength <= 0 || position + idLength >= end) break
+        val (size, sizeLength) = readVint(data, position + idLength)
+        val body = position + idLength + sizeLength
+        if (sizeLength <= 0 || size < 0 || size > end - body) break
+        val stop = body + size.toInt()
+        visit(id, body, stop)
+        if (stop <= position) break
+        position = stop
+      }
+    }
+    elements(offset, data.size) { id, start, end ->
+      if (id == TRACK_ENTRY_ID) {
+        var codec = ""
+        var type = 0L
+        var header: String? = null
+        elements(start, end) { child, body, stop ->
+          when (child) {
+            TRACK_TYPE_ID -> type = readUint(data, body, stop - body)
+            CODEC_ID_ID -> codec = String(data, body, stop - body, Charsets.US_ASCII).trimEnd('\u0000')
+            CODEC_PRIVATE_ID -> if (stop - body <= 1024 * 1024)
+              header = String(data, body, stop - body, Charsets.UTF_8)
+          }
+        }
+        if (type == 17L && codec in setOf("S_TEXT/ASS", "S_TEXT/SSA"))
+          header?.let { names += app.gyrolet.mpvrx.domain.fonts.AssFontNames.parse(it) }
+      }
+    }
+    return names
+  }
+
+  internal fun parseAssFontsFromHeader(data: ByteArray): Set<String> {
+    val segment = findSegmentStart(data) ?: return emptySet()
+    val offset = segment.first.toInt() + 4 + segment.second
+    val tracks = findEbmlElement(data, offset, data.size, TRACKS_ID) ?: return emptySet()
+    val start = tracks.first.toInt()
+    val size = tracks.second
+    if (size < 0 || size > data.size - start) return emptySet()
+    return parseAssFontsFromTracks(data.copyOfRange(start, start + size.toInt()), 0)
+  }
+
+  suspend fun extractAssFontNames(url: String): Set<String> = withContext(Dispatchers.IO) {
+    val length = httpHead(url) ?: return@withContext emptySet()
+    val head = httpRange(url, 0, minOf(length, 1024 * 1024L).toInt()) ?: return@withContext emptySet()
+    val direct = parseAssFontsFromHeader(head)
+    if (direct.isNotEmpty()) return@withContext direct
+    val segment = findSegmentStart(head) ?: return@withContext emptySet()
+    val segmentBody = segment.first + 4 + segment.second
+    val seek = findEbmlElement(head, segmentBody.toInt(), head.size, SEEK_HEAD_ID) ?: return@withContext emptySet()
+    val positions = parseSeekHead(head, seek.first.toInt(), seek.second.toInt())
+    val tracksPosition = positions[SEEK_TRACKS] ?: return@withContext emptySet()
+    val tracks = downloadRangeForOffset(url, length, segmentBody + tracksPosition, 1024 * 1024) ?: return@withContext emptySet()
+    parseAssFontsFromTracks(tracks, skipElementHeader(tracks, 0))
   }
 
   private fun parseTracks(

@@ -2593,10 +2593,12 @@ class PlayerActivity :
     // Prepare config and user MPV assets before initializing MPV.
     runCatching {
       val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.assets.begin")
       syncBundledAssetsIfNeeded()
       prepareUserMpvAssetsForStartup()
       googleFontsRepository.syncMpvFonts()
       sanitizeInternalFontsDirectory()
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.assets.end", detail = "elapsedMs=${android.os.SystemClock.elapsedRealtime() - preparationStartedAt}")
       Log.d(TAG, "MPV startup assets ready in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
     }.onFailure { e ->
       Log.e(TAG, "Error copying MPV config and assets", e)
@@ -2612,6 +2614,8 @@ class PlayerActivity :
     }
 
     // NOW initialize MPV - it will find and load the scripts we just copied
+    val initStartedAt = android.os.SystemClock.elapsedRealtime()
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.core.begin")
     val initError = synchronized(USER_MPV_ASSET_LOCK) {
       val cleanupFailure = runCatching { removeDisabledCachedScripts() }.exceptionOrNull()
       if (cleanupFailure != null) {
@@ -2619,6 +2623,7 @@ class PlayerActivity :
         cleanupFailure.message ?: getString(R.string.toast_playback_load_failed)
       } else initializePlayerWithRendererFallback()
     }
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.core.end", detail = "elapsedMs=${android.os.SystemClock.elapsedRealtime() - initStartedAt} success=${initError == null}")
     if (initError != null) return initError
     runCatching { PlaybackSession.setThumbnailJavaVM(applicationContext) }
     mpvInitialized = true
@@ -2627,7 +2632,7 @@ class PlayerActivity :
     // Add observer after initialization
     PlaybackSession.addObserver(playerObserver)
 
-    scheduleDeferredSubtitleFontsSync()
+    // Fonts are selected per ASS track; do not import the entire font tree per playback.
     return null
   }
 
@@ -2761,7 +2766,7 @@ class PlayerActivity :
       syncScripts(tree, rootChildren)
       syncScriptOpts(tree, rootChildren)
       syncShaders(tree, rootChildren)
-      syncFonts(tree, rootChildren)
+      // The subtitle font resolver reads/imports only requested families.
       Log.d(TAG, "Full MPV directory sync completed")
     } else {
       // Fallback: use preferences-based config (no user directory set)
@@ -3028,7 +3033,6 @@ class PlayerActivity :
           if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
           deferredFontSyncJob?.join()
           syncFromUserMpvDirectory()
-          syncSubtitleFontsFromPreferenceFolder()
           rememberUserMpvAssetSelection(getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE))
           completed = true
           Log.d(TAG, "Refreshed cached MPV user assets after startup")
@@ -5959,6 +5963,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     if (!PlaybackSession.awaitStopCompletion()) {
       throw IllegalStateException("Timed out waiting for previous playback to stop")
     }
+    ensureCurrentMediaRequest(requestGeneration)
+    val selectedFonts = app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareMedia(this, item, resolveSubtitleFontFamily(subtitlesPreferences))
     ensureCurrentMediaRequest(requestGeneration)
     val generation =
       PlaybackSession.load(

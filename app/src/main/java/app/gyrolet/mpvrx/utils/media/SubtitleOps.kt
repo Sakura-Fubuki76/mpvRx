@@ -184,6 +184,8 @@ object SubtitleOps : KoinComponent {
                 expectedGeneration = expectedGeneration,
               ) ?: return@forEachIndexed
             registeredProxyUrl = proxyUrl
+            app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareExternal(
+              org.koin.java.KoinJavaComponent.get<android.content.Context>(android.content.Context::class.java), proxyUrl, expectedGeneration, subtitle.name)
 
             // Keep tracks available while respecting the user's current subtitle-off state.
             val flag = if (index == 0 && selectFirst) "select" else "auto"
@@ -236,6 +238,8 @@ object SubtitleOps : KoinComponent {
       } ?: emptyList()
 
     if (subtitles.isNotEmpty()) {
+      val context = org.koin.java.KoinJavaComponent.get<android.content.Context>(android.content.Context::class.java)
+      for (subtitle in subtitles) app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareExternal(context, subtitle.absolutePath, expectedGeneration)
       withContext(Dispatchers.Main) {
         subtitles.forEachIndexed { index, subtitle ->
           if (!isGenerationCurrent(expectedGeneration)) return@forEachIndexed

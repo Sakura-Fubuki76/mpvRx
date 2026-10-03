@@ -3484,6 +3484,8 @@ val isBrightnessSliderShown = MutableStateFlow(false)
           }
         }
 
+        app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareExternal(appContext, uriString,
+          PlaybackSession.state.value.generation, fileName)
         val mpvPath = uri.resolveUri(appContext) ?: uri.toString()
         val mode = if (select) "select" else "auto"
 

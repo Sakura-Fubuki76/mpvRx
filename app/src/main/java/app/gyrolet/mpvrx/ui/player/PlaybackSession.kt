@@ -942,6 +942,10 @@ object PlaybackSession : MPVLib.EventObserver {
       val loadOptions =
         buildList {
           add("pause=yes")
+          applicationContext?.let { context ->
+            val fonts = app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.directory(context, resolvedItem.stableId)
+            if (fonts.isDirectory) add("sub-fonts-dir=${fonts.path}")
+          }
           add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
           initialPosition?.let { add("start=$it") }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
