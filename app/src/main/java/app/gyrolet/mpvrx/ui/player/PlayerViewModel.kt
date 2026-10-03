@@ -3217,6 +3217,8 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   // Seek coalescing for smooth performance
   private var pendingSeekOffset: Int = 0
   private var seekCoalesceJob: Job? = null
+  private val _scrubPreviewPosition = MutableStateFlow<Float?>(null)
+  val scrubPreviewPosition = _scrubPreviewPosition.asStateFlow()
   private val seekPreviewLock = Any()
   private var pendingSeekPreviewPosition: Float? = null
 
@@ -5020,6 +5022,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
    * applied at a bounded rate. Preview seeks are keyframe-only and never spam Syncplay peers.
    */
   fun seekPreviewTo(position: Float) {
+    _scrubPreviewPosition.value = position.coerceAtLeast(0f)
     cancelFrameSeek()
     val generation = PlaybackSession.state.value.generation
     previewAbsoluteSeekPositionOptimistically(position.coerceAtLeast(0f).toDouble())
@@ -5046,6 +5049,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   }
 
   private fun cancelSeekPreview() {
+    _scrubPreviewPosition.value = null
     synchronized(seekPreviewLock) {
       seekPreviewJob?.cancel()
       seekPreviewJob = null

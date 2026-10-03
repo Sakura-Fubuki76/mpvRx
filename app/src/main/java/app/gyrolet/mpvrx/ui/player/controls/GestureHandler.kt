@@ -1320,6 +1320,7 @@ fun GestureHandler(
                       // Keep the live preview bounded and keyframe-only while scrubbing. The final
                       // exact seek is issued once on gesture release below.
                       viewModel.seekPreviewTo(clampedPosition)
+                      viewModel.showControls()
 
                       // Format and display time position updates
                       val currentPos = clampedPosition.toInt()
@@ -1347,6 +1348,7 @@ fun GestureHandler(
               } else if (pointerCount > 1) {
                 // Multi-finger detected, cancel horizontal seek
                 if (hasStartedSeeking) {
+                  if (hasStartedSeeking) pendingSeekPosition?.let { viewModel.seekTo(it.toInt()) }
                   hasStartedSeeking = false
                   // Clean up seeking state without showing controls
                   if (!wasPlayerAlreadyPaused) {

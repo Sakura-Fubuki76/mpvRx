@@ -71,6 +71,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
@@ -112,6 +113,7 @@ import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.math.min
 
 /** Precomputed, allocation-free drawing data for a single skip segment overlay. */
@@ -302,6 +304,7 @@ internal fun SeekbarWithTimers(
   duration: Float,
   remaining: Float,
   committedPosition: Float = position,
+  previewPosition: Float? = null,
   onValueChange: (Float) -> Unit,
   onValueChangeFinished: (Float) -> Unit,
   timersInverted: Pair<Boolean, Boolean>,
@@ -363,7 +366,8 @@ internal fun SeekbarWithTimers(
       verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       SeekbarContent(
-        positionProvider = { if (isUserInteracting) userPosition else animatedPosition.value },
+        previewPosition = previewPosition,
+        positionProvider = { previewPosition ?: if (isUserInteracting) userPosition else animatedPosition.value },
         committedPosition = committedPosition,
         duration = duration,
         chapters = chapters,
@@ -435,7 +439,8 @@ internal fun SeekbarWithTimers(
       )
 
       SeekbarContent(
-        positionProvider = { if (isUserInteracting) userPosition else animatedPosition.value },
+        previewPosition = previewPosition,
+        positionProvider = { previewPosition ?: if (isUserInteracting) userPosition else animatedPosition.value },
         committedPosition = committedPosition,
         duration = duration,
         chapters = chapters,
@@ -477,6 +482,7 @@ internal fun SeekbarWithTimers(
 
 @Composable
 private fun SeekbarContent(
+  previewPosition: Float? = null,
   positionProvider: () -> Float,
   committedPosition: Float,
   duration: Float,
@@ -507,7 +513,7 @@ private fun SeekbarContent(
   val seekerInteractionSource = remember { MutableInteractionSource() }
   val isSeekerPressed by seekerInteractionSource.collectIsPressedAsState()
   val isSeekerDragged by seekerInteractionSource.collectIsDraggedAsState()
-  val isVisuallyInteracting = isUserInteracting || isSeekerPressed || isSeekerDragged
+  val isVisuallyInteracting = isUserInteracting || isSeekerPressed || isSeekerDragged || previewPosition != null
   val clipRange by ClipEditorUiState.state.collectAsState()
   val safeDuration = duration.takeIf { it.isFinite() && it > 0f } ?: 0f
   val seekerRange = 0f..safeDuration.coerceAtLeast(0.1f)
@@ -516,7 +522,7 @@ private fun SeekbarContent(
       .takeIf { it.isFinite() }
       ?.coerceIn(seekerRange)
       ?: seekerRange.start
-  val currentPos = positionProvider()
+  val currentPos = previewPosition ?: positionProvider()
   val safeThumbPosition =
     currentPos
       .takeIf { it.isFinite() }
@@ -624,12 +630,24 @@ private fun SeekbarContent(
       Modifier
     }
 
+  var previewAnchorSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
+  val previewDensity = androidx.compose.ui.platform.LocalDensity.current
   Box(
-    modifier = modifier.then(seekKeyModifier),
+    modifier = modifier.then(seekKeyModifier).then(Modifier.onSizeChanged { previewAnchorSize = it }),
     contentAlignment = Alignment.Center,
   ) {
     if (isVisuallyInteracting && !showWavyVisualizer) {
-      CloudSeekPreview(safeThumbPosition, Modifier.align(Alignment.TopCenter).offset(y = (-116).dp))
+      val previewWidth = with(previewDensity) { 160.dp.roundToPx() }
+      val previewHeight = with(previewDensity) { 116.dp.roundToPx() }
+      val gap = with(previewDensity) { 8.dp.roundToPx() }
+      val fraction = if (safeDuration > 0) safeThumbPosition / safeDuration else 0f
+      val x = (previewAnchorSize.width * fraction - previewWidth / 2f).roundToInt()
+        .coerceIn(0, (previewAnchorSize.width - previewWidth).coerceAtLeast(0))
+      androidx.compose.ui.window.Popup(
+        alignment = Alignment.TopStart,
+        offset = androidx.compose.ui.unit.IntOffset(x, previewAnchorSize.height / 2 - previewHeight - gap),
+        properties = androidx.compose.ui.window.PopupProperties(focusable = false),
+      ) { CloudSeekPreview(safeThumbPosition) }
     }
     val waveSeekbarActive = showWavyVisualizer && waveFeatures != null && wavePalette != null
     if (waveSeekbarActive) {

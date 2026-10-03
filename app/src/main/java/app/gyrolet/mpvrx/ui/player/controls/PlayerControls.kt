@@ -1761,7 +1761,8 @@ is PlayerUpdates.FrameInfo -> {
             val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsState()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
-            val displayedSeekbarPosition = precisePosition
+            val scrubPreviewPosition by viewModel.scrubPreviewPosition.collectAsStateWithLifecycle()
+            val displayedSeekbarPosition = scrubPreviewPosition ?: precisePosition
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
             val seekbarChapters =
@@ -1777,6 +1778,7 @@ is PlayerUpdates.FrameInfo -> {
             SeekbarWithTimers(
               position = displayedSeekbarPosition,
               committedPosition = precisePosition,
+              previewPosition = scrubPreviewPosition,
               duration = seekbarDuration,
               remaining = effectiveRemaining,
               onValueChange = {
