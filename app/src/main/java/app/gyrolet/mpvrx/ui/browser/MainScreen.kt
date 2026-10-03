@@ -216,10 +216,10 @@ object MainScreen : Screen {
         buildList {
           // Home is the permanent root so Back never exits directly from another tab.
           add(MainTab.HOME)
+          if (showCloudTab) add(MainTab.CLOUD)
           if (showMusicTab) add(MainTab.MUSIC)
           if (showRecentsTab) add(MainTab.RECENTS)
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
-          if (showCloudTab) add(MainTab.CLOUD)
           if (showNetworkTab) add(MainTab.NETWORK)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showSnapshotTab) add(MainTab.SNAPSHOTS)
