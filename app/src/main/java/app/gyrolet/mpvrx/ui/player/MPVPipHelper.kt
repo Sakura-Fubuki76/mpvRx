@@ -132,6 +132,9 @@ class MPVPipHelper(
       }.build()
 
   private fun getVideoAspectRatio(): Rational? {
+    // The browser also updates PiP while a new player core is initializing.
+    // A synchronous mpv query then blocks the shared Android UI thread.
+    if (PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return null
     val width = PlaybackSession.getPropertyInt("video-out-params/dw") ?: 0
     val height = PlaybackSession.getPropertyInt("video-out-params/dh") ?: 0
 
@@ -166,7 +169,7 @@ class MPVPipHelper(
   }
 
   private fun createPipActions(): List<RemoteAction> {
-    val isPlaying = PlaybackSession.getPropertyBoolean("pause") == false
+    val isPlaying = !PlaybackSession.state.value.paused
 
     return listOf(
       createRemoteAction("rewind 10 seconds", Icons.Platform.Replay10, PIP_REWIND),
