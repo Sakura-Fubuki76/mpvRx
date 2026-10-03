@@ -4596,8 +4596,11 @@ class PlayerActivity :
     lifecycleScope.launch {
       withContext(playbackRenderDispatcher) {
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@withContext
+        val renderStarted = System.nanoTime()
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.render.begin", detail = "generation=$loadGeneration")
         player.applyAnime4KShaders()
         viewModel.restartHdrScreenOutputAndAmbientIfActive()
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.render.end", detail = "elapsedMs=${(System.nanoTime() - renderStarted) / 1000000}")
       }
     }
 
@@ -5803,14 +5806,22 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
             }
           }
 
-          val networkPath = sourceIntent.getStringExtra("network_file_path")
-          val networkConnectionId = sourceIntent.getLongExtra("network_connection_id", -1L)
+          val networkReference = app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(resolvedOriginalUri)
+          val networkPath = sourceIntent.getStringExtra("network_file_path") ?: networkReference?.path?.value
+          val networkConnectionId = sourceIntent.getLongExtra("network_connection_id", networkReference?.connectionId ?: -1L)
           val networkSource =
             if (!networkPath.isNullOrBlank() && networkConnectionId != -1L) {
               NetworkPlaybackSource(networkConnectionId, networkPath)
             } else {
               null
             }
+          if (networkSource != null) {
+            withContext(Dispatchers.Main) {
+              ensureCurrentMediaRequest(requestGeneration)
+              intent.putExtra("network_connection_id", networkSource.connectionId)
+              intent.putExtra("network_file_path", networkSource.relativePath)
+            }
+          }
           val item =
             if (!isTorrentRequest) {
               requestedQueueItem?.copy(playableUri = resolvedPlayableUri, headers = requestedHeaders)

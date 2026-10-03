@@ -1461,6 +1461,9 @@ object PlaybackSession : MPVLib.EventObserver {
     property: String,
     value: Boolean,
   ) {
+    if (property == "paused-for-cache" || property == "seeking") {
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.buffer.state", detail = "property=$property value=$value generation=${_state.value.generation}")
+    }
     val effectiveValue =
       if (property == "pause" && _state.value.phase == PlaybackPhase.LOADING) _state.value.paused else value
     if (property == "pause") updateState { it.copy(paused = effectiveValue) }
@@ -1502,6 +1505,9 @@ object PlaybackSession : MPVLib.EventObserver {
     eventId: Int,
     data: MPVNode,
   ) {
+    if (eventId == MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART) {
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.native.restart", detail = "generation=${_state.value.generation}")
+    }
     val shouldForward =
       nativeLock.withLock {
         when (eventId) {
