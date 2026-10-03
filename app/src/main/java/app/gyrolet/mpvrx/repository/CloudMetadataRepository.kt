@@ -1,5 +1,6 @@
 package app.gyrolet.mpvrx.repository
 
+import app.gyrolet.mpvrx.domain.cloud.CloudTrace
 import android.media.MediaMetadataRetriever
 import app.gyrolet.mpvrx.database.dao.CloudMetadataDao
 import app.gyrolet.mpvrx.database.entities.CloudDirectoryItemEntity
@@ -59,7 +60,11 @@ class CloudMetadataRepository(
     val revision = "${connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode()}|$includeThumbnails|$strategy"
     val previous = storageScans[connection.id]
     if (!force && previous?.revision == revision && (previous.job.isActive ||
-      previous.completedAt > 0 && System.currentTimeMillis() - previous.completedAt < 30 * 60_000)) return
+      previous.completedAt > 0 && System.currentTimeMillis() - previous.completedAt < 30 * 60_000)) {
+      CloudTrace.event("storage.skip", connection.id, detail = "reason=${if (previous.job.isActive) "running" else "fresh_complete"}")
+      return
+    }
+    CloudTrace.event("storage.schedule", connection.id, detail = "thumbnails=$includeThumbnails force=$force replacing=${previous != null}")
     previous?.job?.cancel()
     val job = storageScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
       try {
@@ -67,11 +72,17 @@ class CloudMetadataRepository(
         // Enumerate first so empty-folder filtering does not wait for video decoding.
         val enumerationComplete = scanFolders(connection, listOf("/"), network)
         val files = cachedFilesBelow(connection.id, "/")
+        CloudTrace.event("storage.enumerated", connection.id, detail = "files=${files.size} complete=$enumerationComplete")
         cacheMissingMetadata(connection, files, app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails)
         if (enumerationComplete) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
         android.util.Log.d("CloudBatch", "storage complete connection=${connection.id} files=${files.size} enumerationComplete=$enumerationComplete")
-      } catch (cancelled: CancellationException) { throw cancelled }
-      catch (error: Exception) { android.util.Log.w("CloudBatch", "Storage scan failed; retaining cache", error) }
+      } catch (cancelled: CancellationException) {
+        CloudTrace.event("storage.cancelled", connection.id)
+        throw cancelled
+      } catch (error: Exception) {
+        CloudTrace.event("storage.failed", connection.id, detail = "error=${error.javaClass.simpleName}")
+        android.util.Log.w("CloudBatch", "Storage scan failed; retaining cache", error)
+      }
     }
     storageScans[connection.id] = StorageScan(revision, job)
     job.start()
@@ -151,11 +162,17 @@ class CloudMetadataRepository(
       val current = network.getConnectionById(connection.id)
       if (current == null || current.isDeleted || current.copy(lastConnected = 0, name = "", autoConnect = false) !=
         connection.copy(lastConnected = 0, name = "", autoConnect = false)) throw CancellationException("Storage settings changed")
+      CloudTrace.event("directory.begin", connection.id, path)
       network.listFiles(connection, path).also { result ->
+        CloudTrace.event("directory.result", connection.id, path,
+          "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0} error=${result.exceptionOrNull()?.javaClass?.simpleName ?: "none"}")
         currentCoroutineContext().ensureActive()
         result.getOrNull()?.let { saveDirectory(connection.id, path, it) }
       }
-    }, { dao.putScannedFolder(it) })
+    }, {
+      dao.putScannedFolder(it)
+      CloudTrace.event("folder.summary", connection.id, it.path, "videos=${it.videoCount} complete=${it.scanComplete} empty=${it.scanComplete && it.videoCount == 0}")
+    })
     val complete = paths.map { scanner.scan(it).scanComplete }.all { it }
     dao.refreshFolderDurations(connection.id)
     return complete
@@ -173,20 +190,31 @@ class CloudMetadataRepository(
       entry == null || !entry.matches(file) || entry.durationMs <= 0 || (includeThumbnails && !thumbnails.isNetworkThumbnailCached(connection, file))
     }
     val done = java.util.concurrent.atomic.AtomicInteger()
+    val ready = java.util.concurrent.atomic.AtomicInteger()
+    CloudTrace.event("batch.begin", connection.id, detail = "priority=$priority videos=${videos.size} pending=${pending.size} thumbnails=$includeThumbnails")
     android.util.Log.d("CloudBatch", "yume batch connection=${connection.id} priority=$priority total=${videos.size} needed=${pending.size}")
     metadataQueue.process(pending, key = { "${connection.id}|${it.path}" }, priority = priority) { file ->
       try {
         probe(connection, file)
-        if (includeThumbnails) thumbnails.getThumbnailForNetworkPath(file.path, 480, 300, connection, file.size, file.mimeType, file.lastModified,
-          backgroundWork = priority == app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND)
-        true
+        val bitmap = if (includeThumbnails) thumbnails.getThumbnailForNetworkPath(file.path, 480, 300, connection, file.size, file.mimeType, file.lastModified,
+          backgroundWork = priority == app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND) else null
+        val metadata = dao.getVideo(connection.id, NetworkPath.from(file.path).value)
+        val durationReady = metadata?.matches(file) == true && metadata.durationMs > 0
+        val success = durationReady && (!includeThumbnails || bitmap != null)
+        if (success) ready.incrementAndGet()
+        CloudTrace.event("metadata.result", connection.id, file.path, "durationReady=$durationReady thumbnailReady=${bitmap != null} priority=$priority")
+        success
       } catch (cancelled: CancellationException) { throw cancelled }
-      catch (error: Exception) { android.util.Log.w("CloudBatch", "Metadata item failed", error); false }
+      catch (error: Exception) {
+        CloudTrace.event("metadata.failed", connection.id, file.path, "error=${error.javaClass.simpleName}")
+        android.util.Log.w("CloudBatch", "Metadata item failed", error); false
+      }
       finally {
         val count = done.incrementAndGet()
         if (count % 10 == 0 || count == pending.size) android.util.Log.d("CloudBatch", "yume progress connection=${connection.id} priority=$priority completed=$count/${pending.size}")
       }
     }
+    CloudTrace.event("batch.end", connection.id, detail = "priority=$priority processed=${done.get()} ready=${ready.get()} pending=${pending.size}")
   }
 
   suspend fun probeMissing(connection: NetworkConnection, files: List<NetworkFile>) = coroutineScope {

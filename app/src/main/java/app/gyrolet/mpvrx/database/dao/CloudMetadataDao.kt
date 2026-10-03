@@ -48,8 +48,12 @@ abstract class CloudMetadataDao {
   @Transaction
   open suspend fun mergeCurrentVideo(connectionId: Long, path: String, size: Long, modified: Long,
     duration: Long, width: Int, height: Int, updatedAt: Long) {
-    val current = getItem(connectionId, path) ?: return
-    if (current.size != size || current.lastModified != modified) return
+    val current = getItem(connectionId, path)
+    if (current == null || current.size != size || current.lastModified != modified) {
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("metadata.reject", connectionId, path,
+        "reason=${if (current == null) "missing_item" else "file_version"}")
+      return
+    }
     val previous = getVideo(connectionId, path)
     if (previous != null && previous.size == size && previous.lastModified == modified && previous.durationMs > 0 &&
       (duration <= 0 || duration == previous.durationMs) && (width <= 0 || width == previous.width) &&

@@ -31,7 +31,14 @@ object SharedHttpClient {
       .readTimeout(30, TimeUnit.SECONDS)
       .writeTimeout(30, TimeUnit.SECONDS)
       .retryOnConnectionFailure(true)
-      .addNetworkInterceptor { chain -> chain.proceed(CloudStreamingHeaders.apply(chain.request())) }
+      .addNetworkInterceptor { chain ->
+        val request = CloudStreamingHeaders.apply(chain.request())
+        val response = chain.proceed(request)
+        if (request.header("Range") != null || CloudStreamingHeaders.userAgent(request.url.toString()) != null)
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("http.media", path = request.url.encodedPath,
+            detail = "baidu=${CloudStreamingHeaders.userAgent(request.url.toString()) != null} uaBaidu=${request.header("User-Agent") == "pan.baidu.com"} range=${request.header("Range").orEmpty()} status=${response.code}")
+        response
+      }
       .build()
   }
 

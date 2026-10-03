@@ -120,6 +120,7 @@ class NetworkBrowserViewModel(
   }
 
   fun loadFiles(forceStorageScan: Boolean = false) {
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.load", connectionId, currentPath, "force=$forceStorageScan")
     if (forceStorageScan) cloudMetadata.cancelStorage(connectionId)
     thumbnailBatch?.cancel()
     folderScan?.cancel()
@@ -155,7 +156,11 @@ class NetworkBrowserViewModel(
                 else file
               }
             }.collect { enriched ->
-              if (generation == loadGeneration) _files.value = enriched
+              if (generation == loadGeneration && _files.value != enriched) {
+                app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("view.snapshot", connectionId, currentPath,
+                  "files=${enriched.size} durationKnown=${enriched.count { !it.isDirectory && it.durationMs > 0 }} emptyFolders=${enriched.count { it.isDirectory && it.folderScanComplete && it.videoCount == 0 }} hideEmpty=${browserPreferences.hideEmptyCloudFolders.get()}")
+                _files.value = enriched
+              }
             }
           }
           scheduleThumbnails(connection, sorted)

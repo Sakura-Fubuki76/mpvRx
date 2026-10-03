@@ -36,15 +36,21 @@ class AlistWebDavClient(
       val result = api.listFiles(path)
       if (capabilities.size > 128) capabilities.clear()
       capabilities[connection.id] = Capability(connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode(), result.isSuccess, System.currentTimeMillis())
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("alist.list", connection.id, path, "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0}")
       if (result.isSuccess) return result
     }
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("dav.list.fallback", connection.id, path)
     return dav.listFiles(path)
   }
   override val supportsSearch: Boolean get() = supported() != false
   override suspend fun searchFiles(path: String, query: String) = api.searchFiles(path, query)
   override suspend fun getThumbnailBytes(path: String) = if (supported() != false) api.getThumbnailBytes(path) else Result.success(null)
   override suspend fun getFileStream(path: String, offset: Long): Result<java.io.InputStream> {
-    if (supported() == true) api.getFileStream(path, offset).let { if (it.isSuccess) return it }
+    if (supported() == true) api.getFileStream(path, offset).let {
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("stream.api", connection.id, path, "success=${it.isSuccess} offset=$offset")
+      if (it.isSuccess) return it
+    }
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("stream.dav", connection.id, path, "offset=$offset")
     return dav.getFileStream(path, offset)
   }
   override suspend fun disconnect() { try { api.disconnect() } finally { dav.disconnect() } }
