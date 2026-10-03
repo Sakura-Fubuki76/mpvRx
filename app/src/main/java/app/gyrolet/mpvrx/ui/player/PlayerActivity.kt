@@ -5083,6 +5083,17 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     mediaLoadJob =
       lifecycleScope.launch(mediaLoadDispatcher) {
         try {
+          if (tryAdoptPreloadedSession(
+              item = requestedQueueItem,
+              index = requestedPlaylistIndex,
+              legacyMediaIdentifier = requestedLegacyMediaIdentifier,
+              requestGeneration = requestGeneration,
+              sourceIntent = sourceIntent,
+            )
+          ) {
+            Log.d(TAG, "Adopted the pre-loaded session; skipping the load")
+            return@launch
+          }
           val bookId = sourceIntent.getLongExtra(AudiobookPlayback.EXTRA_BOOK_ID, -1L)
           if (sourceIntent.getBooleanExtra("internal_launch", false) && bookId > 0 && requestedQueueItem?.audiobook?.bookId != bookId) {
             val recovered = AudiobookPlayback.prepareQueue(bookId,
@@ -5333,6 +5344,70 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           }
         }
       }
+  }
+
+  /**
+   * Adopts a session [PlaybackSessionPreloader] already opened for this exact file, instead of
+   * loading it again.
+   *
+   * Returns true only when the whole handoff is safe. Every guard below exists because a wrong true
+   * would be worse than a slow open: it would show the wrong file, skip a required preparation step,
+   * or resume at the wrong position. On any doubt this returns false, and the caller runs the
+   * ordinary load path, which is unchanged and still correct.
+   */
+  private suspend fun tryAdoptPreloadedSession(
+    item: PlaybackItem?,
+    index: Int,
+    legacyMediaIdentifier: String?,
+    requestGeneration: Long,
+    sourceIntent: Intent,
+  ): Boolean {
+    if (item == null) return false
+    // Items that need their own preparation before a loadfile are exactly the ones the pre-loader
+    // deliberately does not handle: yt-dlp resolution, torrents, audiobooks and network streams all
+    // rewrite the playable URI or the queue after the pre-load, which would invalidate the claim.
+    if (item.audiobook != null) return false
+    if (YtdlpManager.requiresYtdlp(item.originalUri) || YtdlpManager.requiresYtdlp(item.playableUri)) return false
+    if (isTorrentSource(item.originalUri, sourceIntent.type)) return false
+    if (item.networkSource != null) return false
+    if (sourceIntent.getLongExtra(AudiobookPlayback.EXTRA_BOOK_ID, -1L) > 0) return false
+    // A script restore, a snapshot jump or an explicit position override must win over whatever the
+    // pre-loader parked the session at, and each of them also drives post-load bookkeeping below.
+    if (sourceIntent.hasExtra(EXTRA_SCRIPT_RESTORE_MEDIA_ID)) return false
+    if (sourceIntent.hasExtra(EXTRA_START_POSITION_SECONDS)) return false
+    if (sourceIntent.getBooleanExtra("internal_launch", false) && sourceIntent.hasExtra("playlist_id")) return false
+    // Replaced, not thrown through: a superseded request must fall back to the ordinary path rather
+    // than abort here, so use the predicate instead of the throwing ensure* helper.
+    if (!isCurrentMediaRequest(requestGeneration)) return false
+
+    val generation = PlaybackSessionPreloader.claim(item, index) ?: return false
+
+    // The pre-load parked the file READY and paused. Apply the resume position the same way the
+    // ordinary path would, then release the pause. A seek here is cheap precisely because the
+    // demuxer is already open, which is what the pre-load bought.
+    val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
+    val resumeMode = playerPreferences.resumePlaybackMode.get()
+    val resumePositionSeconds =
+      if (restoreSavedPosition && resumeMode == ResumePlaybackMode.Always && !item.isDefinitelyAudioOnly()) {
+        resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+          ?.lastPosition
+          ?.takeIf { it > 3 }
+          ?.toDouble()
+      } else {
+        null
+      }
+    resumePositionSeconds?.let { position ->
+      PlaybackSession.commandForGeneration(generation, "seek", position.toString(), "absolute")
+    }
+
+    ensureCurrentMediaRequest(requestGeneration)
+    isReady = true
+    currentPlayableUri = item.playableUri
+    PlaybackSession.setPropertyBoolean("pause", false)
+    viewModel.onVideoLoadCompleted()
+    viewModel.refreshPlaylistItems()
+    syncBackgroundPlaybackService(updateThumbnail = false)
+    return true
   }
 
   private suspend fun issuePlaybackLoad(

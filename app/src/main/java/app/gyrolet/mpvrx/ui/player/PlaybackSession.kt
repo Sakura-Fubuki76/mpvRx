@@ -860,6 +860,7 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
+    holdPausedUntilAdopted: Boolean = false,
     commit: ((() -> Long) -> Long)? = null,
   ): Long {
     val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
@@ -886,6 +887,7 @@ object PlaybackSession : MPVLib.EventObserver {
               positionRestoreOverride = positionRestoreOverride,
               initialPositionSeconds = initialPositionSeconds,
               flattenEditions = flattenEditions,
+              holdPausedUntilAdopted = holdPausedUntilAdopted,
             )
           if (generation >= 0L) {
             previous = activeNetworkStream
@@ -921,6 +923,7 @@ object PlaybackSession : MPVLib.EventObserver {
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
     initialPositionSeconds: Double? = null,
     flattenEditions: Boolean = false,
+    holdPausedUntilAdopted: Boolean = false,
   ): Long {
     val smbPath = item?.networkSource?.let { source ->
         try {
@@ -959,7 +962,9 @@ object PlaybackSession : MPVLib.EventObserver {
 
       // A saved video-track id belongs to the outgoing file only. Never carry it into a new load.
       suspendedVideoTrack = null
-      desiredPaused = positionRestoreOverride?.paused ?: false
+      // A pre-load parks the media READY-but-paused so its owner can adopt it later; every other
+      // caller wants playback to begin, so an absent override means "not paused" as before.
+      desiredPaused = positionRestoreOverride?.paused ?: holdPausedUntilAdopted
       clearSeekAudioGuardLocked(restoreMute = true)
 
       // Keep replacement/startup audio muted until mpv has restarted cleanly. FILE_LOADED can be

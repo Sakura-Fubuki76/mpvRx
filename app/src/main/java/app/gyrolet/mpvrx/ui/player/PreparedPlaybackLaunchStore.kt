@@ -41,18 +41,24 @@ internal object PreparedPlaybackLaunchStore {
     isM3u: Boolean = false,
   ): Long {
     require(items.isNotEmpty()) { "A prepared playback launch requires at least one item" }
-    synchronized(lock) {
-      val token = sequence.incrementAndGet()
-      pending =
-        PreparedPlaybackLaunch(
-          token = token,
-          items = items.map { item -> item.copy(headers = item.headers.toMap()) },
-          currentIndex = currentIndex.coerceIn(items.indices),
-          isExplicitQueue = isExplicitQueue,
-          isM3u = isM3u,
-        )
-      return token
-    }
+    val token =
+      synchronized(lock) {
+        val token = sequence.incrementAndGet()
+        pending =
+          PreparedPlaybackLaunch(
+            token = token,
+            items = items.map { item -> item.copy(headers = item.headers.toMap()) },
+            currentIndex = currentIndex.coerceIn(items.indices),
+            isExplicitQueue = isExplicitQueue,
+            isM3u = isM3u,
+          )
+        return token
+      }
+    // Every prepared launch goes through here on its way to startActivity, so this is the one place
+    // that can start opening the file before the Activity exists. Best effort: a skipped or failed
+    // pre-load only means PlayerActivity loads normally, which is exactly what it did before.
+    PlaybackSessionPreloader.preload(items, currentIndex)
+    return token
   }
 
   fun consume(token: Long): PreparedPlaybackLaunchResult {
