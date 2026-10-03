@@ -151,7 +151,7 @@ internal object YuvBitmapConverter {
 
         val chromaCol = sourceCol shr 1
         val uIndex = uBase + chromaRowOffset + chromaCol * chromaPixelStride
-        val vIndex = vBase + chromaRowOffset + chromaCol * chromaPixelStride
+        val vIndex = vBase + (sourceRow shr 1) * vRowStride + chromaCol * vPixelStride
         val u = if (uIndex < uLimit) uBuf.get(uIndex).toInt() and 0xFF else 128
         val v = if (vIndex < vLimit) vBuf.get(vIndex).toInt() and 0xFF else 128
 
@@ -183,6 +183,7 @@ internal object YuvBitmapConverter {
     forceNV21: Boolean,
   ): Bitmap? {
     if (cropWidth <= 0 || cropHeight <= 0 || stride <= 0 || sliceHeight <= 0) return null
+    if (colorFormat !in setOf(19, 21, 39, 0x7FA30C00)) return null
 
     val limit = yuvBuffer.limit()
     val coeff = coefficientsFor(colorStandard, colorRange)

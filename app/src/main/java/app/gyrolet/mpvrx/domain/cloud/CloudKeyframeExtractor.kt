@@ -10,6 +10,7 @@
 package app.gyrolet.mpvrx.domain.cloud
 
 import android.graphics.Bitmap
+import android.graphics.Matrix
 import app.gyrolet.mpvrx.domain.thumbnail.isMostlySolidThumbnail
 import okhttp3.OkHttpClient
 import kotlin.math.abs
@@ -92,7 +93,14 @@ class CloudKeyframeExtractor(
     when (extension) {
       in MP4_EXTENSIONS ->
         mp4.extractKeyframeWithMetadata(url, percent, stableKey)?.let {
-          Result(it.bitmap, it.durationMs, it.width, it.height)
+          val info = mp4.loadParsedMoov(url, stableKey)?.moovInfo
+          val bitmap = if (info?.rotation != null && info.rotation != 0) {
+            Bitmap.createBitmap(it.bitmap, 0, 0, it.bitmap.width, it.bitmap.height,
+              Matrix().apply { postRotate(info.rotation.toFloat()) }, true).also { rotated ->
+              if (rotated !== it.bitmap) it.bitmap.recycle()
+            }
+          } else it.bitmap
+          Result(bitmap, it.durationMs, it.width, it.height)
         }
       in MKV_EXTENSIONS -> extractMkvKeyframe(url, stableKey, percent)
       else -> null
@@ -103,7 +111,7 @@ class CloudKeyframeExtractor(
     stableKey: String,
     percent: Float,
   ): Result? {
-    val parsed = mkv.loadParsedMkv(url) ?: return null
+    val parsed = mkv.loadParsedMkv(url, stableKey) ?: return null
     val info = parsed.moovInfo ?: return null
     if (info.keyframes.isEmpty()) return null
 
@@ -116,7 +124,7 @@ class CloudKeyframeExtractor(
         url = url,
         clusterPos = keyframe.byteOffset,
         estimatedSize = keyframe.byteSize,
-        trackNumber = mkv.videoTrackNumber,
+        trackNumber = parsed.videoTrackNumber,
       ) ?: return null
 
     val bitmap = mp4.decodeKeyframe(info, cluster) ?: return null
@@ -136,7 +144,7 @@ class CloudKeyframeExtractor(
   ): Long? =
     when (extension.lowercase()) {
       in MP4_EXTENSIONS -> mp4.extractDurationMs(url, stableKey)
-      in MKV_EXTENSIONS -> mkv.loadParsedMkv(url)?.durationMs
+      in MKV_EXTENSIONS -> mkv.loadParsedMkv(url, stableKey)?.durationMs
       else -> null
     }
 

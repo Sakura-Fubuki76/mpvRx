@@ -7,7 +7,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
 import java.io.RandomAccessFile
 import java.util.Collections
 import java.util.LinkedHashMap
@@ -27,12 +26,9 @@ class MkvKeyframeExtractor(
     )
   private val keyMutexes = ConcurrentHashMap<String, Mutex>()
 
-  @Volatile
-  var videoTrackNumber: Long = 0
-
-  suspend fun loadParsedMkv(url: String): Mp4KeyframeExtractor.ParsedMoov? =
+  suspend fun loadParsedMkv(url: String, stableKey: String? = null): Mp4KeyframeExtractor.ParsedMoov? =
     withContext(Dispatchers.IO) {
-      val cacheKey = mkvCacheKey(url)
+      val cacheKey = stableKey ?: mkvCacheKey(url)
 
       cache[cacheKey]?.let { return@withContext it }
 
@@ -60,7 +56,7 @@ class MkvKeyframeExtractor(
     Logger.d(BUG4_TAG, "MKV httpHead: $contentLength for ${url.take(80)}")
     if (contentLength == null || contentLength < 4096) return null
 
-    val headData = httpRange(url, 0, HEAD_SIZE.coerceAtMost(contentLength.toInt()))
+    val headData = httpRange(url, 0, minOf(HEAD_SIZE.toLong(), contentLength).toInt())
     if (headData == null || headData.size < 32) return null
     Logger.d(BUG4_TAG, "MKV head: ${headData.size} bytes")
 
@@ -86,7 +82,7 @@ class MkvKeyframeExtractor(
     }
 
     if (seekPositions == null) {
-      val tailSize = SEARCH_TAIL_SIZE.coerceAtMost(contentLength.toInt())
+      val tailSize = minOf(SEARCH_TAIL_SIZE.toLong(), contentLength).toInt()
       val tailData = httpRange(url, contentLength - tailSize, tailSize)
       if (tailData != null) {
         Logger.d(BUG4_TAG, "MKV tail: ${tailData.size} bytes, searching for SeekHead...")
@@ -123,7 +119,6 @@ class MkvKeyframeExtractor(
         tracksData,
         tracksBodyOff,
       ) ?: return null
-    videoTrackNumber = trackNumber
     Logger.d(
       BUG4_TAG,
       "MKV Tracks: $mime ${width}x$height codecPrivate=${codecPrivate?.size ?: 0} track=$trackNumber",
@@ -209,12 +204,13 @@ class MkvKeyframeExtractor(
         contentLength = contentLength,
         moovByteSize = 0,
         moovInfo = moovInfo,
+        videoTrackNumber = trackNumber,
         durationMs =
           durationMs ?: if (moovInfo.timescale > 0) moovInfo.duration * 1000 / moovInfo.timescale else null,
       )
 
     MoovIndexCache.put(
-      url,
+      cacheKey,
       MoovIndexCache.Entry(
         keyframes = keyframes,
         contentLength = contentLength,
@@ -983,9 +979,7 @@ class MkvKeyframeExtractor(
     ContentLengthCache.get(url)?.let { return it }
     return try {
       val request =
-        Request
-          .Builder()
-          .url(url)
+        videoMetadataRequest(url)
           .head()
           .header("Accept", "*/*")
           .build()
@@ -1012,9 +1006,7 @@ class MkvKeyframeExtractor(
     val end = start + size - 1
     return try {
       val request =
-        Request
-          .Builder()
-          .url(url)
+        videoMetadataRequest(url)
           .header("Range", "bytes=$start-$end")
           .header("Accept", "*/*")
           .header("Accept-Encoding", "identity")
@@ -1026,7 +1018,7 @@ class MkvKeyframeExtractor(
           return null
         }
         val body = response.body ?: return null
-        body.bytes()
+        response.readContainerRange(start, size)
       }
     } catch (e: Exception) {
       if (e is CancellationException) throw e
@@ -1042,8 +1034,7 @@ class MkvKeyframeExtractor(
     sizeHint: Int,
   ): ByteArray? {
     val clampedStart = fileOffset.coerceIn(0, contentLength - 1)
-    val maxSize = (contentLength - clampedStart).toInt()
-    val size = minOf(sizeHint, maxSize)
+    val size = minOf(sizeHint.toLong(), contentLength - clampedStart).toInt()
     return httpRange(url, clampedStart, size)
   }
 
@@ -1052,7 +1043,7 @@ class MkvKeyframeExtractor(
     contentLength: Long,
     segmentDataOff: Long,
   ): Mp4KeyframeExtractor.ParsedMoov? {
-    val tailSize = (SEARCH_TAIL_SIZE * 2).coerceAtMost(contentLength.toInt())
+    val tailSize = minOf(SEARCH_TAIL_SIZE * 2L, contentLength).toInt()
     val tailData = httpRange(url, contentLength - tailSize, tailSize) ?: return null
 
     val cues = findEbmlElementByScan(tailData, 0, tailData.size, CUES_ID)

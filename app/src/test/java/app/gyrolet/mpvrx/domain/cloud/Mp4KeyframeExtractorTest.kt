@@ -186,9 +186,10 @@ internal class FakeRangeServer(
       Response.Builder()
         .request(request)
         .protocol(Protocol.HTTP_1_1)
-        .code(200)
+        .code(if (range == null) 200 else 206)
         .message("OK")
         .header("Content-Length", advertisedLength.toString())
+        .apply { if (range != null) { val start = range.removePrefix("bytes=").substringBefore('-').toLong(); header("Content-Range", "bytes $start-${start + advertisedLength - 1}/${file.size}") } }
         .body(ByteArrayBody(payload ?: ByteArray(0)))
         .build()
     }.build()

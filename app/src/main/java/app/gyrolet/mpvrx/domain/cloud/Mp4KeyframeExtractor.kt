@@ -461,12 +461,12 @@ class Mp4KeyframeExtractor(
       Logger.d("BUG4_HttpExtractor", "httpRange: url=${url.take(100)} range=$start-$end")
       okHttpClient.newCall(request).execute().use { response ->
         val body = response.body ?: return null
-        if (!response.isSuccessful || !response.isSafeRangeResponse(size)) {
+        if (!response.isSuccessful) {
           Logger.d("BUG4_HttpExtractor", "httpRange FAIL: code=${response.code} url=${url.take(80)}")
           log { "Range $start-$end failed: ${response.code}" }
           return null
         }
-        body.bytes()
+        response.readContainerRange(start, size)
       }
     } catch (e: Exception) {
       if (e is CancellationException) throw e
@@ -553,11 +553,11 @@ class Mp4KeyframeExtractor(
           Logger.d("BUG4_HttpExtractor", "httpHeadWithRange FAIL: null body")
           return null
         }
-        if (!response.isSuccessful || !response.isSafeRangeResponse(requestedSize)) {
+        if (!response.isSuccessful || requestedSize == null) {
           Logger.d("BUG4_HttpExtractor", "httpHeadWithRange FAIL: not successful or not safe range")
           return null
         }
-        body.bytes()
+        response.readContainerRange(range.substringBefore('-').toLongOrNull() ?: return null, requestedSize)
       }
     } catch (e: Exception) {
       if (e is CancellationException) throw e
@@ -565,13 +565,6 @@ class Mp4KeyframeExtractor(
       log { "Tail request error: ${e.message}" }
       null
     }
-  }
-
-  private fun Response.isSafeRangeResponse(requestedSize: Int?): Boolean {
-    if (code == 206) return true
-    if (code != 200 || requestedSize == null) return false
-    val responseSize = body?.contentLength() ?: -1L
-    return responseSize in 0..requestedSize.toLong()
   }
 
   private data class MoovData(
@@ -602,6 +595,7 @@ class Mp4KeyframeExtractor(
     val moovByteSize: Int,
     val moovInfo: MoovInfo?,
     val durationMs: Long?,
+    val videoTrackNumber: Long = 0,
   )
 
   private fun findAtom(
