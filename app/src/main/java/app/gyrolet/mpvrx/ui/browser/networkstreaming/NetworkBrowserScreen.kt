@@ -159,6 +159,9 @@ data class NetworkBrowserScreen(
       )
 
     val directoryFiles by viewModel.files.collectAsState()
+    androidx.compose.runtime.DisposableEffect(viewModel) {
+      onDispose { viewModel.pauseBackgroundWork() }
+    }
     val indexResults by viewModel.searchResults.collectAsState()
     val hideEmptyFolders by browserPreferences.hideEmptyCloudFolders.collectAsState()
     val files = (indexResults ?: directoryFiles).filterNot { hideEmptyFolders && it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
@@ -203,7 +206,7 @@ data class NetworkBrowserScreen(
     val selectableVideos =
       remember(files, includeAudioInBrowser, searchQuery, targetPlaylistIsAudio) {
         val visible =
-          if (searchQuery.isBlank()) files else files.filter { it.name.contains(searchQuery, ignoreCase = true) }
+          if (searchQuery.isBlank() || indexResults != null) files else files.filter { it.name.contains(searchQuery, ignoreCase = true) }
         visible.filter(::isSelectable)
       }
 
@@ -399,7 +402,7 @@ data class NetworkBrowserScreen(
         videoGridColumnsLandscape = videoGridColumnsLandscape,
         // Upstream added the manual-grid columns; the picker keeps overriding include-audio.
         includeAudio = targetPlaylistIsAudio ?: includeAudioInBrowser,
-        searchQuery = searchQuery,
+        searchQuery = if (indexResults != null) "" else searchQuery,
         onRefresh = { viewModel.loadFiles() },
         onFolderClick = { folder ->
           backstack.navigateTo(

@@ -77,6 +77,14 @@ class CloudMetadataRepository(
 
   fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId)
 
+  suspend fun registerIndexedFiles(connectionId: Long, files: List<NetworkFile>) = withContext(Dispatchers.IO) {
+    dao.insertItems(files.map { file ->
+      val path = NetworkPath.from(file.path)
+      val parent = NetworkPath.from(path.segments.dropLast(1).joinToString("/"))
+      CloudDirectoryItemEntity(connectionId, parent.value, path.value, file.name, file.size, file.lastModified, file.isDirectory, file.mimeType)
+    })
+  }
+
   suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository) {
     val scanner = app.gyrolet.mpvrx.domain.cloud.CloudFolderScanner(connection.id, { path ->
       network.listFiles(connection, path).also { result ->

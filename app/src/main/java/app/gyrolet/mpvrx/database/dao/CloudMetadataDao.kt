@@ -40,8 +40,8 @@ abstract class CloudMetadataDao {
   @Transaction
   open suspend fun mergeCurrentVideo(connectionId: Long, path: String, size: Long, modified: Long,
     duration: Long, width: Int, height: Int, updatedAt: Long) {
-    val current = getItem(connectionId, path)
-    if (current != null && (current.size != size || current.lastModified != modified)) return
+    val current = getItem(connectionId, path) ?: return
+    if (current.size != size || current.lastModified != modified) return
     mergeVideo(connectionId, path, size, modified, duration, width, height, updatedAt)
   }
 

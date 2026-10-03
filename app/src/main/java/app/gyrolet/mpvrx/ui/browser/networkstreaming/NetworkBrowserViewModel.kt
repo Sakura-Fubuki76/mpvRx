@@ -149,7 +149,8 @@ class NetworkBrowserViewModel(
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
               publish(fileList)
               folderScan?.cancel()
-              folderScan = viewModelScope.launch { cloudMetadata.scanFolders(connection, fileList.filter { it.isDirectory }.map { it.path }, repository) }
+              folderScan = viewModelScope.launch { cloudMetadata.scanFolders(connection, listOf(currentPath), repository) }
+              if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery)
             }
           }.onFailure { e ->
             _error.value = e.message ?: "Unknown error"
@@ -165,18 +166,35 @@ class NetworkBrowserViewModel(
   }
 
   private var searchJob: Job? = null
+  private var lastSearchQuery = ""
   private val _searchResults = MutableStateFlow<List<NetworkFile>?>(null)
   val searchResults: StateFlow<List<NetworkFile>?> = _searchResults.asStateFlow()
   fun searchIndex(query: String) {
+    lastSearchQuery = query
     searchJob?.cancel()
     _searchResults.value = null
     val connection = _connection.value ?: return
     if (connection.protocol != NetworkProtocol.OPENLIST || query.isBlank()) return
     searchJob = viewModelScope.launch {
       kotlinx.coroutines.delay(350)
-      repository.searchFiles(connection, currentPath, query).onSuccess { _searchResults.value = it }
-        .onFailure { _error.value = it.message }
+      repository.searchFiles(connection, currentPath, query).onSuccess { results ->
+        cloudMetadata.registerIndexedFiles(connectionId, results)
+        kotlinx.coroutines.coroutineScope {
+          launch { cloudMetadata.probeMissing(connection, results) }
+          cloudMetadata.observeVideos(connectionId, results).collect { _searchResults.value = it }
+        }
+      }.onFailure { _error.value = it.message }
     }
+  }
+
+  fun pauseBackgroundWork() {
+    ++loadGeneration
+    directoryJob?.cancel()
+    metadataObserver?.cancel()
+    metadataProbe?.cancel()
+    folderScan?.cancel()
+    searchJob?.cancel()
+    _isLoading.value = false
   }
 
   /**
@@ -316,7 +334,7 @@ class NetworkBrowserViewModel(
     }
 
     val files =
-      _files.value
+      (_searchResults.value ?: _files.value)
         .filter { it.isPlayableNetworkMedia(includeAudio) }
         .sortedForNetworkBrowser(
           sortType = browserPreferences.networkSortType.get(),
