@@ -4355,6 +4355,7 @@ class PlayerActivity :
   internal fun event(eventId: Int) {
     when (eventId) {
       MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED -> {
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.file.loaded")
         val loadGeneration = PlaybackSession.state.value.activeGeneration
         if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return
         val recovery = pendingMediaLoadRecovery
@@ -4375,6 +4376,7 @@ class PlayerActivity :
       }
 
       MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.playback.restart")
         if (PlaybackSession.state.value.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)) return
         isAdvancingAtEof = false
         player.isExiting = false
@@ -5967,8 +5969,11 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       throw IllegalStateException("Timed out waiting for previous playback to stop")
     }
     ensureCurrentMediaRequest(requestGeneration)
+    val fontGateStart = System.nanoTime()
     app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareMedia(this, item, resolveSubtitleFontFamily(subtitlesPreferences))
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.font.gate", detail = "elapsedMs=${(System.nanoTime()-fontGateStart)/1000000} cachedOnly=true")
     ensureCurrentMediaRequest(requestGeneration)
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.load.command")
     val generation =
       PlaybackSession.load(
         item = item,
@@ -5990,6 +5995,19 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     if (generation < 0L) {
       ensureCurrentMediaRequest(requestGeneration)
       throw IllegalStateException("libmpv core is unavailable")
+    }
+    lifecycleScope.launch(Dispatchers.IO) {
+      try {
+        val fonts = app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareMedia(applicationContext, item,
+          resolveSubtitleFontFamily(subtitlesPreferences), cachedOnly = false, expectedGeneration = generation)
+        withContext(Dispatchers.Main) {
+          if (PlaybackSession.state.value.generation == generation) {
+            PlaybackSession.setPropertyString("sub-fonts-dir", fonts)
+            app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("fonts.background.applied", detail = "files=${File(fonts).listFiles()?.size ?: 0}")
+          }
+        }
+      } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+      catch (error: Exception) { app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("fonts.background.failed", detail = "error=${error.javaClass.simpleName}") }
     }
     if (item.audiobook != null) intent.removeExtra(AudiobookPlayback.EXTRA_POSITION_MS)
     if (scriptRestore != null) {

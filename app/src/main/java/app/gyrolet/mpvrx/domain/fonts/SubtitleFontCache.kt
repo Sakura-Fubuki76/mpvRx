@@ -35,6 +35,12 @@ object SubtitleFontCache {
   suspend fun select(context: Context, mediaId: String, families: Set<String>, reset: Boolean = false, allowSourceScan: Boolean = false): String =
     withContext(Dispatchers.IO) { lock.withLock {
       val start = System.nanoTime()
+      if (families.none { it.isNotBlank() && it.lowercase(Locale.ROOT) !in setOf("sans-serif", "serif", "monospace") }) {
+        val active = directory(context, mediaId).apply { mkdirs() }
+        if (reset) active.listFiles()?.forEach { it.delete() }
+        CloudTrace.event("fonts.select", detail = "requested=${families.size} selected=0 genericOnly=true elapsedMs=${(System.nanoTime()-start)/1000000}")
+        return@withLock active.path
+      }
       val bank = File(context.filesDir, "fonts")
       val manifest = File(context.filesDir, "font-names.json")
       val old = runCatching { json.decodeFromString<List<Entry>>(manifest.readText()) }.getOrDefault(emptyList()).associateBy { it.name }
@@ -53,6 +59,10 @@ object SubtitleFontCache {
         val pending = File(context.filesDir, "font-names.json.tmp")
         pending.writeText(json.encodeToString(entries))
         java.nio.file.Files.move(pending.toPath(), manifest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+      }
+      for (family in requestedNames) {
+        val found = entries.count { entry -> AssFontNames.matches(entry.name, family) || entry.families.any { it.equals(family.removePrefix("@"), true) } }
+        CloudTrace.event("fonts.family", detail = "family=${family.replace('\n', ' ').replace('\r', ' ').take(96)} matches=$found")
       }
       val active = directory(context, mediaId).apply { mkdirs() }
       if (reset) active.listFiles()?.forEach { it.delete() }
@@ -137,7 +147,9 @@ object SubtitleFontCache {
     importRequestedFonts(context, File(context.filesDir, "fonts"), emptySet(), allowSourceScan = true)
   }
 
-  suspend fun prepareMedia(context: Context, item: PlaybackItem, preferredFamily: String): String {
+  suspend fun prepareMedia(context: Context, item: PlaybackItem, preferredFamily: String, cachedOnly: Boolean = true, expectedGeneration: Long? = null): String {
+    val prepareStart = System.nanoTime()
+    CloudTrace.event("fonts.media.begin", detail = "cachedOnly=$cachedOnly parserCheck=${AssFontNames.parse("[V4+ Styles]\nStyle: Default,Arial\n[Events]\n{\\fnVerdana}") == setOf("Arial", "Verdana")}")
     val names = linkedSetOf(preferredFamily)
     val path = item.networkSource?.relativePath ?: item.originalUri
     if (app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(path) in setOf("mkv", "webm")) {
@@ -159,8 +171,9 @@ object SubtitleFontCache {
             val key = app.gyrolet.mpvrx.domain.cloud.cloudMediaKey(connection, source.relativePath, entry?.size ?: -1, entry?.lastModified ?: 0)
             app.gyrolet.mpvrx.domain.cloud.MoovIndexCache.ensureLoadedFromDisk(key)
             val cached = app.gyrolet.mpvrx.domain.cloud.MoovIndexCache.get(key)?.parsed?.assFontNames
+            CloudTrace.event("fonts.media.index", source.connectionId, detail = "cached=${cached != null} referenced=${cached?.size ?: 0}")
             if (cached != null) names += cached
-            else if (connection != null) {
+            else if (connection != null && !cachedOnly) {
               val url = proxy.registerStream(streamId, connection, source.relativePath, entry?.size ?: -1, "video/x-matroska")
               registered = true
               names += extractor.extractAssFontNames(url)
@@ -175,11 +188,15 @@ object SubtitleFontCache {
             input?.use { names += extractor.parseAssFontsFromHeader(it.readNBytes(1024 * 1024)) }
           }
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (_: Exception) { /* System and embedded fonts remain usable when probing fails. */ }
+        catch (error: Exception) { CloudTrace.event("fonts.media.failed", detail = "error=${error.javaClass.simpleName}") }
         finally { if (registered) proxy.unregisterStream(streamId) }
       }
     }
-    return select(context, item.stableId, names, reset = true)
+    CloudTrace.event("fonts.media.probed", detail = "referenced=${names.size} elapsedMs=${(System.nanoTime()-prepareStart)/1000000}")
+    if (expectedGeneration != null && PlaybackSession.state.value.generation != expectedGeneration) return directory(context, item.stableId).path
+    return select(context, item.stableId, names, reset = cachedOnly).also {
+      CloudTrace.event("fonts.media.end", detail = "elapsedMs=${(System.nanoTime()-prepareStart)/1000000}")
+    }
   }
 
   suspend fun prepareExternal(context: Context, uri: String, expectedGeneration: Long? = null, fileName: String? = null) {
@@ -208,6 +225,7 @@ object SubtitleFontCache {
     val path = select(context, item.stableId, names)
     if (expectedGeneration == null || PlaybackSession.state.value.generation == expectedGeneration) {
       PlaybackSession.setPropertyString("sub-fonts-dir", path)
+      CloudTrace.event("fonts.applied", detail = "files=${File(path).listFiles()?.size ?: 0} assOverride=${PlaybackSession.getPropertyString("sub-ass-override")}")
     }
   }
 }

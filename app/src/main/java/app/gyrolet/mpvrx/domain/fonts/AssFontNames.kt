@@ -18,8 +18,20 @@ internal object AssFontNames {
         value.substringAfter(':').split(',').getOrNull(fontColumn)?.let { add(names, it) }
       }
       // Only override blocks contain ASS font tags; ordinary dialogue is not a font request.
-      Regex("\\{[^}]*}").findAll(value).forEach { block ->
-        Regex("\\\\fn([^\\\\}]+)").findAll(block.value).forEach { add(names, it.groupValues[1]) }
+      var offset = 0
+      while (offset < value.length) {
+        val start = value.indexOf('{', offset)
+        if (start < 0) break
+        val end = value.indexOf('}', start + 1)
+        if (end < 0) break
+        val block = value.substring(start + 1, end)
+        var tag = block.indexOf("\\fn")
+        while (tag >= 0) {
+          val next = block.indexOf('\\', tag + 3).let { if (it < 0) block.length else it }
+          add(names, block.substring(tag + 3, next))
+          tag = block.indexOf("\\fn", next)
+        }
+        offset = end + 1
       }
     }
     return names

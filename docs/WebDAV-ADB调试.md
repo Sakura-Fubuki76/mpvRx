@@ -43,4 +43,15 @@ adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/clou
 
 安装日志版后需由测试者启动应用以初始化文件；文件包含进程启动至后台扫描的全部 CloudTrace 事件。应用不运行时不会产生新日志。
 
-本轮额外事件：`native.yuv.loaded` 表示原生库是否实际加载，`native.yuv.check` 是测试版原生自检结果，`sprite.progress` 是逐批发布的预览格数；`player.assets.begin/end` 与 `player.core.begin/end` 区分素材准备和播放器初始化耗时，`fonts.select` 记录字体库数量、请求/匹配数量与选择耗时。均不输出字体名或视频名。
+本轮额外事件：`native.yuv.loaded` 表示原生库是否实际加载，`native.yuv.check` 是测试版原生自检结果，`sprite.progress` 是逐批发布的预览格数；`player.assets.begin/end` 与 `player.core.begin/end` 区分素材准备和播放器初始化耗时，`fonts.select` 记录字体库数量、请求/匹配数量与选择耗时。原有事件不输出字体名或视频名。
+
+新增播放诊断（测试版）：
+
+- `fonts.media.begin/index/probed/end`：区分前台 cachedOnly 与后台网络字体探测；parserCheck 必须为 true。
+- `player.font.gate`：启动前字体耗时；`player.load.command` → `player.file.loaded` → `player.playback.restart` 的时间戳区分提交加载、文件就绪与画面恢复。
+- `fonts.family`：字体族名及匹配文件数量（字体名称可见，不包含字幕正文或文件路径）；`fonts.applied/background.applied`：实际目录文件数量和 ASS override。
+- `subtitle.match/added/fonts.failed`：匹配与添加成功并不代表字体加载成功。
+- `gesture.subtitle.seek/timeline.seek`：实际进入的横滑分支及章节索引。
+- `sprite.batch/decode/color/frame/failed`：批量下载与解码计数、解码器、crop、平面 row/pixel stride、色彩标准/范围、输出大小与回退错误。native=true 仅证明当前转换使用原生路径，不证明画面质量已验收。
+
+本轮之前的日志已证明 Android ASS 解析抛出 PatternSyntaxException，而字幕添加成功；修复版不再使用该正则。旧雪碧图缓存版本已升级，修复版会重新生成。

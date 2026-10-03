@@ -22,4 +22,7 @@ class AssFontNamesTest {
     assertTrue(AssFontNames.matches("Arial.ttf", "@Arial"))
     assertFalse(AssFontNames.matches("ArialNarrow.ttf", "Arial"))
   }
+  @Test fun handlesConsecutiveOverridesResetAndUnclosedBlocksWithoutRegex() {
+    assertEquals(setOf("Arial", "Verdana"), AssFontNames.parse("{\\fnArial\\b1\\fnVerdana} {\\fn} {\\fnUnclosed"))
+  }
 }
