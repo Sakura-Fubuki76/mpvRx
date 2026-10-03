@@ -2,6 +2,9 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("mpvrx_native" C CXX)
 
+# Apply to subproject shared libraries too (libyuv creates a shared target).
+add_link_options("-Wl,-z,max-page-size=16384")
+
 # Release-only native optimization shared by MpvRx-owned JNI/helper targets.
 # Keep this scoped to our small native targets; the prebuilt mpvlib AARs are
 # optimized separately when their mpv/FFmpeg toolchain is built.

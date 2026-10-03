@@ -60,6 +60,7 @@ android {
     externalNativeBuild {
       cmake {
         abiFilters += activeAbis
+        targets += listOf("ytdl_wrapper", "qjs_runtime", "mpvrx_yuv")
       }
     }
   }
@@ -169,6 +170,8 @@ android {
     }
     jniLibs {
       useLegacyPackaging = true
+      // JNI links libyuv statically; do not package the upstream optional shared target.
+      excludes += "**/libyuv.so"
       pickFirsts += "**/libc++_shared.so"
     }
   }
