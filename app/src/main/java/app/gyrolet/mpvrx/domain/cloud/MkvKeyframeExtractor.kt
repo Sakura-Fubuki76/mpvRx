@@ -32,6 +32,9 @@ class MkvKeyframeExtractor(
 
       cache[cacheKey]?.let { return@withContext it }
 
+      MoovIndexCache.ensureLoadedFromDisk(cacheKey)
+      MoovIndexCache.get(cacheKey)?.parsed?.let { return@withContext it }
+
       val lock = keyMutexes.computeIfAbsent(cacheKey) { Mutex() }
       try {
         lock.withLock {
@@ -216,6 +219,7 @@ class MkvKeyframeExtractor(
         contentLength = contentLength,
         durationMs = parsed.durationMs,
         chapters = chapters,
+        parsed = parsed,
       ),
     )
     Logger.d(BUG4_TAG, "MKV MoovIndexCache stored: ${keyframes.size} keyframes, ${chapters.size} chapters")

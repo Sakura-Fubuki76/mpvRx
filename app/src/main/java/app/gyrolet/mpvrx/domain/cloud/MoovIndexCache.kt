@@ -38,6 +38,7 @@ object MoovIndexCache {
     val contentLength: Long,
     val durationMs: Long?,
     val chapters: List<ChapterEntry> = emptyList(),
+    val parsed: Mp4KeyframeExtractor.ParsedMoov? = null,
   )
 
   @Serializable
@@ -54,6 +55,7 @@ object MoovIndexCache {
     val contentLength: Long,
     val durationMs: Long?,
     val chapters: List<ChapterEntry> = emptyList(),
+    val parsed: Mp4KeyframeExtractor.ParsedMoov? = null,
   )
 
   private val json = Json { ignoreUnknownKeys = true }
@@ -103,8 +105,8 @@ object MoovIndexCache {
     val key = cacheKey(url)
     synchronized(lock) {
       entries[key] = entry
+      writeToDisk(key, entry)
     }
-    writeToDisk(key, entry)
     if (entry.chapters.isNotEmpty()) {
       Logger.d(TAG, "MoovIndexCache PUT: ${entry.chapters.size} chapters for key=${key.take(80)}")
     }
@@ -174,8 +176,11 @@ object MoovIndexCache {
           contentLength = entry.contentLength,
           durationMs = entry.durationMs,
           chapters = entry.chapters,
+          parsed = entry.parsed,
         )
-      file.writeText(json.encodeToString(DiskEntry.serializer(), diskEntry))
+      val temporary = File(file.parentFile, file.name + ".tmp")
+      temporary.writeText(json.encodeToString(DiskEntry.serializer(), diskEntry))
+      java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE)
     }.onFailure { error ->
       Logger.w(TAG, "Failed to write moov index to disk", error)
     }
@@ -204,6 +209,7 @@ object MoovIndexCache {
         contentLength = diskEntry.contentLength,
         durationMs = diskEntry.durationMs,
         chapters = diskEntry.chapters,
+        parsed = diskEntry.parsed,
       )
     }.onFailure { error ->
       Logger.w(TAG, "Failed to read moov index from disk", error)

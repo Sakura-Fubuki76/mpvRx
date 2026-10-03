@@ -215,6 +215,7 @@ class Mp4KeyframeExtractor(
     return "%d:%02d".format(min, sec)
   }
 
+  @kotlinx.serialization.Serializable
   data class MoovInfo(
     val timescale: Int,
     val duration: Long,
@@ -227,6 +228,7 @@ class Mp4KeyframeExtractor(
     val keyframes: List<KeyframeEntry>,
   )
 
+  @kotlinx.serialization.Serializable
   data class KeyframeEntry(
     val sampleIndex: Int,
     val timeMs: Long,
@@ -250,6 +252,9 @@ class Mp4KeyframeExtractor(
       log { "MOOV cache hit: bytes=${it.moovByteSize} duration=${it.durationMs ?: 0}" }
       return it
     }
+
+    MoovIndexCache.ensureLoadedFromDisk(cacheKey)
+    MoovIndexCache.get(cacheKey)?.parsed?.let { return it }
 
     val lock = moovLocks.computeIfAbsent(cacheKey) { Mutex() }
     return try {
@@ -295,6 +300,7 @@ class Mp4KeyframeExtractor(
               contentLength = contentLength,
               durationMs = durationMs,
               chapters = chapters,
+              parsed = parsed,
             ),
           )
         }
@@ -590,6 +596,7 @@ class Mp4KeyframeExtractor(
     }
   }
 
+  @kotlinx.serialization.Serializable
   data class ParsedMoov(
     val contentLength: Long,
     val moovByteSize: Int,
