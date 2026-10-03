@@ -84,6 +84,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          submodules: recursive
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -186,6 +187,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Download release assets
         uses: actions/download-artifact@v7

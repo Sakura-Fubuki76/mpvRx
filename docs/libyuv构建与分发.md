@@ -2,7 +2,7 @@
 
 libyuv 是 app 的 CMake 原生依赖，不是独立 Gradle 模块或仅在本机存在的二进制。
 
-- 源码：`app/src/main/cpp/third_party/libyuv`，上游版本记录于 `README.mpvrx.md`。
+- 源码：`app/src/main/cpp/third_party/libyuv`，Git 子模块固定版本记录于 `app/src/main/cpp/third_party/libyuv.UPSTREAM.md`。
 - 上游 LICENSE、PATENTS、AUTHORS 保留；LICENSE/PATENTS 和来源记录也打包到 APK 的 `assets/licenses/libyuv`。
 - JNI 桥接：`app/src/main/cpp/yuv/yuv_to_bitmap.cpp`，由 app 根 CMake 定义 `mpvrx_yuv`，链接源码构建的 `yuv` 静态库。
 - Gradle：`app/build.gradle.kts` 已声明 externalNativeBuild，NDK 27.3.13750724、CMake 3.22.1；标准 APK 构建自动编译并打包 `libmpvrx_yuv.so`。
@@ -17,3 +17,5 @@ libyuv 是 app 的 CMake 原生依赖，不是独立 Gradle 模块或仅在本�
 标准 CMake 全目标构建曾额外生成并让 AGP 收集 libyuv.so（4KB LOAD 对齐），而真正的 JNI libmpvrx_yuv.so 以及其余 18 个原生库都为 16KB。该共享库未被任何 APK 原生库的 DT_NEEDED 引用，JNI 使用静态 yuv。现限制 externalNativeBuild 目标为 ytdl_wrapper/qjs_runtime/mpvrx_yuv，明确排除 APK 中多余 libyuv.so，同时根 CMake add_link_options 将 16KB 链接参数覆盖到子项目共享目标，避免只覆盖自有 JNI 目标。
 
 yume 当前通过 Maven 引用 io.github.sakurafubuki.yume:yume-lib；yume-lib 的下载脚本 git clone libyuv 源码到 buildscripts/deps，再由 CMake add_subdirectory 构建。当前 .gitmodules 为空，不能将其描述为 Git 子模块。Git 子模块管理源码来源，Gradle 库模块管理 Android 构建和发布；两者不替代 ELF 对齐配置。
+
+现在 libyuv 作为 Git 子模块固定到 aa6cedb39c87910b4c28e5c71c2121fc45fd234b，沿用已验证的算法版本。首次克隆使用 git clone --recurse-submodules，已有检出使用 git submodule update --init --recursive。GitHub 工作流 checkout 已启用 submodules: recursive。CMake 仍链接静态 yuv，16KB 链接与多余共享库排除规则不受源码管理形式影响。

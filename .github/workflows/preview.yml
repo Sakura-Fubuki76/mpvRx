@@ -34,6 +34,7 @@ jobs:
       - name: Checkout preview source
         uses: actions/checkout@v7
         with:
+          submodules: recursive
           fetch-depth: 0
 
       - name: Check for unpublished app activity
@@ -150,6 +151,7 @@ jobs:
       - name: Checkout preview source
         uses: actions/checkout@v7
         with:
+          submodules: recursive
           # BuildConfig.GIT_COUNT and the preview version code rely on the real repository history.
           fetch-depth: 0
 
@@ -264,6 +266,8 @@ jobs:
     steps:
       - name: Checkout preview source
         uses: actions/checkout@v7
+        with:
+          submodules: recursive
 
       - name: Download preview APKs
         uses: actions/download-artifact@v7
