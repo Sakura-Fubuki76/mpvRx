@@ -3842,6 +3842,7 @@ class PlayerActivity :
     var headers = PlaybackHttpHeaders.merge(*sources)
     headers = PlaybackHttpHeaders.withDefault(headers, "Referer", HttpUtils.extractRefererDomain(uri))
     headers = PlaybackHttpHeaders.withDefault(headers, "User-Agent", NetworkUserAgent.resolve(this))
+    app.gyrolet.mpvrx.network.CloudStreamingHeaders.userAgent(uri.toString())?.let { headers = headers.filterKeys { !it.equals("User-Agent", true) } + ("User-Agent" to it) }
     return headers
   }
 

@@ -31,6 +31,7 @@ object SharedHttpClient {
       .readTimeout(30, TimeUnit.SECONDS)
       .writeTimeout(30, TimeUnit.SECONDS)
       .retryOnConnectionFailure(true)
+      .addNetworkInterceptor { chain -> chain.proceed(CloudStreamingHeaders.apply(chain.request())) }
       .build()
   }
 

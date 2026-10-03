@@ -921,7 +921,7 @@ object PlaybackSession : MPVLib.EventObserver {
         )
       }
       clearTimelinePropertiesLocked()
-      val userAgent = PlaybackHttpHeaders.userAgent(resolvedItem.headers)
+      val userAgent = app.gyrolet.mpvrx.network.CloudStreamingHeaders.userAgent(resolvedItem.originalUri) ?: PlaybackHttpHeaders.userAgent(resolvedItem.headers)
       val headerFields = PlaybackHttpHeaders.toMpvHeaderFields(resolvedItem.headers)
       // URL-specific headers are request metadata, not a global mpv preference. Always apply the
       // media UA, then restore the post-mpv.conf default for a headerless item.
