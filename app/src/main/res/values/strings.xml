@@ -2771,7 +2771,7 @@
   <string name="onboarding_configuration_no_backup">Folder configured. Downloads will use Configuration/Downloads.</string>
   <string name="onboarding_configuration_restored">Restored settings from %1$s. Downloads will use Configuration/Downloads.</string>
   <string name="onboarding_configuration_restore_failed">Folder setup could not be completed: %1$s</string>
-    <string name="cloud_add_server">Add WebDAV / OpenList server</string>
+    <string name="cloud_add_server">Add WebDAV server</string>
     <string name="cloud_add_server_summary">Connect cloud video libraries with your server account</string>
     <string name="cloud_hide_empty_folders">Hide folders without videos</string>
     <string name="cloud_advanced_mp4">Advanced MP4 thumbnail download</string>
@@ -2782,5 +2782,5 @@
     <string name="cloud_library_mode">Show WebDAV tab</string>
     <string name="cloud_library_mode_cloud">Cloud folders</string>
     <string name="cloud_library_mode_local">Local folders</string>
-    <string name="cloud_select_storages_hint">Choose WebDAV or OpenList storage in Settings → Folders</string>
+    <string name="cloud_select_storages_hint">Choose WebDAV storage in Settings → Folders</string>
 </resources>

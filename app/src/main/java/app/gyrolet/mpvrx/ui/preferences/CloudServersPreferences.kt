@@ -39,7 +39,7 @@ internal fun CloudServersPreferences() {
   var editor by remember { mutableStateOf<NetworkConnection?>(null) }
   var deleting by remember { mutableStateOf<NetworkConnection?>(null) }
   Column {
-    PreferenceSectionHeader(title = "WebDAV / OpenList")
+    PreferenceSectionHeader(title = "WebDAV")
     PreferenceCard {
       connections.filter { it.protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) }.forEach { server ->
         ServerPreferenceItem(
@@ -80,7 +80,7 @@ internal fun CloudServersPreferences() {
   editor?.let { server ->
     ConnectionEditorSheet(title = stringResource(R.string.cloud_add_server), initialConnection = server,
       isEditing = server.id != 0L, onDismiss = { editor = null },
-      allowedProtocols = listOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST),
+      allowedProtocols = if (server.protocol == NetworkProtocol.OPENLIST) listOf(NetworkProtocol.OPENLIST) else listOf(NetworkProtocol.WEBDAV),
       onSave = { value, replace ->
         if (server.id == 0L) model.addConnection(value) else model.updateConnection(value, replace)
         editor = null

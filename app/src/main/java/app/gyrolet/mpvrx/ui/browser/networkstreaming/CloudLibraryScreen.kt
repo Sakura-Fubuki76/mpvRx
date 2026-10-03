@@ -70,7 +70,7 @@ object CloudLibraryScreen : Screen {
     }
     editing?.let { connection ->
       ConnectionEditorSheet(title = stringResource(R.string.cloud_add_server), initialConnection = connection,
-        isEditing = true, allowedProtocols = listOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST),
+        isEditing = true, allowedProtocols = if (connection.protocol == NetworkProtocol.OPENLIST) listOf(NetworkProtocol.OPENLIST) else listOf(NetworkProtocol.WEBDAV),
         onDismiss = { editing = null }, onSave = { value, replace -> model.updateConnection(value, replace); editing = null })
     }
     deleting?.let { connection ->

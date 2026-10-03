@@ -27,13 +27,14 @@ class OpenListClient(
   private val connection: NetworkConnection,
   private val http: OkHttpClient = SharedHttpClient.derive { callTimeout(0, TimeUnit.SECONDS) },
   private val tokenStore: OpenListTokenStore? = null,
+  private val apiPrefix: String = "",
 ) : NetworkClient {
   private val json = Json { ignoreUnknownKeys = true }
   private val loginMutex = Mutex()
   @Volatile private var token: String? = null
   @Volatile private var connected = false
   private val origin = HttpUrl.Builder().scheme(if (connection.useHttps) "https" else "http")
-    .host(connection.host.trim().removePrefix("[").removeSuffix("]")).port(connection.port).build()
+    .host(connection.host.trim().removePrefix("[").removeSuffix("]")).port(connection.port).addPathSegments(apiPrefix.trim('/')).build()
   private val root = NetworkPath.from(connection.path)
 
   private fun fullPath(path: String): String = NetworkPath.from(root.value + "/" + NetworkPath.from(path).relative).value
