@@ -60,6 +60,7 @@ class FileSystemBrowserViewModel(
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val browserPreferences: BrowserPreferences by inject()
+  private val foldersPreferences: app.gyrolet.mpvrx.preferences.FoldersPreferences by inject()
   private val appearancePreferences: app.gyrolet.mpvrx.preferences.AppearancePreferences by inject()
 
   // Special marker for "show storage volumes" mode
@@ -143,7 +144,10 @@ class FileSystemBrowserViewModel(
     // If no initial path was specified, check storage volumes and navigate accordingly
     if (initialPath == null) {
       viewModelScope.launch(Dispatchers.IO) {
-        val roots = MediaFileRepository.getStorageRoots(getApplication())
+        // Only the number of volumes decides where to navigate, and counting what is on them is a
+        // walk of all of storage. Asking for the volumes without their counts turns a launch that
+        // could take seconds into one that only enumerates volumes.
+        val roots = MediaFileRepository.getStorageRoots(getApplication(), includeCounts = false)
         if (roots.size == 1) {
           // Only one storage volume, navigate directly to it and set as home
           val singleRoot = roots.first()
@@ -189,9 +193,13 @@ class FileSystemBrowserViewModel(
         _unsortedItems,
         browserPreferences.folderSortType.changes(),
         browserPreferences.folderSortOrder.changes(),
-      ) { items, sortType, sortOrder ->
-        // Sort using the same logic as Fossify's FileDirItem.sort()
-        SortUtils.sortFileSystemItems(items, sortType, sortOrder)
+        foldersPreferences.blacklistedFolders.changes(),
+        _currentPath,
+      ) { items, sortType, sortOrder, blacklist, currentPath ->
+        // Sorting using the same logic as Fossify's FileDirItem.sort(), after hiding what the user
+        // blacklisted. Folder mode has always applied this list; without it here, blacklisting a
+        // folder only hid it from one of the two places it appears in.
+        SortUtils.sortFileSystemItems(blacklistItems(items, blacklist, currentPath), sortType, sortOrder)
       }.collectLatest { sortedItems ->
         _items.value = sortedItems
         Log.d(TAG, "Items sorted: ${sortedItems.size} items")
@@ -442,12 +450,26 @@ class FileSystemBrowserViewModel(
         if (path == STORAGE_ROOTS_MARKER) {
           Log.d(TAG, "Loading storage roots")
           _breadcrumbs.value = emptyList()
-          val roots = MediaFileRepository.getStorageRoots(getApplication(), forceFileSystemCheck)
-          ensureActive()
-          _unsortedItems.value = roots
+          // Cleared before the first snapshot paints, not after the last one lands, or the previous
+          // directory's markers stay live while the volumes are already on screen.
           _videoFilesWithPlayback.value = emptyMap()
           _newVideoIds.value = emptySet()
           _watchedVideoIds.value = emptySet()
+          // Volumes appear first with no counts, then each one republishes as its recursive count
+          // finishes. Waiting for every count before showing the list means a storage picker that
+          // stays blank on a large library, and the counts are decoration on this screen.
+          val roots =
+            MediaFileRepository.getStorageRoots(
+              context = getApplication(),
+              forceFileSystemCheck = forceFileSystemCheck,
+              onSnapshot = { found ->
+                ensureActive()
+                _unsortedItems.value = found
+                _isLoading.value = false
+              },
+            )
+          ensureActive()
+          _unsortedItems.value = roots
           Log.d(TAG, "Loaded ${roots.size} storage roots")
         } else {
           // Update breadcrumbs for real paths
@@ -467,10 +489,18 @@ class FileSystemBrowserViewModel(
               ZipArchiveMedia.scan(getApplication(), path, includeAudio = false)
             } else {
               MediaFileRepository.scanDirectory(
-                getApplication(),
-                path,
+                context = getApplication(),
+                path = path,
                 showAllFileTypes = false,
                 forceFileSystemCheck = forceFileSystemCheck,
+                // Subfolders first, then files as they are found, so the screen is useful while the
+                // directory is still being read. Only the result below is authoritative: it also
+                // carries the playback and NEW markers, which are applied once at the end.
+                onSnapshot = { partial ->
+                  ensureActive()
+                  _unsortedItems.value = partial
+                  _isLoading.value = false
+                },
               )
             }
           scanResult
@@ -564,6 +594,31 @@ class FileSystemBrowserViewModel(
         Log.e(TAG, "Exception loading directory", e)
       } finally {
         if (isActive) _isLoading.value = false
+      }
+    }
+  }
+
+  /**
+   * Hides what the user blacklisted, matching the rule folder mode applies: a blacklisted folder
+   * takes its subfolders with it.
+   *
+   * The one thing this does not do is blank a directory the user is standing in. Folder mode can
+   * hide a blacklisted folder because you cannot navigate into a list you cannot see; tree mode can,
+   * by path or breadcrumb, and filtering there would leave an empty screen with no way to tell it
+   * apart from a genuinely empty folder. Inside a blacklisted directory nothing is filtered, which
+   * is also what makes it a usable escape hatch.
+   */
+  private fun blacklistItems(
+    items: List<FileSystemItem>,
+    blacklist: Set<String>,
+    currentPath: String,
+  ): List<FileSystemItem> {
+    if (blacklist.isEmpty()) return items
+    if (blacklist.any { currentPath.equals(it, ignoreCase = true) }) return items
+    return items.filter { item ->
+      blacklist.none { blocked ->
+        item.path.equals(blocked, ignoreCase = true) ||
+          item.path.startsWith(if (blocked.endsWith("/")) blocked else "$blocked/", ignoreCase = true)
       }
     }
   }

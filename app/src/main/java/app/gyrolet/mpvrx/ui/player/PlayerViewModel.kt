@@ -106,6 +106,9 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -522,7 +525,6 @@ class PlayerViewModel : ViewModel(),
   private val renderPrepDispatcher = Dispatchers.Default.limitedParallelism(1)
   private var autoCropJob: Job? = null
   private var autoCropReadinessJob: Job? = null
-  private var autoCropSettleJob: Job? = null
   private var autoCropAnalyzedGeneration = -1L
   private var autoCropApplied = false
   // Memory-only analysis cache. This is not playback history and does not enable auto-crop.
@@ -544,13 +546,6 @@ class PlayerViewModel : ViewModel(),
 
     data object Unavailable : AutoCropAnalysisResult
   }
-
-  private data class AutoCropMetadata(
-    val width: Int,
-    val height: Int,
-    val x: Int,
-    val y: Int,
-  )
 
   private fun updateMetadataCache(
     key: String,
@@ -2801,7 +2796,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     syncplayManager.updateFileInfo(currentSyncplayFileInfo())
     applyEqualizerMpvFilters()
     if (isAudioOnly.value) loadLyricsForCurrentTrack()
-    scheduleAutoCropSettled()
+    scheduleAutoCropAnalysis()
   }
 
   fun updateTorrentState(state: TorrentStreamingState) {
@@ -3277,23 +3272,18 @@ val isBrightnessSliderShown = MutableStateFlow(false)
 
   private companion object {
     const val TAG = "PlayerViewModel"
-    const val AUTO_CROP_SAMPLE_COUNT = 7
+    const val AUTO_CROP_SAMPLE_COUNT = 3
     const val AUTO_CROP_MIN_VALID_SAMPLES = 3
-    const val AUTO_CROP_THUMBNAIL_SIZE = 640
+    const val AUTO_CROP_THUMBNAIL_SIZE = 256
     const val AUTO_CROP_READY_TIMEOUT_MS = 15_000L
     const val AUTO_CROP_CACHE_CAPACITY = 20
     const val AUTO_CROP_FILTER_LABEL = "mpvrx_autocrop_detect"
-    const val AUTO_CROP_DETECT_LIMIT = "24/255"
-    const val AUTO_CROP_DETECT_ROUND = 2
-    const val AUTO_CROP_ACTIVE_DETECT_TIMEOUT_MS = 1_600L
-    const val AUTO_CROP_ACTIVE_SETTLE_MS = 1_000L
     const val AUTO_CROP_METADATA_POLL_MS = 100L
-    const val AUTO_CROP_HWDEC_TIMEOUT_MS = 1_500L
     const val AUTO_CROP_ACTIVE_FRAME_TIMEOUT_MS = 2_500L
     const val AUTO_CROP_ACTIVE_FRAME_INTERVAL_MS = 300L
-    // Analysis flips hwdec and inserts a cropdetect filter, so it must not run during open.
-    // It is scheduled after the first frames are on screen instead (see scheduleAutoCropSettled).
-    const val AUTO_CROP_OPEN_SETTLE_MS = 4_000L
+    // Lets the first-frame decode and the initial buffer fill settle before auto-crop competes
+    // for the decoder, so detection cannot delay the video the user is waiting on.
+    const val AUTO_CROP_START_SETTLE_MS = 250L
     const val AUTO_SHOW_SKIP_CHIP_DURATION = 10.0
     const val SEEK_COALESCE_DELAY_MS = 60L
     // Reported positions within this distance of the requested target count as "landed".
@@ -3319,10 +3309,13 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     const val NATIVE_LINEAR_HDR_YOUTUBE_BLUR_RADIUS = 100.0
     val MPV_ONLY_PSEUDO_PROTOCOLS =
       setOf("fd", "fdclose", "edl", "memory", "null", "av", "lavf", "archive", "slice", "mf", "hex", "bd", "dvd", "dvb")
-    const val PLAYLIST_METADATA_PREFETCH_RADIUS = 40
-    const val PLAYLIST_METADATA_PREFETCH_LIMIT = 120
-    const val PLAYLIST_NETWORK_METADATA_PREFETCH_RADIUS = 3
-    const val PLAYLIST_NETWORK_METADATA_TIMEOUT_MS = 8_000L
+    const val PLAYLIST_METADATA_PREFETCH_RADIUS = 8
+    const val PLAYLIST_METADATA_PREFETCH_LIMIT = 30
+    const val PLAYLIST_NETWORK_METADATA_PREFETCH_RADIUS = 1
+    const val PLAYLIST_NETWORK_METADATA_TIMEOUT_MS = 2_000L
+    // Hard ceiling on concurrent metadata extractions. Batching on this value is what keeps the
+    // prefetch genuinely parallel without letting it saturate the decoder or the network stack.
+    const val PLAYLIST_METADATA_PARALLEL_LIMIT = 5
     const val INTRO_MARKER_CACHE_PREFS = "intro_marker_cache"
     const val INTRO_MARKER_CACHE_PREFIX = "intro_marker:v3:"
     const val INTRO_MARKER_CACHE_MAX_ENTRIES = 200
@@ -5347,14 +5340,27 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   }
 
   fun changeSubtitlePositionTo(position: Int) {
-    val newPosition = clampSubtitlePosition(position)
-    subtitlesPreferences.subPos.set(newPosition)
-    syncSubtitleLayout(newPosition)
-    playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPosition))
+    changeSubtitlePositionsTo(position, subtitlesPreferences.secondarySubPos.get())
   }
 
-  private fun syncSubtitleLayout(primaryPosition: Int = subtitlesPreferences.subPos.get()) {
-    applySubtitleLayout(primaryPosition, subtitlesPreferences.overrideAssSubs.get())
+  /**
+   * Moves primary + secondary subtitles together (secondary keeps its offset from
+   * primary). Both mpv props, prefs, OSD and settings sliders update live.
+   */
+  fun changeSubtitlePositionsTo(primaryPosition: Int, secondaryPosition: Int) {
+    val newPrimary = clampSubtitlePosition(primaryPosition)
+    val newSecondary = clampSubtitlePosition(secondaryPosition)
+    subtitlesPreferences.subPos.set(newPrimary)
+    subtitlesPreferences.secondarySubPos.set(newSecondary)
+    syncSubtitleLayout(newPrimary, newSecondary)
+    playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(R.string.subtitle_position_update, newPrimary))
+  }
+
+  private fun syncSubtitleLayout(
+    primaryPosition: Int = subtitlesPreferences.subPos.get(),
+    secondaryPosition: Int = subtitlesPreferences.secondarySubPos.get(),
+  ) {
+    applySubtitleLayout(primaryPosition, subtitlesPreferences.overrideAssSubs.get(), secondaryPosition)
   }
 
   private fun syncCurrentSystemVolume(): Int {
@@ -5574,6 +5580,12 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       }
     autoCropJob =
       viewModelScope.launch(Dispatchers.IO) {
+        // Auto-crop runs the moment the phase flips to READY. Yield briefly so the first-frame
+        // decode and the opening buffer fill finish before we sample frames or seek elsewhere.
+        delay(AUTO_CROP_START_SETTLE_MS)
+        if (!PlaybackSession.isCurrentGeneration(generation) || !playerPreferences.autoCropBlackBars.get()) {
+          return@launch
+        }
         Log.i(TAG, "Auto-crop analyzing generation=$generation source=$sourceIdentity")
         val result =
           try {
@@ -5584,7 +5596,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
               val positions = autoCropSamplePositions(source, durationSeconds)
               val combined = extractAutoCropSamples(source, positions)
               when {
-                combined == null -> detectAutoCropFromActivePlayback(generation, sourceWidth, sourceHeight)
+                combined == null -> detectAutoCropFromActivePlayback(generation)
                 else -> {
                   val detected = AutoCropAnalyzer.combine(combined.edges)
                   if (detected == null) {
@@ -5597,7 +5609,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
                 }
               }
             } else {
-              detectAutoCropFromActivePlayback(generation, sourceWidth, sourceHeight)
+              detectAutoCropFromActivePlayback(generation)
             }
           } catch (cancellation: kotlinx.coroutines.CancellationException) {
             throw cancellation
@@ -5641,68 +5653,18 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       }
   }
 
-  private suspend fun detectAutoCropFromActivePlayback(
-    generation: Long,
-    sourceWidth: Int,
-    sourceHeight: Int,
-  ): AutoCropAnalysisResult {
-    if (MpvConfigOverridePolicy.isOwnedByMpvConf("vf")) return detectAutoCropFromCurrentFrames(generation)
+  /**
+   * Detects encoded bars from the frames the active core already has in memory.
+   *
+   * Sampling in-memory frames keeps auto-crop off the decoder and filter-graph hot path: switching
+   * `hwdec` to software and installing a `cropdetect` filter mid-playback forces a full decoder
+   * re-init and filter rebuild, which stalls every network/HLS source for the whole detection pass.
+   */
+  private suspend fun detectAutoCropFromActivePlayback(generation: Long): AutoCropAnalysisResult {
     if (PlaybackSession.getPropertyBoolean("current-tracks/video/image") == true) {
       return AutoCropAnalysisResult.Unavailable
     }
-
-    var hwdecBackup: String? = null
-    try {
-      PlaybackSession.removeVideoFilter(AUTO_CROP_FILTER_LABEL)
-      val activeHwdec = PlaybackSession.getPropertyString("hwdec-current").orEmpty()
-      val needsSoftwareFrames =
-        activeHwdec.isNotBlank() &&
-          activeHwdec != "no" &&
-          !activeHwdec.endsWith("-copy") &&
-          activeHwdec !in setOf("crystalhd", "rkmpp")
-      if (needsSoftwareFrames) {
-        if (MpvConfigOverridePolicy.isOwnedByMpvConf("hwdec")) {
-          return detectAutoCropFromCurrentFrames(generation)
-        }
-        hwdecBackup = PlaybackSession.getPropertyString("hwdec")?.takeIf(String::isNotBlank)
-        PlaybackSession.setPropertyString("hwdec", "no")
-        withTimeoutOrNull(AUTO_CROP_HWDEC_TIMEOUT_MS) {
-          while (currentCoroutineContext().isActive && PlaybackSession.isCurrentGeneration(generation)) {
-            if (PlaybackSession.getPropertyString("hwdec-current").orEmpty() in setOf("", "no")) return@withTimeoutOrNull
-            delay(AUTO_CROP_METADATA_POLL_MS)
-          }
-        }
-      }
-
-      if (!PlaybackSession.isCurrentGeneration(generation)) return AutoCropAnalysisResult.Unavailable
-      PlaybackSession.command(
-        "vf",
-        "pre",
-        "@$AUTO_CROP_FILTER_LABEL:cropdetect=limit=$AUTO_CROP_DETECT_LIMIT:round=$AUTO_CROP_DETECT_ROUND:reset=0",
-      )
-
-      val startedAt = SystemClock.elapsedRealtime()
-      val deadline = startedAt + AUTO_CROP_ACTIVE_DETECT_TIMEOUT_MS
-      var metadata: AutoCropMetadata? = null
-      while (
-        currentCoroutineContext().isActive &&
-        PlaybackSession.isCurrentGeneration(generation) &&
-        SystemClock.elapsedRealtime() < deadline
-      ) {
-        delay(AUTO_CROP_METADATA_POLL_MS)
-        metadata = readAutoCropMetadata()
-        if (metadata != null && SystemClock.elapsedRealtime() - startedAt >= AUTO_CROP_ACTIVE_SETTLE_MS) break
-      }
-
-      if (!PlaybackSession.isCurrentGeneration(generation)) return AutoCropAnalysisResult.Unavailable
-      return metadata?.toAutoCropResult(sourceWidth, sourceHeight) ?: detectAutoCropFromCurrentFrames(generation)
-    } finally {
-      PlaybackSession.removeVideoFilter(AUTO_CROP_FILTER_LABEL)
-      val backup = hwdecBackup
-      if (backup != null && PlaybackSession.getPropertyString("hwdec") == "no") {
-        PlaybackSession.setPropertyString("hwdec", backup)
-      }
-    }
+    return detectAutoCropFromCurrentFrames(generation)
   }
 
   private suspend fun detectAutoCropFromCurrentFrames(generation: Long): AutoCropAnalysisResult {
@@ -5722,43 +5684,6 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     return AutoCropAnalyzer.combine(samples)
       ?.let(AutoCropAnalysisResult::Detected)
       ?: AutoCropAnalysisResult.NoBars
-  }
-
-  private fun readAutoCropMetadata(): AutoCropMetadata? {
-    fun value(key: String): Int? =
-      PlaybackSession
-        .getPropertyString("vf-metadata/$AUTO_CROP_FILTER_LABEL/lavfi.cropdetect.$key")
-        ?.toIntOrNull()
-
-    return AutoCropMetadata(
-      width = value("w") ?: return null,
-      height = value("h") ?: return null,
-      x = value("x") ?: return null,
-      y = value("y") ?: return null,
-    )
-  }
-
-  private fun AutoCropMetadata.toAutoCropResult(
-    sourceWidth: Int,
-    sourceHeight: Int,
-  ): AutoCropAnalysisResult {
-    if (width <= 0 || height <= 0 || x < 0 || y < 0) return AutoCropAnalysisResult.Unavailable
-    if (x + width > sourceWidth + AUTO_CROP_DETECT_ROUND || y + height > sourceHeight + AUTO_CROP_DETECT_ROUND) {
-      return AutoCropAnalysisResult.Unavailable
-    }
-    if (width < sourceWidth / 2 || height < sourceHeight / 2) return AutoCropAnalysisResult.NoBars
-
-    val right = (sourceWidth - width - x).coerceAtLeast(0)
-    val bottom = (sourceHeight - height - y).coerceAtLeast(0)
-    if (x < 2 && y < 2 && right < 2 && bottom < 2) return AutoCropAnalysisResult.NoBars
-    return AutoCropAnalysisResult.Detected(
-      AutoCropEdges(
-        left = x.toFloat() / sourceWidth,
-        top = y.toFloat() / sourceHeight,
-        right = right.toFloat() / sourceWidth,
-        bottom = bottom.toFloat() / sourceHeight,
-      ),
-    )
   }
 
   private fun autoCropSamplePositions(
@@ -5889,31 +5814,11 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   }
 
   private fun cancelAutoCropAnalysis() {
-    autoCropSettleJob?.cancel()
-    autoCropSettleJob = null
     autoCropJob?.cancel()
     autoCropJob = null
     autoCropReadinessJob?.cancel()
     autoCropReadinessJob = null
     PlaybackSession.removeVideoFilter(AUTO_CROP_FILTER_LABEL)
-  }
-
-  /**
-   * Starts auto-crop analysis only after the open has settled. The analysis can switch hwdec and
-   * touch the filter chain, so running it from the load-completed signal directly stalls the first
-   * seconds of playback. A new load cancels the pending run via [cancelAutoCropAnalysis].
-   */
-  private fun scheduleAutoCropSettled() {
-    autoCropSettleJob?.cancel()
-    if (!playerPreferences.autoCropBlackBars.get()) return
-    val generation = PlaybackSession.state.value.generation
-    autoCropSettleJob =
-      viewModelScope.launch {
-        delay(AUTO_CROP_OPEN_SETTLE_MS)
-        autoCropSettleJob = null
-        if (!PlaybackSession.isCurrentGeneration(generation)) return@launch
-        scheduleAutoCropAnalysis()
-      }
   }
 
   private fun refreshStretchAspectAfterCropChange() {
@@ -6439,6 +6344,11 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         }
       val localPath = uri.extractLocalPath() ?: if (uri.scheme == "file") uri.path else null
       val path = localPath ?: resolvedUri.path?.takeIf { File(it).exists() } ?: resolvedUri.toString()
+      // Both spellings are probed below and are identical whenever the scheme is not "content".
+      // Hoisting them keeps the `isAudio` chain a pure read of locals instead of re-lowercasing
+      // the same URI up to four times per queue item.
+      val lowerResolved = resolvedUri.toString().lowercase()
+      val lowerUri = uri.toString().lowercase()
       val isAudio =
         isAudioOnly.value ||
         item.mimeType?.startsWith("audio/", ignoreCase = true) == true ||
@@ -6447,12 +6357,12 @@ val isBrightnessSliderShown = MutableStateFlow(false)
           .substringBefore('#')
           .substringAfterLast('.', "")
           .lowercase() in FileTypeUtils.AUDIO_EXTENSIONS ||
-        resolvedUri.toString().lowercase().contains("audio") ||
-        uri.toString().lowercase().contains("audio") ||
-        resolvedUri.toString().lowercase().contains("stream.view") ||
-        uri.toString().lowercase().contains("stream.view") ||
-        resolvedUri.toString().lowercase().contains("/rest/stream") ||
-        uri.toString().lowercase().contains("/rest/stream") ||
+        lowerResolved.contains("audio") ||
+        lowerUri.contains("audio") ||
+        lowerResolved.contains("stream.view") ||
+        lowerUri.contains("stream.view") ||
+        lowerResolved.contains("/rest/stream") ||
+        lowerUri.contains("/rest/stream") ||
         (item.artist?.isNotBlank() == true && item.durationSeconds != null)
       val isCurrentlyPlaying = index == queue.currentIndex
 
@@ -6851,30 +6761,41 @@ val isBrightnessSliderShown = MutableStateFlow(false)
             item.networkConnectionId == null || abs(item.index - currentIndex) <= PLAYLIST_NETWORK_METADATA_PREFETCH_RADIUS
           }
 
-        // Limit concurrent metadata extraction to avoid overwhelming resources
-        val batchSize = 5
-        metadataItems.chunked(batchSize).forEach { batch ->
-          val updates = mutableMapOf<String, Pair<String, String>>()
+        // Batching both bounds the work and drives the UI updates below: each batch is extracted
+        // in parallel, then published to the StateFlow in one shot. Extraction has to run inside a
+        // coroutineScope so the batch's async children are awaited (and cancelled) together.
+        metadataItems.chunked(PLAYLIST_METADATA_PARALLEL_LIMIT).forEach { batch ->
+          // Two rows can share a URI; the cache and the update map are both keyed by it, so extract
+          // each key once instead of racing two extractions for the same entry.
+          val distinctBatch = batch.distinctBy { it.uri.toString() }
+          val updates =
+            coroutineScope {
+              distinctBatch
+                .map { item ->
+                  async {
+                    val cacheKey = item.uri.toString()
 
-          // Extract metadata for the batch
-          batch.forEach { item ->
-            val cacheKey = item.uri.toString()
+                    val cached = metadataCache.get(cacheKey)
+                    val needsDuration = item.duration.isBlank() && cached?.first.isNullOrBlank()
+                    val needsResolution = !item.isAudio && item.resolution.isBlank() && cached?.second.isNullOrBlank()
+                    if (cached == null && (needsDuration || needsResolution)) {
+                      // Extract metadata
+                      val (durationStr, resolutionStr) = getVideoMetadata(item)
 
-            val cached = metadataCache.get(cacheKey)
-            val needsDuration = item.duration.isBlank() && cached?.first.isNullOrBlank()
-            val needsResolution = !item.isAudio && item.resolution.isBlank() && cached?.second.isNullOrBlank()
-            if (cached == null && (needsDuration || needsResolution)) {
-              // Extract metadata
-              val (durationStr, resolutionStr) = getVideoMetadata(item)
-
-              // Update cache and track update
-              val merged =
-                (durationStr.takeIf(String::isNotBlank) ?: cached?.first.orEmpty()) to
-                  (resolutionStr.takeIf(String::isNotBlank) ?: cached?.second.orEmpty())
-              updateMetadataCache(cacheKey, merged)
-              updates[cacheKey] = merged
+                      // Update cache and track update
+                      val merged =
+                        (durationStr.takeIf(String::isNotBlank) ?: cached?.first.orEmpty()) to
+                          (resolutionStr.takeIf(String::isNotBlank) ?: cached?.second.orEmpty())
+                      updateMetadataCache(cacheKey, merged)
+                      cacheKey to merged
+                    } else {
+                      null
+                    }
+                  }
+                }.awaitAll()
+                .filterNotNull()
+                .toMap()
             }
-          }
 
           // Apply all batched updates at once (single playlist update)
           if (updates.isNotEmpty()) {

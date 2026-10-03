@@ -116,17 +116,13 @@ class FolderListViewModel(
   }
 
   init {
-    // Load cached folders instantly for immediate display
-    val hasCachedData = loadCachedFolders()
-
-    // If no cached data (first launch), scan immediately. Otherwise defer to not slow down app launch
-    if (!hasCachedData) {
+    // The persisted snapshot is the entire launch path: a warm start shows it and scans nothing.
+    // Re-deriving the library on open is what made every relaunch cost a full MediaStore read
+    // plus a filesystem walk, and it could only reproduce what the snapshot already holds.
+    // Refreshing is explicit (refresh()) or event-driven below.
+    if (loadCachedFolders() == null) {
+      // Nothing persisted yet, so a scan is the only way to have a list to show at all.
       loadVideoFolders()
-    } else {
-      viewModelScope.launch(Dispatchers.IO) {
-        kotlinx.coroutines.delay(2000) // Wait 2 seconds before refreshing
-        loadVideoFolders()
-      }
     }
 
     // Refresh on media events and every preference that changes scan/index semantics. Settings UI
@@ -210,30 +206,32 @@ class FolderListViewModel(
     }
   }
 
-  private fun loadCachedFolders(): Boolean {
-    var hasCachedData = false
+  /**
+   * Publishes the persisted snapshot for instant display and returns it, or null when there is
+   * nothing usable to show.
+   */
+  private fun loadCachedFolders(): List<VideoFolder>? {
     val prefs =
       getApplication<Application>().getSharedPreferences("folder_cache", android.content.Context.MODE_PRIVATE)
-    val cachedJson = prefs.getString(currentFolderCacheKey(), null)
+    val cachedJson = prefs.getString(currentFolderCacheKey(), null) ?: return null
 
-    if (cachedJson != null) {
-      try {
-        // Parse JSON and restore folders
-        val folders = parseFoldersFromJson(cachedJson)
-        if (folders.isNotEmpty()) {
-          Log.d(TAG, "Loaded ${folders.size} folders from cache instantly")
-          hasCachedData = true
-          viewModelScope.launch(Dispatchers.IO) {
-            _allVideoFolders.value = folders
-            _hasCompletedInitialLoad.value = true
-          }
-        }
-      } catch (e: Exception) {
-        Log.e(TAG, "Error loading cached folders", e)
+    return try {
+      // Parse JSON and restore folders
+      val folders = parseFoldersFromJson(cachedJson)
+      if (folders.isEmpty()) {
+        null
+      } else {
+        Log.d(TAG, "Loaded ${folders.size} folders from cache instantly")
+        // Published synchronously so the scan path sees a populated list no matter which
+        // coroutine runs first; StateFlow writes are safe from any thread.
+        _allVideoFolders.value = folders
+        _hasCompletedInitialLoad.value = true
+        folders
       }
+    } catch (e: Exception) {
+      Log.e(TAG, "Error loading cached folders", e)
+      null
     }
-
-    return hasCachedData
   }
 
   private fun saveFoldersToCache(folders: List<VideoFolder>) {
@@ -253,10 +251,18 @@ class FolderListViewModel(
       }
   }
 
+  /**
+   * Namespaces the snapshot by everything that changes what a scan produces.
+   *
+   * Launch reads the snapshot without scanning, so a snapshot built under different options must
+   * not be reachable under the new ones. [MediaScanOptions.cacheKey] covers the marker set; the
+   * audio and duration options are folded in here because they are read straight from preferences.
+   */
   private fun currentFolderCacheKey(): String =
     "folders_${if (audioOnly) "audioOnly" else "video"}" +
       "_${if (foldersPreferences.includeNoMediaFolders.get()) "with_nomedia" else "exclude_nomedia"}" +
-      "_audio_${browserPreferences.includeAudioBrowser.get()}_${browserPreferences.minimumAudioDurationSeconds.get()}"
+      "_audio_${browserPreferences.includeAudioBrowser.get()}_${browserPreferences.minimumAudioDurationSeconds.get()}" +
+      "_markers_${foldersPreferences.hiddenFolderMarkerNames.get().sorted().joinToString(",")}"
 
   private fun serializeFoldersToJson(folders: List<VideoFolder>): String {
     // Simple JSON serialization
@@ -446,6 +452,14 @@ class FolderListViewModel(
               MediaFileRepository.getAllAudioFolders(
                 context = getApplication(),
                 minimumAudioDurationSeconds = browserPreferences.minimumAudioDurationSeconds.get(),
+                // Same reason as the video path: this is one long MediaStore read, and every folder
+                // found so far is worth showing. Merged, not replaced, for the same reason.
+                onSnapshot = { partial ->
+                  ensureActive()
+                  _allVideoFolders.value = mergeFolders(_allVideoFolders.value, partial)
+                  _isLoading.value = false
+                  _hasCompletedInitialLoad.value = true
+                },
               )
             ensureActive()
             publishFinalFolders(folders)
@@ -486,6 +500,18 @@ class FolderListViewModel(
               },
               forceFileSystemCheck = forceFileSystemCheck,
               includeAudioOverride = browserPreferences.includeAudioBrowser.get(),
+              // The folder scan reads the whole media table and then walks the tree, so waiting for
+              // it means an empty screen for as long as the slowest phase takes. Each snapshot is
+              // only what has been found so far, so it is merged into what is already shown rather
+              // than replacing it: a folder from the previous scan must not blink out and back.
+              // The authoritative list is published once the scan returns.
+              onSnapshot = { partial ->
+                ensureActive()
+                _allVideoFolders.value = mergeFolders(_allVideoFolders.value, partial)
+                _scanStatus.value = "Found ${partial.size} folders"
+                _isLoading.value = false
+                _hasCompletedInitialLoad.value = true
+              },
             )
           ensureActive()
           // This is the important latency boundary: never wait for a filesystem walk.

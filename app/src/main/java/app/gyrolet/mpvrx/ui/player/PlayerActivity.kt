@@ -65,13 +65,11 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.pm.PackageInfoCompat
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -130,8 +128,6 @@ import app.gyrolet.mpvrx.utils.media.M3UParser
 import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
 import app.gyrolet.mpvrx.utils.media.SharedUrlExtractor
 import app.gyrolet.mpvrx.utils.media.SubtitleOps
-import app.gyrolet.mpvrx.utils.media.listTreeFilesSafely
-import app.gyrolet.mpvrx.utils.media.openPersistedTreeDocument
 import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import com.github.k1rakishou.fsaf.FileManager
 import `is`.xyz.mpv.MPVLib
@@ -139,8 +135,11 @@ import `is`.xyz.mpv.MPVNode
 import `is`.xyz.mpv.Utils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
@@ -153,6 +152,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
@@ -448,6 +448,9 @@ class PlayerActivity :
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
+
+  /** The MPV asset copy, running from before the player UI is inflated until setupMPV joins it. */
+  private var startupAssetPreparation: Deferred<Unit>? = null
   private var viewModelHostAttached = false
   private var torrentPickerHandoff = false
   private var savePlaybackStateJob: Job? = null // Track ongoing save job
@@ -480,6 +483,19 @@ class PlayerActivity :
   private var currentPlayableUri: String? = null // Store current URI for notification re-entry
   private val playbackRenderDispatcher = Dispatchers.Main
   private val mediaLoadDispatcher = Dispatchers.Default.limitedParallelism(1)
+
+  // Captured at Activity construction. Cookies are only ever written by the cookie jar itself, so
+  // a cookie file newer than this is already current for every load in this session.
+  private val sessionStartedAtMillis = System.currentTimeMillis()
+
+  // Last value written to MPV for the subtitle/video-filter properties that are also applied as
+  // init OPTIONS, so FILE_LOADED only re-issues a write when the preference actually changed.
+  @Volatile private var lastAppliedMpvStyleProperties: MutableMap<String, Any> = mutableMapOf()
+
+  // getMediaIdentifier()/getLegacyMediaIdentifier() run back-to-back on the same intent URI and
+  // resolveLocalPath() queries the ContentResolver; share the single query between them.
+  @Volatile private var memoizedLocalPathKey: String? = null
+  @Volatile private var memoizedLocalPath: String? = null
 
   // ==================== Background Playback ====================
 
@@ -640,17 +656,11 @@ class PlayerActivity :
     applyInitialVideoOrientation(intent)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
-    // Fast open for every entry point: short fade only (no slide translation). The black
-    // windowBackground underneath is the instant coating, so the first frame is revealed
-    // without a slide delay. A shared-element artwork transition owns the animation instead.
-    val animatePlayerArtwork = PlayerArtworkTransitions.motion?.destination == PlayerArtworkDestination.FULL
-    if (!animatePlayerArtwork) {
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, R.anim.player_open_fade, 0)
-      } else {
-        @Suppress("DEPRECATION")
-        overridePendingTransition(R.anim.player_open_fade, 0)
-      }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
+      intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER
+    ) {
+      val animateArtwork = PlayerArtworkTransitions.motion?.destination == PlayerArtworkDestination.FULL
+      overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, if (animateArtwork) 0 else R.anim.slide_in_up, 0)
     }
     if (intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER && player.userScriptsNeedReload()) {
       currentPlaybackIntentForScriptReload()?.let { playbackIntent ->
@@ -673,6 +683,25 @@ class PlayerActivity :
     }
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
+
+    // Bind the shared asset layer before anything can reach for it. setupMPV and the deferred
+    // sync jobs below both call into PlaybackStartupAssets directly.
+    PlaybackStartupAssets.attach(this)
+
+    // Started here, joined in setupMPV. Deliberately does *not* wait for the app-launch core
+    // warm-up: joining it would put the main thread behind libmpv's config parse and Lua script
+    // load, which is precisely the work being moved off the critical path. The join below only has
+    // to cover the assets, because libmpv must not initialize before its config and scripts are on
+    // disk — and on a warm cache that is four cheap directory probes, since PlaybackCorePrewarmer
+    // normally did the multi-megabyte copy plus the SAF tree walk while this Activity did not exist.
+    //
+    // The core itself is adopted rather than awaited: MPVView.initializeSession -> initializeSession
+    // computes a configuration key from the same preferences the prewarmer used, and
+    // PlaybackSession.initialize returns early on a match. So a warm core makes the open free, and a
+    // cold or in-flight one just means this Activity initializes it exactly as it did before.
+    startupAssetPreparation =
+      lifecycleScope.async(Dispatchers.IO) { PlaybackStartupAssets.prepare(this@PlayerActivity) }
+
     setContentView(binding.root)
     setupSystemBarsAutoHide()
     setupPipHelper()
@@ -1879,7 +1908,7 @@ class PlayerActivity :
     super.finish()
 
     if (isMiniPlayerEnabled()) {
-      val exitAnimation = if (animateArtwork) 0 else R.anim.player_close_fade
+      val exitAnimation = if (animateArtwork) 0 else R.anim.slide_out_down
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
         overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, exitAnimation)
       } else {
@@ -2590,16 +2619,15 @@ class PlayerActivity :
    * CRITICAL: Must copy config and scripts BEFORE initializing MPV, as MPV loads scripts during init.
    */
   private fun setupMPV(): String? {
-    // Prepare config and user MPV assets before initializing MPV.
+    // Joined rather than started: the copy began before the view tree was inflated, so by now it is
+    // usually finished and this costs nothing. libmpv must not initialize before the assets are on
+    // disk, so this cannot be skipped, only awaited.
     runCatching {
-      val preparationStartedAt = android.os.SystemClock.elapsedRealtime()
-      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.assets.begin")
-      syncBundledAssetsIfNeeded()
-      prepareUserMpvAssetsForStartup()
-      googleFontsRepository.syncMpvFonts()
-      sanitizeInternalFontsDirectory()
-      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.assets.end", detail = "elapsedMs=${android.os.SystemClock.elapsedRealtime() - preparationStartedAt}")
-      Log.d(TAG, "MPV startup assets ready in ${android.os.SystemClock.elapsedRealtime() - preparationStartedAt} ms")
+      runBlocking {
+        withContext(Dispatchers.IO) {
+          startupAssetPreparation?.await()
+        }
+      }
     }.onFailure { e ->
       Log.e(TAG, "Error copying MPV config and assets", e)
     }
@@ -2617,7 +2645,8 @@ class PlayerActivity :
     val initStartedAt = android.os.SystemClock.elapsedRealtime()
     app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.core.begin")
     val initError = synchronized(USER_MPV_ASSET_LOCK) {
-      val cleanupFailure = runCatching { removeDisabledCachedScripts() }.exceptionOrNull()
+      val cleanupFailure =
+        runCatching { PlaybackStartupAssets.removeDisabledCachedScripts() }.exceptionOrNull()
       if (cleanupFailure != null) {
         Log.e(TAG, "Could not remove disabled cached scripts", cleanupFailure)
         cleanupFailure.message ?: getString(R.string.toast_playback_load_failed)
@@ -2639,95 +2668,6 @@ class PlayerActivity :
     return null
   }
 
-  private fun prepareUserMpvAssetsForStartup() {
-    app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.migrateLegacyBank(this)
-    ensureConfigCacheForStartup()
-    val syncPreferences = getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE)
-    val currentSelection = currentUserMpvAssetSelection()
-    val storedSelection = syncPreferences.getString(USER_MPV_ASSET_SELECTION, null)
-    val cacheReady = hasLaunchReadyUserMpvAssetCache()
-    val canAdoptExistingCache =
-      storedSelection == null &&
-        cacheReady &&
-        cachedConfigsMatchPreferences() &&
-        cachedScriptsMatchSelection()
-
-    if (cacheReady && cachedScriptsMatchSelection() && (storedSelection == currentSelection || canAdoptExistingCache)) {
-      if (canAdoptExistingCache) rememberUserMpvAssetSelection(syncPreferences)
-      Log.d(TAG, "Using cached MPV user assets for startup")
-      return
-    }
-
-    syncFromUserMpvDirectory()
-    rememberUserMpvAssetSelection(syncPreferences)
-    deferredUserMpvAssetRefreshStarted.set(true)
-  }
-
-  private fun ensureConfigCacheForStartup() {
-    mpvConfigCache.ensureCurrent()
-    writeTextFileIfChanged(File(filesDir, "input.conf"), advancedPreferences.inputConf.get())
-  }
-
-  private fun currentUserMpvAssetSelection(): String {
-    val selectedScripts = advancedPreferences.selectedLuaScripts.get().sorted().joinToString("\u0000")
-    val mpvConfig = advancedPreferences.mpvConf.get()
-    val inputConfig = advancedPreferences.inputConf.get()
-    return buildString {
-      append("v1|uri=")
-      append(advancedPreferences.mpvConfStorageUri.get())
-      append("|lua=")
-      append(advancedPreferences.enableLuaScripts.get())
-      append("|scripts=")
-      append(selectedScripts)
-      append("|mpv=")
-      append(mpvConfig.length)
-      append(':')
-      append(mpvConfig.hashCode())
-      append("|input=")
-      append(inputConfig.length)
-      append(':')
-      append(inputConfig.hashCode())
-    }
-  }
-
-  private fun hasLaunchReadyUserMpvAssetCache(): Boolean =
-    File(filesDir, "mpv.conf").isFile &&
-      File(filesDir, "input.conf").isFile &&
-      File(filesDir, "scripts").isDirectory &&
-      File(filesDir, "script-modules").isDirectory &&
-      File(filesDir, "shaders").isDirectory &&
-      File(filesDir, "font-bank").isDirectory
-
-  private fun cachedConfigsMatchPreferences(): Boolean =
-    cachedConfigMatchesPreference("mpv.conf", advancedPreferences.mpvConf.get()) &&
-      cachedConfigMatchesPreference("input.conf", advancedPreferences.inputConf.get())
-
-  private fun cachedConfigMatchesPreference(
-    fileName: String,
-    preferenceContent: String,
-  ): Boolean =
-    runCatching { File(filesDir, fileName).readText() == preferenceContent }.getOrDefault(false)
-
-  private fun cachedScriptsMatchSelection(): Boolean {
-    val cachedScripts =
-      File(filesDir, "scripts")
-        .listFiles()
-        ?.asSequence()
-        ?.filter { file -> file.isFile && file.extension.lowercase() in setOf("lua", "js") }
-        ?.map(File::getName)
-        ?.toSet()
-        .orEmpty()
-    return if (advancedPreferences.enableLuaScripts.get()) {
-      cachedScripts == advancedPreferences.selectedLuaScripts.get()
-    } else {
-      cachedScripts.isEmpty()
-    }
-  }
-
-  private fun rememberUserMpvAssetSelection(syncPreferences: android.content.SharedPreferences) {
-    syncPreferences.edit().putString(USER_MPV_ASSET_SELECTION, currentUserMpvAssetSelection()).apply()
-  }
-
   private fun initializePlayerWithRendererFallback(): String? {
     player.forceOpenGlFallback = false
     val firstAttempt = player.initializeSession(filesDir.path, cacheDir.path)
@@ -2746,287 +2686,22 @@ class PlayerActivity :
     return if (fallbackAttempt.isSuccess) null else fallbackAttempt.exceptionOrNull()?.message ?: fallbackAttempt.exceptionOrNull()?.toString() ?: "Unknown fallback error"
   }
 
-  /**
-   * Syncs MPV assets from the user's configured MPV directory to internal storage.
-   * Handles: mpv.conf, input.conf, selected scripts/, script helper folders, script-opts/,
-   * shaders/, and fonts/.
-   */
-  private fun syncFromUserMpvDirectory() {
-    synchronized(USER_MPV_ASSET_LOCK) {
-    val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
-
-    // Try to open the user's MPV directory
-    val tree =
-      if (mpvConfStorageUri.isNotBlank()) {
-        openPersistedTreeDocument(this, mpvConfStorageUri)
-      } else {
-        null
-      }
-
-    if (tree != null) {
-      Log.d(TAG, "Syncing from user MPV directory: ${tree.uri}")
-      val rootChildren = listTreeFilesSafely(tree)
-      syncConfigFiles(tree, rootChildren)
-      syncScripts(tree, rootChildren)
-      syncScriptOpts(tree, rootChildren)
-      syncShaders(tree, rootChildren)
-      // The subtitle font resolver reads/imports only requested families.
-      Log.d(TAG, "Full MPV directory sync completed")
-    } else {
-      // Fallback: use preferences-based config (no user directory set)
-      Log.d(TAG, "No MPV directory configured, using preferences fallback")
-      copyMPVConfigFromPreferences()
-    }
-    removeDisabledCachedScripts()
-    }
-  }
-
-  // ==================== Config Files Sync ====================
-
-  /**
-   * Syncs mpv.conf and input.conf from the user's MPV directory.
-   * Also caches the content in preferences for the config editor.
-   */
-  private fun syncConfigFiles(
-    tree: DocumentFile,
-    rootChildren: Array<DocumentFile>,
-  ) {
-    for (configName in listOf("mpv.conf", "input.conf")) {
-      runCatching {
-        val configFile = findFileCaseInsensitive(tree, configName, rootChildren)
-        if (configFile != null && configFile.exists() && configFile.canRead()) {
-          contentResolver.openInputStream(configFile.uri)?.use { input ->
-            val content = input.bufferedReader().readText()
-            when (configName) {
-              "mpv.conf" -> mpvConfigCache.update(content)
-              "input.conf" -> {
-                writeTextFileIfChanged(File(filesDir, configName), content)
-                advancedPreferences.inputConf.set(content)
-              }
-            }
-            Log.d(TAG, "Synced config: $configName (${content.length} chars)")
-          }
-        } else {
-          // Config not in directory, fall back to preferences
-          val prefContent =
-            when (configName) {
-              "mpv.conf" -> advancedPreferences.mpvConf.get()
-              "input.conf" -> advancedPreferences.inputConf.get()
-              else -> ""
-            }
-          if (configName == MpvConfigCache.FILE_NAME) {
-            mpvConfigCache.ensureCurrent()
-          } else {
-            writeTextFileIfChanged(File(filesDir, configName), prefContent)
-          }
-          Log.d(TAG, "Config not found in directory, used preferences: $configName")
-        }
-      }.onFailure { e ->
-        Log.e(TAG, "Error syncing config: $configName", e)
-      }
-    }
-  }
-
-  // ==================== Scripts Sync ====================
-
-  /**
-   * Syncs all script files (.lua, .js) from the user's MPV directory.
-   * Looks in scripts/ subfolder first (case-insensitive), falls back to root.
-   */
-  private fun syncScripts(
-    tree: DocumentFile,
-    rootChildren: Array<DocumentFile>,
-  ) {
-    val internalScriptsDir = File(filesDir, "scripts")
-    internalScriptsDir.mkdirs()
-
-    if (!advancedPreferences.enableLuaScripts.get()) {
-      clearDirectoryContents(internalScriptsDir)
-      Log.d(TAG, "Scripts disabled, skipping")
-      return
-    }
-
-    val scriptsSubdir = findSubdirCaseInsensitive(tree, "scripts", rootChildren)
-    val sourceDir = scriptsSubdir ?: tree
-    val scriptExtensions = setOf("lua", "js")
-    val selectedScripts = advancedPreferences.selectedLuaScripts.get()
-    val count =
-      syncFlatDocumentDirectory(
-        sourceDir = sourceDir,
-        destinationDir = internalScriptsDir,
-        includeFile = { name -> name.substringAfterLast('.', "").lowercase() in scriptExtensions },
-        allowedNames = selectedScripts,
-        deleteMissing = true,
-      )
-    val supportCount = syncScriptSupportDirectories(scriptsSubdir)
-
-    Log.d(
-      TAG,
-      "Scripts sync: $count file(s), $supportCount helper file(s) from ${if (scriptsSubdir != null) "scripts/" else "root"}",
-    )
-  }
-
-  /**
-   * Syncs helper folders from scripts/ and mirrors Lua modules into mpv's internal
-   * script-modules path so require() works without exposing a separate user folder.
-   */
-  private fun syncScriptSupportDirectories(scriptsSubdir: DocumentFile?): Int {
-    val internalScriptsDir = File(filesDir, "scripts")
-    val internalModulesDir = File(filesDir, "script-modules")
-    internalModulesDir.mkdirs()
-
-    if (!advancedPreferences.enableLuaScripts.get()) {
-      clearDirectoryContents(internalModulesDir)
-      return 0
-    }
-
-    clearDirectoryContents(internalModulesDir)
-
-    var copiedCount = 0
-
-    if (scriptsSubdir != null) {
-      listTreeFilesSafely(scriptsSubdir).forEach { document ->
-        val name = document.name?.takeIf { isSafeDocumentFileName(it) } ?: return@forEach
-        if (!document.isDirectory) return@forEach
-
-        copiedCount +=
-          syncRecursiveDocumentDirectory(
-            sourceDir = document,
-            destinationDir = File(internalScriptsDir, name),
-            includeFile = { true },
-            deleteMissing = true,
-          )
-
-        copiedCount +=
-          syncRecursiveDocumentDirectory(
-            sourceDir = document,
-            destinationDir = File(internalModulesDir, name),
-            includeFile = { fileName -> fileName.endsWith(".lua", ignoreCase = true) },
-            deleteMissing = true,
-          )
-      }
-    }
-
-    return copiedCount
-  }
-
-  // ==================== Script Options Sync ====================
-
-  /**
-   * Syncs all files from script-opts/ subfolder (case-insensitive).
-   */
-  private fun syncScriptOpts(
-    tree: DocumentFile,
-    rootChildren: Array<DocumentFile>,
-  ) {
-    val internalScriptOptsDir = File(filesDir, "script-opts")
-    internalScriptOptsDir.mkdirs()
-
-    val scriptOptsSubdir = findSubdirCaseInsensitive(tree, "script-opts", rootChildren)
-    if (scriptOptsSubdir == null) {
-      Log.d(TAG, "No script-opts/ subfolder found, skipping")
-      return
-    }
-
-    val count =
-      syncFlatDocumentDirectory(
-        sourceDir = scriptOptsSubdir,
-        destinationDir = internalScriptOptsDir,
-        includeFile = { true },
-        deleteMissing = true,
-      )
-
-    Log.d(TAG, "Script-opts sync: $count file(s)")
-  }
-
-  // ==================== Shaders Sync ====================
-
-  /**
-   * Syncs shader files (.glsl, .hook, .comp) from the user's MPV directory.
-   * Looks in shaders/ subfolder first (case-insensitive), falls back to root.
-   */
-  private fun syncShaders(
-    tree: DocumentFile,
-    rootChildren: Array<DocumentFile>,
-  ) {
-    val shadersDir = File(filesDir, "shaders")
-    shadersDir.mkdirs()
-
-    val shadersSubdir = findSubdirCaseInsensitive(tree, "shaders", rootChildren)
-    val sourceDir = shadersSubdir ?: tree
-    val shaderExtensions = setOf("glsl", "hook", "comp")
-    val count =
-      syncFlatDocumentDirectory(
-        sourceDir = sourceDir,
-        destinationDir = shadersDir,
-        includeFile = { name -> name.substringAfterLast('.', "").lowercase() in shaderExtensions },
-        protectedNames = Anime4KManager.BUILT_IN_SHADER_FILES,
-        deleteMissing = true,
-      )
-
-    Log.d(TAG, "Shaders sync: $count file(s)")
-  }
-
-  // ==================== Fonts Sync ====================
-
-  /**
-   * Syncs font files (.ttf, .otf, .ttc, .woff, .woff2) from the user's MPV directory.
-   * Looks in fonts/ subfolder first (case-insensitive), falls back to root.
-   */
-  private fun syncFonts(
-    tree: DocumentFile,
-    rootChildren: Array<DocumentFile>,
-  ) {
-    val internalFontsDir = File(filesDir, "font-bank")
-    internalFontsDir.mkdirs()
-    internalFontsDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
-
-    val fontsSubdir = findSubdirCaseInsensitive(tree, "fonts", rootChildren)
-    val sourceDir = fontsSubdir ?: tree
-    val fontExtensions = setOf("ttf", "otf", "ttc", "woff", "woff2")
-    val count =
-      syncFlatDocumentDirectory(
-        sourceDir = sourceDir,
-        destinationDir = internalFontsDir,
-        includeFile = { name -> name.substringAfterLast('.', "").lowercase() in fontExtensions },
-        deleteMissing = false,
-      )
-
-    Log.d(TAG, "Fonts sync: $count file(s) from MPV directory")
-  }
-
-  private fun syncBundledAssetsIfNeeded() {
-    val syncPrefs = getSharedPreferences("mpv_asset_sync", MODE_PRIVATE)
-    val currentVersion =
-      runCatching {
-        PackageInfoCompat.getLongVersionCode(packageManager.getPackageInfo(packageName, 0))
-      }.getOrDefault(-1L)
-
-    val assetsAlreadyPrepared =
-      File(filesDir, "mpv.conf").exists() &&
-        File(filesDir, "input.conf").exists() &&
-        File(filesDir, "scripts").exists()
-
-    if (assetsAlreadyPrepared && syncPrefs.getLong("bundled_assets_version", -1L) == currentVersion) {
-      return
-    }
-
-    Utils.copyAssets(this@PlayerActivity)
-    syncPrefs.edit().putLong("bundled_assets_version", currentVersion).apply()
-  }
-
   private fun scheduleDeferredSubtitleFontsSync() {
     deferredFontSyncJob?.cancel()
     deferredFontSyncJob =
       lifecycleScope.launch(Dispatchers.IO) {
         delay(750)
-        runCatching { syncSubtitleFontsFromPreferenceFolder() }
+        runCatching { PlaybackStartupAssets.syncSubtitleFontsFromPreferenceFolder() }
           .onFailure { e -> Log.e(TAG, "Deferred subtitle font sync failed", e) }
       }
   }
 
   private fun scheduleDeferredUserMpvAssetRefresh() {
     if (advancedPreferences.mpvConfStorageUri.get().isBlank()) return
+    // Startup already walked the user's directory in this process — quite possibly during
+    // PlaybackCorePrewarmer's app-launch prepare, before this Activity existed. Repeating it after
+    // the delay would be a second identical SAF tree walk for no newer data.
+    if (PlaybackStartupAssets.userMpvAssetsFullySynced) return
     if (!deferredUserMpvAssetRefreshStarted.compareAndSet(false, true)) return
 
     deferredMpvAssetSyncJob =
@@ -3036,8 +2711,9 @@ class PlayerActivity :
           delay(DEFERRED_MPV_ASSET_SYNC_DELAY_MS)
           if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
           deferredFontSyncJob?.join()
-          syncFromUserMpvDirectory()
-          rememberUserMpvAssetSelection(getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE))
+          PlaybackStartupAssets.syncFromUserMpvDirectory()
+          PlaybackStartupAssets.syncSubtitleFontsFromPreferenceFolder()
+          PlaybackStartupAssets.rememberUserMpvAssetSelection()
           completed = true
           Log.d(TAG, "Refreshed cached MPV user assets after startup")
         } catch (cancellation: CancellationException) {
@@ -3049,216 +2725,6 @@ class PlayerActivity :
         }
       }
   }
-
-  private fun syncSubtitleFontsFromPreferenceFolder() {
-    val sourceDir = resolveSubtitleFontSourceDirectory() ?: return
-
-    val destinationDir = File(filesDir, "font-bank")
-    destinationDir.mkdirs()
-    destinationDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
-    syncFontDirectory(sourceDir, destinationDir)
-  }
-
-  private fun resolveSubtitleFontSourceDirectory(): DocumentFile? {
-    val fontsFolderUri = subtitlesPreferences.fontsFolder.get()
-    if (fontsFolderUri.isBlank()) return null
-
-    val sourceDir = openPersistedTreeDocument(this, fontsFolderUri) ?: return null
-
-    // Older builds auto-pointed the subtitle font folder at the whole storage/config root.
-    // Use its fonts/ child instead so playback never recursively scans a large media folder.
-    if (fontsFolderUri == advancedPreferences.mpvConfStorageUri.get()) {
-      return findSubdirCaseInsensitive(sourceDir, "fonts")
-    }
-
-    return sourceDir
-  }
-
-  private fun syncFontDirectory(
-    sourceDir: DocumentFile,
-    destinationDir: File,
-  ): Int {
-    destinationDir.mkdirs()
-    var copiedCount = 0
-
-    listTreeFilesSafely(sourceDir).forEach { document ->
-      val name = document.name ?: return@forEach
-      when {
-        document.isDirectory -> {
-          copiedCount += syncFontDirectory(document, destinationDir)
-        }
-        document.isFile -> {
-          val extension = name.substringAfterLast('.', "").lowercase()
-          if (extension !in setOf("ttf", "otf", "ttc", "woff", "woff2")) {
-            return@forEach
-          }
-
-          if (copyDocumentToFileIfNeeded(document, File(destinationDir, name))) {
-            copiedCount++
-          }
-        }
-      }
-    }
-
-    return copiedCount
-  }
-
-  private fun syncRecursiveDocumentDirectory(
-    sourceDir: DocumentFile,
-    destinationDir: File,
-    includeFile: (name: String) -> Boolean,
-    deleteMissing: Boolean,
-  ): Int {
-    destinationDir.mkdirs()
-    val expectedFiles = mutableSetOf<String>()
-    val expectedDirs = mutableSetOf<String>()
-    var copiedCount = 0
-
-    fun syncDirectory(
-      currentSourceDir: DocumentFile,
-      currentDestinationDir: File,
-      relativeDir: String,
-    ) {
-      currentDestinationDir.mkdirs()
-      listTreeFilesSafely(currentSourceDir).forEach { document ->
-        val name = document.name?.takeIf { isSafeDocumentFileName(it) } ?: return@forEach
-        val relativePath = if (relativeDir.isBlank()) name else "$relativeDir/$name"
-
-        when {
-          document.isDirectory -> {
-            expectedDirs += relativePath
-            syncDirectory(
-              currentSourceDir = document,
-              currentDestinationDir = File(currentDestinationDir, name),
-              relativeDir = relativePath,
-            )
-          }
-          document.isFile && includeFile(name) -> {
-            expectedFiles += relativePath
-            if (copyDocumentToFileIfNeeded(document, File(currentDestinationDir, name))) {
-              copiedCount++
-            }
-          }
-        }
-      }
-    }
-
-    syncDirectory(sourceDir, destinationDir, relativeDir = "")
-
-    if (deleteMissing) {
-      pruneDirectoryToExpected(destinationDir, expectedFiles, expectedDirs, relativeDir = "")
-    }
-
-    return copiedCount
-  }
-
-  private fun pruneDirectoryToExpected(
-    directory: File,
-    expectedFiles: Set<String>,
-    expectedDirs: Set<String>,
-    relativeDir: String,
-  ) {
-    directory.listFiles()?.forEach { existingFile ->
-      val relativePath =
-        if (relativeDir.isBlank()) {
-          existingFile.name
-        } else {
-          "$relativeDir/${existingFile.name}"
-        }
-
-      when {
-        existingFile.isDirectory -> {
-          pruneDirectoryToExpected(existingFile, expectedFiles, expectedDirs, relativePath)
-          val isExpected = relativePath in expectedDirs
-          val isEmpty = existingFile.listFiles()?.isEmpty() != false
-          if (!isExpected || isEmpty) {
-            existingFile.deleteRecursively()
-          }
-        }
-        existingFile.isFile && relativePath !in expectedFiles -> existingFile.delete()
-      }
-    }
-  }
-
-  private fun syncFlatDocumentDirectory(
-    sourceDir: DocumentFile,
-    destinationDir: File,
-    includeFile: (name: String) -> Boolean,
-    allowedNames: Set<String>? = null,
-    protectedNames: Set<String> = emptySet(),
-    deleteMissing: Boolean,
-  ): Int {
-    destinationDir.mkdirs()
-    val expectedNames = mutableSetOf<String>()
-    var copiedCount = 0
-
-    listTreeFilesSafely(sourceDir).forEach { document ->
-      if (!document.isFile) return@forEach
-      val name = document.name ?: return@forEach
-      if (!includeFile(name)) return@forEach
-      if (allowedNames != null && name !in allowedNames) return@forEach
-
-      expectedNames += name
-      if (copyDocumentToFileIfNeeded(document, File(destinationDir, name))) {
-        copiedCount++
-      }
-    }
-
-    if (deleteMissing) {
-      destinationDir.listFiles()?.forEach { existingFile ->
-        if (existingFile.isFile &&
-          existingFile.name !in expectedNames &&
-          existingFile.name !in protectedNames
-        ) {
-          existingFile.delete()
-        }
-      }
-    }
-
-    return copiedCount
-  }
-
-  private fun copyDocumentToFileIfNeeded(
-    source: DocumentFile,
-    target: File,
-  ): Boolean {
-    val sourceLength = source.length()
-    val sourceLastModified = source.lastModified()
-
-    if (target.exists() &&
-      sourceLength >= 0L &&
-      target.length() == sourceLength &&
-      sourceLastModified > 0L &&
-      target.lastModified() == sourceLastModified
-    ) {
-      return false
-    }
-
-    target.parentFile?.mkdirs()
-    contentResolver.openInputStream(source.uri)?.use { input ->
-      target.outputStream().use { output ->
-        input.copyTo(output)
-      }
-    } ?: return false
-
-    if (sourceLastModified > 0L) {
-      target.setLastModified(sourceLastModified)
-    }
-    return true
-  }
-
-  private fun writeTextFileIfChanged(
-    target: File,
-    content: String,
-  ) {
-    if (target.exists() && runCatching { target.readText() }.getOrNull() == content) {
-      return
-    }
-
-    target.parentFile?.mkdirs()
-    target.writeText(content)
-  }
-
   /**
    * Loads a specific Lua script at runtime without restarting the player.
    * Finds the script in the user's MPV directory, copies it to internal storage,
@@ -3307,84 +2773,6 @@ class PlayerActivity :
     recreate()
     return true
   }
-
-  private fun removeDisabledCachedScripts() {
-    val enabled = advancedPreferences.enableLuaScripts.get()
-    val selected = if (enabled) advancedPreferences.selectedLuaScripts.get() else emptySet()
-    File(filesDir, "scripts").listFiles()?.forEach { file ->
-      if (!enabled || file.isFile && file.extension.lowercase() in setOf("lua", "js") && file.name !in selected) {
-        check(file.deleteRecursively()) { "Could not remove cached script ${file.name}" }
-      }
-    }
-    if (!enabled) clearDirectoryContents(File(filesDir, "script-modules"))
-  }
-
-  // ==================== Helpers ====================
-
-  /**
-   * Fallback: copies config from preferences when no user MPV directory is set.
-   */
-  private fun copyMPVConfigFromPreferences() {
-    runCatching {
-      mpvConfigCache.ensureCurrent()
-      writeTextFileIfChanged(File(filesDir, "input.conf"), advancedPreferences.inputConf.get())
-      // Ensure scripts directory exists even without user dir
-      File(filesDir, "scripts").mkdirs()
-      File(filesDir, "script-modules").mkdirs()
-      File(filesDir, "font-bank").mkdirs()
-      File(filesDir, "shaders").mkdirs()
-    }.onFailure { e ->
-      Log.e(TAG, "Error creating fallback config files", e)
-    }
-  }
-
-  private fun sanitizeInternalFontsDirectory() {
-    val fontsDir = File(filesDir, "font-bank")
-    if (!fontsDir.exists()) {
-      return
-    }
-
-    fontsDir.listFiles()?.filter { it.isDirectory }?.forEach { nestedDir ->
-      nestedDir.deleteRecursively()
-    }
-  }
-
-  private fun clearDirectoryContents(directory: File) {
-    directory.listFiles()?.forEach { child ->
-      if (child.isDirectory) {
-        child.deleteRecursively()
-      } else {
-        child.delete()
-      }
-    }
-  }
-
-  private fun isSafeDocumentFileName(name: String): Boolean =
-    name.isNotBlank() && !name.contains('/') && !name.contains('\\')
-
-  /**
-   * Finds a subdirectory by name (case-insensitive) within a DocumentFile.
-   */
-  private fun findSubdirCaseInsensitive(
-    parent: DocumentFile,
-    name: String,
-    children: Array<DocumentFile> = listTreeFilesSafely(parent),
-  ): DocumentFile? =
-    children.firstOrNull {
-      it.isDirectory && it.name?.equals(name, ignoreCase = true) == true
-    }
-
-  /**
-   * Finds a file by name (case-insensitive) within a DocumentFile.
-   */
-  private fun findFileCaseInsensitive(
-    parent: DocumentFile,
-    name: String,
-    children: Array<DocumentFile> = listTreeFilesSafely(parent),
-  ): DocumentFile? =
-    children.firstOrNull {
-      it.isFile && it.name?.equals(name, ignoreCase = true) == true
-    }
 
   override fun onResume() {
     super.onResume()
@@ -4010,14 +3398,21 @@ class PlayerActivity :
       viewModel.showToast(getString(R.string.toast_playback_load_failed))
       return null
     }
-    return if (uri.startsWith("content://")) {
-      // Resolve to a real path when possible, but never to a single-use fd:// here: this value is
-      // stored on the queue item, and a replay would reuse a descriptor mpv has already consumed.
-      // Unresolvable URIs stay content:// and get a fresh descriptor per load in PlaybackSession.
-      uri.toUri().openContentFd(this, allowFdFallback = false) ?: uri
-    } else {
-      uri
+    // PlaybackSession.resolvePlayableUri performs exactly this content:// resolution on its worker
+    // thread for every load, so it is deliberately NOT repeated here on the main thread: the queue
+    // item keeps the content:// URI (never a single-use fd://, which a replay could not reuse)
+    // and PlaybackSession resolves it, opening a fresh descriptor per load.
+    return uri
+  }
+
+  /** One ContentResolver query per Activity for the intent URI both identifier builders resolve. */
+  private fun resolveLocalPathMemoized(uri: Uri): String? {
+    val key = uri.toString()
+    if (memoizedLocalPathKey != key) {
+      memoizedLocalPath = uri.resolveLocalPath(this)
+      memoizedLocalPathKey = key
     }
+    return memoizedLocalPath
   }
 
   /**
@@ -4270,9 +3665,7 @@ class PlayerActivity :
       }
       "container-fps" -> {
         if (!mpvInitialized || player.isExiting || isFinishing) return
-        // Same gate as MPVView.applyFrameRate: film rates stay at the system refresh rate so no
-        // display mode switch (black flash + latency) happens while the video is opening.
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && value >= MPVView.SURFACE_FRAME_RATE_MIN_FPS) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R && value > 0.0) {
           try {
             val surface = player.holder?.surface
             if (surface != null && surface.isValid) {
@@ -4847,26 +4240,30 @@ class PlayerActivity :
         "no"
       }
 
+    // blend-subtitles is also written by the ambient enable/disable path, so it stays a forced
+    // write. Everything below is already applied as an init OPTION by MPVView.initOptions and is
+    // only re-issued here when the preference value actually changed, so mpv does not redo its
+    // OSD/style reconfiguration on the frame the player becomes ready for every load.
     PlaybackSession.setPropertyString("blend-subtitles", blendMode)
 
-    PlaybackSession.setPropertyInt("sub-font-size", fontSize)
+    setMpvStyleIntIfChanged("sub-font-size", fontSize)
     // Official mpv only has secondary-sub-delay/scale/pos/ass-override; secondary inherits primary style.
-    PlaybackSession.setPropertyString("sub-font", font)
-    PlaybackSession.setPropertyBoolean("sub-bold", bold)
-    PlaybackSession.setPropertyBoolean("sub-italic", italic)
-    PlaybackSession.setPropertyString("sub-justify", justify)
-    PlaybackSession.setPropertyString("sub-border-style", borderStyle)
-    PlaybackSession.setPropertyInt("sub-border-size", borderSize)
-    PlaybackSession.setPropertyInt("sub-outline-size", borderSize)
-    PlaybackSession.setPropertyInt("sub-shadow-offset", shadowOffset)
-    PlaybackSession.setPropertyString("sub-color", textColor)
-    PlaybackSession.setPropertyString("sub-border-color", borderColor)
-    PlaybackSession.setPropertyString("sub-back-color", backgroundColor)
-    PlaybackSession.setPropertyString("sub-shadow-color", shadowColor)
-    PlaybackSession.setPropertyString("sub-scale-by-window", scaleValue)
-    PlaybackSession.setPropertyString("sub-use-margins", scaleValue)
-    PlaybackSession.setPropertyFloat("sub-scale", subScale)
-    PlaybackSession.setPropertyFloat("secondary-sub-scale", secondarySubScale)
+    setMpvStyleStringIfChanged("sub-font", font)
+    setMpvStyleBooleanIfChanged("sub-bold", bold)
+    setMpvStyleBooleanIfChanged("sub-italic", italic)
+    setMpvStyleStringIfChanged("sub-justify", justify)
+    setMpvStyleStringIfChanged("sub-border-style", borderStyle)
+    setMpvStyleIntIfChanged("sub-border-size", borderSize)
+    setMpvStyleIntIfChanged("sub-outline-size", borderSize)
+    setMpvStyleIntIfChanged("sub-shadow-offset", shadowOffset)
+    setMpvStyleStringIfChanged("sub-color", textColor)
+    setMpvStyleStringIfChanged("sub-border-color", borderColor)
+    setMpvStyleStringIfChanged("sub-back-color", backgroundColor)
+    setMpvStyleStringIfChanged("sub-shadow-color", shadowColor)
+    setMpvStyleStringIfChanged("sub-scale-by-window", scaleValue)
+    setMpvStyleStringIfChanged("sub-use-margins", scaleValue)
+    setMpvStyleFloatIfChanged("sub-scale", subScale)
+    setMpvStyleFloatIfChanged("secondary-sub-scale", secondarySubScale)
 
     applySubtitleLayout(
       primaryPosition = subtitlesPreferences.subPos.get(),
@@ -4882,9 +4279,33 @@ class PlayerActivity :
   private fun applyVideoFilterPreferences() {
     if (viewModel.isAudioOnly.value || isCurrentMediaKnownAudio()) return
     VideoFilters.entries.forEach {
-      PlaybackSession.setPropertyInt(it.mpvProperty, it.preference(decoderPreferences).get())
+      setMpvStyleIntIfChanged(it.mpvProperty, it.preference(decoderPreferences).get())
     }
     Log.d(TAG, "Applied video filter preferences")
+  }
+
+  /** True when [value] differs from what was last written, recording it as applied. */
+  private fun recordMpvStylePropertyIfChanged(name: String, value: Any): Boolean {
+    val applied = lastAppliedMpvStyleProperties
+    if (applied[name] == value) return false
+    applied[name] = value
+    return true
+  }
+
+  private fun setMpvStyleIntIfChanged(name: String, value: Int) {
+    if (recordMpvStylePropertyIfChanged(name, value)) PlaybackSession.setPropertyInt(name, value)
+  }
+
+  private fun setMpvStyleFloatIfChanged(name: String, value: Float) {
+    if (recordMpvStylePropertyIfChanged(name, value)) PlaybackSession.setPropertyFloat(name, value)
+  }
+
+  private fun setMpvStyleBooleanIfChanged(name: String, value: Boolean) {
+    if (recordMpvStylePropertyIfChanged(name, value)) PlaybackSession.setPropertyBoolean(name, value)
+  }
+
+  private fun setMpvStyleStringIfChanged(name: String, value: String) {
+    if (recordMpvStylePropertyIfChanged(name, value)) PlaybackSession.setPropertyString(name, value)
   }
 
   /**
@@ -5707,6 +5128,17 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       lifecycleScope.launch(mediaLoadDispatcher) {
         app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.request.dispatched")
         try {
+          if (tryAdoptPreloadedSession(
+              item = requestedQueueItem,
+              index = requestedPlaylistIndex,
+              legacyMediaIdentifier = requestedLegacyMediaIdentifier,
+              requestGeneration = requestGeneration,
+              sourceIntent = sourceIntent,
+            )
+          ) {
+            Log.d(TAG, "Adopted the pre-loaded session; skipping the load")
+            return@launch
+          }
           val bookId = sourceIntent.getLongExtra(AudiobookPlayback.EXTRA_BOOK_ID, -1L)
           if (sourceIntent.getBooleanExtra("internal_launch", false) && bookId > 0 && requestedQueueItem?.audiobook?.bookId != bookId) {
             val recovered = AudiobookPlayback.prepareQueue(bookId,
@@ -5869,28 +5301,42 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
                 torrentFileIndex = torrentResult?.selectedFile?.index,
               )
 
-          // Fetch artwork for music streaming URLs (YouTube / YouTube Music via oEmbed).
-          val itemWithArtwork =
+          // Fetch artwork for music streaming URLs (YouTube / YouTube Music via oEmbed) and stage
+          // libmpv's cookie file. Both are needed before loadfile (the queue item has to carry
+          // artworkUri for the notification, and mpv reads the cookie file when opening the
+          // stream), but neither depends on the other, so they are started together and joined
+          // at their point of use instead of one after the other.
+          val artworkDeferred =
             if (item.artworkUri.isNullOrBlank() && HttpUtils.isMusicStreamingUrl(resolvedOriginalUri)) {
-              val artwork = HttpUtils.fetchMusicStreamingArtwork(resolvedOriginalUri)
-              if (!artwork.isNullOrBlank()) item.copy(artworkUri = artwork) else item
+              async(Dispatchers.IO) { HttpUtils.fetchMusicStreamingArtwork(resolvedOriginalUri) }
             } else {
-              item
+              null
             }
-
-          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.request.resolved")
-          val cookieStarted = System.nanoTime()
-          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.cookies.begin")
-          val cookieSource =
+          val cookieExportDeferred =
             sequenceOf(resolvedPlayableUri, resolvedOriginalUri)
               .firstOrNull { value -> value.startsWith("http://", true) || value.startsWith("https://", true) }
-          if (cookieSource != null) {
-            androidCookieJar
-              .exportForPlayback(cookieSource, AndroidCookieJar.playbackCookieFile(this@PlayerActivity))
-              .onFailure { error -> Log.w(TAG, "Failed to prepare playback cookies", error) }
-          }
-          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.cookies.end", detail = "elapsedMs=${(System.nanoTime() - cookieStarted) / 1000000}")
+              ?.let { cookieSource ->
+                // libmpv needs this file before it opens the stream, so the export cannot be deferred
+                // past loadfile. A file already written during this session is current: cookies are
+                // only written by OkHttp/WebView outside this Activity, so re-running the
+                // CookieManager read plus the AtomicFile fsync on every load is pure overhead.
+                if (AndroidCookieJar.playbackCookieFile(this@PlayerActivity).lastModified() >= sessionStartedAtMillis) {
+                  null
+                } else {
+                  async(Dispatchers.IO) {
+                    androidCookieJar
+                      .exportForPlayback(cookieSource, AndroidCookieJar.playbackCookieFile(this@PlayerActivity))
+                      .onFailure { error -> Log.w(TAG, "Failed to prepare playback cookies", error) }
+                  }
+                }
+              }
           ensureCurrentMediaRequest(requestGeneration)
+          val itemWithArtwork =
+            artworkDeferred
+              ?.await()
+              ?.takeIf { it.isNotBlank() }
+              ?.let { artwork -> item.copy(artworkUri = artwork) }
+              ?: item
           if (requestedQueueItem == null || isTorrentRequest) {
             val torrentSeries = torrentResult?.takeIf { it.playableFiles.size > 1 }
             if (torrentSeries != null) {
@@ -5939,6 +5385,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
               commitMediaRequest(requestGeneration) { PlaybackSession.replaceQueue(listOf(itemWithArtwork), 0) }
             }
           }
+          // libmpv reads the cookie file as it opens the stream, so this is the last join before loadfile.
+          cookieExportDeferred?.await()
           issuePlaybackLoad(
             item = itemWithArtwork,
             attempt = 0,
@@ -5965,6 +5413,70 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           }
         }
       }
+  }
+
+  /**
+   * Adopts a session [PlaybackSessionPreloader] already opened for this exact file, instead of
+   * loading it again.
+   *
+   * Returns true only when the whole handoff is safe. Every guard below exists because a wrong true
+   * would be worse than a slow open: it would show the wrong file, skip a required preparation step,
+   * or resume at the wrong position. On any doubt this returns false, and the caller runs the
+   * ordinary load path, which is unchanged and still correct.
+   */
+  private suspend fun tryAdoptPreloadedSession(
+    item: PlaybackItem?,
+    index: Int,
+    legacyMediaIdentifier: String?,
+    requestGeneration: Long,
+    sourceIntent: Intent,
+  ): Boolean {
+    if (item == null) return false
+    // Items that need their own preparation before a loadfile are exactly the ones the pre-loader
+    // deliberately does not handle: yt-dlp resolution, torrents, audiobooks and network streams all
+    // rewrite the playable URI or the queue after the pre-load, which would invalidate the claim.
+    if (item.audiobook != null) return false
+    if (YtdlpManager.requiresYtdlp(item.originalUri) || YtdlpManager.requiresYtdlp(item.playableUri)) return false
+    if (isTorrentSource(item.originalUri, sourceIntent.type)) return false
+    if (item.networkSource != null) return false
+    if (sourceIntent.getLongExtra(AudiobookPlayback.EXTRA_BOOK_ID, -1L) > 0) return false
+    // A script restore, a snapshot jump or an explicit position override must win over whatever the
+    // pre-loader parked the session at, and each of them also drives post-load bookkeeping below.
+    if (sourceIntent.hasExtra(EXTRA_SCRIPT_RESTORE_MEDIA_ID)) return false
+    if (sourceIntent.hasExtra(EXTRA_START_POSITION_SECONDS)) return false
+    if (sourceIntent.getBooleanExtra("internal_launch", false) && sourceIntent.hasExtra("playlist_id")) return false
+    // Replaced, not thrown through: a superseded request must fall back to the ordinary path rather
+    // than abort here, so use the predicate instead of the throwing ensure* helper.
+    if (!isCurrentMediaRequest(requestGeneration)) return false
+
+    val generation = PlaybackSessionPreloader.claim(item, index) ?: return false
+
+    // The pre-load parked the file READY and paused. Apply the resume position the same way the
+    // ordinary path would, then release the pause. A seek here is cheap precisely because the
+    // demuxer is already open, which is what the pre-load bought.
+    val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
+    val resumeMode = playerPreferences.resumePlaybackMode.get()
+    val resumePositionSeconds =
+      if (restoreSavedPosition && resumeMode == ResumePlaybackMode.Always && !item.isDefinitelyAudioOnly()) {
+        resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+          ?.lastPosition
+          ?.takeIf { it > 3 }
+          ?.toDouble()
+      } else {
+        null
+      }
+    resumePositionSeconds?.let { position ->
+      PlaybackSession.commandForGeneration(generation, "seek", position.toString(), "absolute")
+    }
+
+    ensureCurrentMediaRequest(requestGeneration)
+    isReady = true
+    currentPlayableUri = item.playableUri
+    PlaybackSession.setPropertyBoolean("pause", false)
+    viewModel.onVideoLoadCompleted()
+    viewModel.refreshPlaylistItems()
+    syncBackgroundPlaybackService(updateThumbnail = false)
+    return true
   }
 
   private suspend fun issuePlaybackLoad(
@@ -5997,45 +5509,49 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
     val resumeMode = playerPreferences.resumePlaybackMode.get()
     // Only Always Resume may use the fast load-local start option. Never starts at zero.
-    val initialPositionSeconds =
-      if (effectivePositionOverride != null) {
-        effectivePositionOverride.positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
-      } else if (
+    val needsSavedPositionLookup =
+      effectivePositionOverride == null &&
         restoreSavedPosition &&
         resumeMode == ResumePlaybackMode.Always &&
         !item.isDefinitelyAudioOnly()
-      ) {
-        resolvePlaybackState(item.stableId, legacyMediaIdentifier)
-          ?.lastPosition
-          ?.takeIf { it > 3 }
-          ?.toDouble()
-      } else {
-        null
-      }
     ensureCurrentMediaRequest(requestGeneration)
-    // Proxy routes intentionally have no media extension. Their known network source is a
-    // direct file, so never prepare a webpage extractor or its Python runtime for them.
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.position.ready", detail = "elapsedMs=${(System.nanoTime() - positionStarted) / 1000000}")
     val requiresYtdlp = item.networkSource == null &&
       sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
-    val ytdlpStarted = System.nanoTime()
-    val ytdlpReady = !requiresYtdlp ||
-      YtdlpManager.prepareForPlayback(this, item.playableUri) { line ->
-        line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+    // The yt-dlp runtime prep (multi-MB runtime copy plus a Python subprocess for web sources),
+    // the previous-session stop wait and the resume-position database read have no ordering
+    // dependency on each other, so they are started together and joined only where their result
+    // is needed: pre-load latency becomes max(...) instead of sum(...).
+    val generation = coroutineScope {
+      val ytdlpReadyDeferred =
+        async {
+          !requiresYtdlp || YtdlpManager.prepareForPlayback(this@PlayerActivity, item.playableUri) { line ->
+            line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
+          }
+        }
+      val stopCompletedDeferred = async { PlaybackSession.awaitStopCompletion() }
+      val savedPositionDeferred =
+        if (needsSavedPositionLookup) {
+          async {
+            resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+              ?.lastPosition
+              ?.takeIf { it > 3 }
+              ?.toDouble()
+          }
+        } else {
+          null
+        }
+
+      val initialPositionSeconds =
+        effectivePositionOverride
+          ?.positionSeconds
+          ?.takeIf { it.isFinite() && it > 0.0 }
+          ?: savedPositionDeferred?.await()
+      if (!ytdlpReadyDeferred.await()) throw IllegalStateException("yt-dlp could not be prepared for web playback")
+      ensureCurrentMediaRequest(requestGeneration)
+      if (!stopCompletedDeferred.await()) {
+        throw IllegalStateException("Timed out waiting for previous playback to stop")
       }
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.extractor.ready", detail = "required=$requiresYtdlp elapsedMs=${(System.nanoTime() - ytdlpStarted) / 1000000}")
-    if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
-    ensureCurrentMediaRequest(requestGeneration)
-    if (!PlaybackSession.awaitStopCompletion()) {
-      throw IllegalStateException("Timed out waiting for previous playback to stop")
-    }
-    ensureCurrentMediaRequest(requestGeneration)
-    val fontGateStart = System.nanoTime()
-    app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareMedia(this, item, resolveSubtitleFontFamily(subtitlesPreferences))
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.font.gate", detail = "elapsedMs=${(System.nanoTime()-fontGateStart)/1000000} cachedOnly=true")
-    ensureCurrentMediaRequest(requestGeneration)
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.load.command")
-    val generation =
+      ensureCurrentMediaRequest(requestGeneration)
       PlaybackSession.load(
         item = item,
         restoreSavedPosition = restoreSavedPosition,
@@ -6053,6 +5569,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           }
         },
       )
+    }
     if (generation < 0L) {
       ensureCurrentMediaRequest(requestGeneration)
       throw IllegalStateException("libmpv core is unavailable")
@@ -6445,6 +5962,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
     if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) return
 
+    // This must stay synchronous, before super.onCreate(), so the requested orientation is applied
+    // while the window does not exist yet. Deferring it (even by one frame) makes the assignment
+    // land after the window is added and after overrideActivityTransition() has begun, and the
+    // resulting relayout drops the open animation — reproducible as a vertical video no longer
+    // sliding in. PlayerActivity handles orientation|screenSize|screenLayout itself, so the late
+    // assignment does not recreate the Activity; it relayouts the window mid-transition.
     var width = sourceIntent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
     var height = sourceIntent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
     var rotation = 0
@@ -7925,7 +7448,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     val sourceUri = extractUriFromIntent(intent)
     val localPath =
       intent.getStringExtra("local_media_path")?.takeIf { it.isNotBlank() }
-        ?: sourceUri?.resolveLocalPath(this)
+        ?: sourceUri?.let { source -> resolveLocalPathMemoized(source) }
     localPath?.let {
       return PlaybackIdentity.forLocalPath(it)
     }
@@ -7958,7 +7481,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     val explicitIdentifier = intent.getStringExtra("media_identifier")?.takeIf { it.isNotBlank() }
     val uri = extractUriFromIntent(intent)
     val hasLocalPath =
-      intent.getStringExtra("local_media_path")?.isNotBlank() == true || uri?.resolveLocalPath(this) != null
+      intent.getStringExtra("local_media_path")?.isNotBlank() == true ||
+        uri?.let { source -> resolveLocalPathMemoized(source) } != null
     if (hasLocalPath) return uri?.toString()?.let(PlaybackIdentity::forUri) ?: explicitIdentifier
     if (explicitIdentifier?.startsWith("media:v2:") == true) return null
     val networkFilePath = intent.getStringExtra("network_file_path")

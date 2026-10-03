@@ -898,6 +898,15 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_subtitles_secondary_pinch_zoom,
+          summaryRes = R.string.pref_subtitles_secondary_pinch_zoom_summary,
+          keywords = listOf("pinch", "zoom", "secondary", "subtitle", "scale", "dual"),
+          category = "Subtitles",
+          screen = SubtitlesPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_subtitles_fonts_dir,
           summaryRes = R.string.pref_subtitles_font_directory_summary,
           keywords = listOf("fonts", "directory", "subtitle", "custom", "folder"),
@@ -1253,6 +1262,15 @@ object SearchablePreferences {
           titleRes = R.string.pref_advanced_dump_logs_title,
           summaryRes = R.string.pref_advanced_dump_logs_summary,
           keywords = listOf("logs", "debug", "dump", "share", "export"),
+          category = "Advanced",
+          screen = AdvancedPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_advanced_export_logs_title,
+          summaryRes = R.string.pref_advanced_export_logs_summary,
+          keywords = listOf("logs", "export", "save", "file", "diagnostics", "bug report"),
           category = "Advanced",
           screen = AdvancedPreferencesScreen,
         ),

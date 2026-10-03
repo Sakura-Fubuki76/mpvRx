@@ -28,6 +28,8 @@ import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.preferences.ThumbnailMode
 import app.gyrolet.mpvrx.repository.NetworkRepository
+import app.gyrolet.mpvrx.ui.player.PlaybackPhase
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.resolveLocalPath
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
@@ -45,17 +47,18 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
 import org.koin.java.KoinJavaComponent
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
-import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -65,8 +68,12 @@ import kotlin.math.roundToInt
 
 private const val NETWORK_THUMBNAIL_FAILURE_RETRY_MS = 30_000L
 
-/** How long a local thumbnail failure is left alone before it is attempted again. */
-private const val LOCAL_THUMBNAIL_FAILURE_RETRY_MS = 60_000L
+/**
+ * Total time one folder prefetch may spend waiting for the player to go quiet before it stops and
+ * leaves the rest of the batch for the next visit. Without a budget a long video would starve the
+ * prefetch for as long as it plays.
+ */
+private const val FOLDER_PLAYBACK_WAIT_BUDGET_MS = 2_000L
 
 class ThumbnailRepository(
   private val context: Context,
@@ -113,39 +120,36 @@ class ThumbnailRepository(
   private val cloudWorkQueue = app.gyrolet.mpvrx.domain.cloud.CloudWorkQueue()
   private val maxFolderBatchSize = 48
 
-  // Per-batch progress lives in [completedFolderVideoKeys], keyed per video, so it survives both a
-  // cancel and a different visible window.
+  // Phases where libmpv holds the current file open or is about to open one. A folder prefetch
+  // decode in one of these competes with the player for the same cores and IO, so it must yield.
+  /**
+   * The only phases where mpv is actively opening and decoding a file. Generating a thumbnail then
+   * competes for the same cores and opens a second demuxer on the very file mpv is opening, so it
+   * is worth standing aside. Once playback is merely running (READY) or in the background the open
+   * is already done, so thumbnails must be allowed to proceed: blocking there would leave a folder
+   * the user is scrolling permanently blank for as long as anything is playing.
+   */
+  private val playbackOpeningPhases =
+    setOf(
+      PlaybackPhase.INITIALIZING,
+      PlaybackPhase.LOADING,
+    )
+
+  private data class FolderState(
+    val signature: String,
+    @Volatile var nextIndex: Int = 0,
+  )
+
+  private val folderStates = ConcurrentHashMap<String, FolderState>()
   private val folderJobs = ConcurrentHashMap<String, Job>()
 
-  // Throttles local failures so a corrupt or unsupported file is not handed to
-  // MediaMetadataRetriever again on every scroll settle, while still being retried later in case
-  // the cause was transient (storage remounted, permission granted, decoder was busy).
-  private val localThumbnailFailedAt = ConcurrentHashMap<String, Long>()
-
-  // Decoded frames straight from disk, kept at their stored (size-independent) resolution so that
-  // re-entering a card after it scrolled away is a memory hit instead of a fresh file read,
-  // JPEG decode and scale. Bounded by bytes, and only ever holds frames that are already
-  // available on disk, so entries can be dropped at any time without losing anything.
-  private val decodedDiskCache: LruCache<String, Bitmap>
-
-  // Index from a size-independent video identity to the full size-specific memory-cache keys
-  // produced for it. Lets composition seed a card with an already-decoded frame for that video
-  // even when its own size variant was never computed.
-  private val thumbnailKeysByVideo =
-    object : LinkedHashMap<String, LinkedHashSet<String>>(512) {
-      override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LinkedHashSet<String>>?): Boolean =
-        size > 1024
-    }
-
-  // Same idea for network sources, keyed by [networkThumbnailIdentity].
+  // Throttle transient failures while still allowing remote files to recover during this process.
+  private val networkThumbnailFailedAt = ConcurrentHashMap<String, Long>()
   private val networkKeysByIdentity =
     object : LinkedHashMap<String, LinkedHashSet<String>>(512) {
       override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LinkedHashSet<String>>?): Boolean =
         size > 1024
     }
-
-  // Throttle transient failures while still allowing remote files to recover during this process.
-  private val networkThumbnailFailedAt = ConcurrentHashMap<String, Long>()
 
   private val _thumbnailReadyKeys =
     MutableSharedFlow<String>(
@@ -158,17 +162,6 @@ class ThumbnailRepository(
     val cacheSizeKb = maxMemoryKb / 6
     memoryCache =
       object : LruCache<String, Bitmap>(cacheSizeKb) {
-        override fun sizeOf(
-          key: String,
-          value: Bitmap,
-        ): Int = value.byteCount / 1024
-      }
-
-    // Sized in KB like memoryCache. Deliberately smaller than it: this cache exists only to
-    // spare repeated disk decodes, and the scaled copies still live in memoryCache.
-    val decodedCacheSizeKb = (maxMemoryKb / 8).coerceAtLeast(2 * 1024)
-    decodedDiskCache =
-      object : LruCache<String, Bitmap>(decodedCacheSizeKb) {
         override fun sizeOf(
           key: String,
           value: Bitmap,
@@ -229,11 +222,7 @@ class ThumbnailRepository(
           synchronized(memoryCache) {
             memoryCache.put(key, bitmap)
           }
-          val diskKey = diskCacheKey(video)
-          writeBitmapToDisk(diskKey, bitmap, isNetworkUrl(video.path))
-          // The freshly written frame is now the disk representation, so a card that scrolls
-          // back into view can be served from memory instead of re-reading that file.
-          synchronized(decodedDiskCache) { decodedDiskCache.put(diskKey, bitmap) }
+          writeBitmapToDisk(diskCacheKey(video), bitmap, isNetworkUrl(video.path))
           _thumbnailReadyKeys.tryEmit(key)
           bitmap
         }
@@ -272,12 +261,8 @@ class ThumbnailRepository(
         return@withContext bitmap
       }
 
-      val diskKey = diskCacheKey(video)
       val decoded =
-        synchronized(decodedDiskCache) { decodedDiskCache.get(diskKey) }
-          ?: readBitmapFromDisk(diskKey, isNetworkUrl(video.path))?.also { bitmap ->
-            synchronized(decodedDiskCache) { decodedDiskCache.put(diskKey, bitmap) }
-          }
+        readBitmapFromDisk(diskCacheKey(video), isNetworkUrl(video.path))
           ?: return@withContext null
       val scaled = scaleBitmap(decoded, widthPx, heightPx)
       synchronized(memoryCache) {
@@ -286,12 +271,6 @@ class ThumbnailRepository(
       return@withContext scaled
     }
 
-  /**
-   * Memory-only lookup for an already-decoded frame of this video, at its own size or any other.
-   *
-   * Delegates to [peekThumbnailFromMemory] so callers on the main thread never touch the
-   * filesystem, which the key building in [thumbnailKey] would otherwise do.
-   */
   fun getThumbnailFromMemory(
     video: Video,
     widthPx: Int,
@@ -301,31 +280,25 @@ class ThumbnailRepository(
       return null
     }
 
-    return peekThumbnailFromMemory(video, widthPx, heightPx)
+    val key = thumbnailKey(video, widthPx, heightPx)
+    return synchronized(memoryCache) {
+      memoryCache.get(key)
+    }
   }
 
   fun clearThumbnailCache() {
     folderJobs.values.forEach { it.cancel() }
     folderJobs.clear()
+    folderStates.clear()
     ongoingOperations.values.forEach { it.cancel() }
     ongoingOperations.clear()
     diskVideoBaseKeyCache.clear()
     localMetadataCache.clear()
     networkThumbnailFailedAt.clear()
-    localThumbnailFailedAt.clear()
-    resolvedThumbnailKeys.evictAll()
-    synchronized(thumbnailKeysByVideo) { thumbnailKeysByVideo.clear() }
-    synchronized(networkKeysByIdentity) { networkKeysByIdentity.clear() }
-    synchronized(diskKeysByVideoGroup) { diskKeysByVideoGroup.evictAll() }
-    completedFolderVideoKeys.clear()
 
     synchronized(memoryCache) {
       memoryCache.evictAll()
     }
-    synchronized(decodedDiskCache) {
-      decodedDiskCache.evictAll()
-    }
-    folderThumbnailMemory.clear()
 
     diskCacheLock.write {
       listOf(
@@ -380,59 +353,52 @@ class ThumbnailRepository(
       folderJobs.entries.firstOrNull()?.let { (oldestId, job) ->
         job.cancel()
         folderJobs.remove(oldestId)
+        folderStates.remove(oldestId)
       }
     }
 
-    // Signature covers only the render settings. Folding the visible window into it made every
-    // scroll settle look like a different batch, because the window changes as you scroll.
-    val signature = folderSignature(widthPx, heightPx)
-    val settingsChanged = completedFolderVideoKeys.selectBatch(folderId, signature)
-
-    // Different render settings invalidate every previous mark, and any batch still running under
-    // the old settings has to go: its sizes no longer match what the cards are asking for.
-    val completed = completedFolderVideoKeys.marksFor(folderId)
-    if (settingsChanged) {
-      folderJobs.remove(folderId)?.cancel()
-    }
-
-    // Marks survive a cancel, so a resumed batch only revisits videos that still need work
-    // instead of walking the whole window again. A window that is fully marked, or whose only
-    // unfinished videos failed very recently, ends up with an empty pending list and no work.
-    if (folderJobs[folderId]?.isActive != true) {
-      val pending =
-        filteredVideos.filter { video ->
-          val group = videoGroupKey(video)
-          group !in completed && !hasRecentLocalThumbnailFailure(group)
+    val signature = folderSignature(filteredVideos, widthPx, heightPx)
+    val existingState = folderStates[folderId]
+    val state =
+      folderStates.compute(folderId) { _, existing ->
+        if (existing == null || existing.signature != signature) {
+          FolderState(signature = signature, nextIndex = 0)
+        } else {
+          existing
         }
-      if (pending.isEmpty()) {
-        return
-      }
+      }!!
+
+    val existingJob = folderJobs[folderId]
+    val shouldRestart =
+      existingState == null ||
+        existingState.signature != signature ||
+        (existingJob?.isActive != true && state.nextIndex < filteredVideos.size)
+
+    // Keep an active matching batch, but resume one that was cancelled before completing.
+    if (shouldRestart) {
+      folderJobs.remove(folderId)?.cancel()
       folderJobs[folderId] =
         repositoryScope.launch {
-          var i = 0
-          while (i < pending.size) {
-            val batchEnd = (i + localGenerationParallelism).coerceAtMost(pending.size)
+          var i = state.nextIndex
+          var playbackWaitMs = FOLDER_PLAYBACK_WAIT_BUDGET_MS
+          while (i < filteredVideos.size) {
+            // Stand aside only while mpv is opening a file, and only briefly. Progress is recorded by
+            // state.nextIndex after each completed batch, and cancelling the job still takes effect
+            // immediately, so pausing and resuming here never loses or repeats work.
+            val waitStartedAt = SystemClock.elapsedRealtime()
+            awaitThumbnailPlaybackWindow(playbackWaitMs)
+            playbackWaitMs -= (SystemClock.elapsedRealtime() - waitStartedAt)
+            val batchEnd = (i + localGenerationParallelism).coerceAtMost(filteredVideos.size)
             coroutineScope {
               (i until batchEnd)
                 .map { index ->
                   async {
-                    val video = pending[index]
-                    // Only a frame already decoded in memory can be skipped outright. Re-decoding
-                    // the disk JPEG on every scroll settle was the visible cost of scrolling a
-                    // long folder; decodedDiskCache is what makes the decode itself a one-off.
-                    val needsWork = needsThumbnailWork(video, widthPx, heightPx)
-                    val bitmap = if (needsWork) getThumbnail(video, widthPx, heightPx) else null
-                    // A failure stays unmarked so a later visit retries it, which is what lets a
-                    // network share or an unreadable file recover.
-                    if (!needsWork || bitmap != null) {
-                      completed.add(videoGroupKey(video))
-                    } else {
-                      localThumbnailFailedAt[videoGroupKey(video)] = SystemClock.elapsedRealtime()
-                    }
+                    getThumbnail(filteredVideos[index], widthPx, heightPx)
                   }
                 }.awaitAll()
             }
             i = batchEnd
+            state.nextIndex = i
             yield()
           }
         }
@@ -440,10 +406,27 @@ class ThumbnailRepository(
   }
 
   fun cancelFolderThumbnailGeneration(folderId: String) {
-    // Pause, do not forget: dropping the state here made every scroll restart the batch from the
-    // first item, so each scroll stop re-walked (and re-decoded) the whole visible window.
     folderJobs.remove(folderId)?.cancel()
+    folderStates.remove(folderId)
   }
+
+  /**
+   * Stands aside while mpv is opening a file, but never indefinitely and never by giving up.
+   *
+   * Returns as soon as [PlaybackSession] is past its open window. If that has not happened within
+   * [budgetMs] the caller proceeds anyway: the list screens call
+   * [startFolderThumbnailGeneration] exactly once per scroll settle, so abandoning the batch here
+   * would leave the remaining thumbnails ungenerated with nothing to retry them.
+   */
+  private suspend fun awaitThumbnailPlaybackWindow(budgetMs: Long) {
+    currentCoroutineContext().ensureActive()
+    if (!isPlaybackOpeningPhase(PlaybackSession.state.value.phase)) return
+    withTimeoutOrNull(budgetMs) {
+      PlaybackSession.state.first { !isPlaybackOpeningPhase(it.phase) }
+    }
+  }
+
+  private fun isPlaybackOpeningPhase(phase: PlaybackPhase): Boolean = phase in playbackOpeningPhases
 
   fun thumbnailKey(
     video: Video,
@@ -452,49 +435,21 @@ class ThumbnailRepository(
   ): String =
     "${videoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey()}".also { key ->
       resolvedThumbnailKeys.put(peekIdentity(video, width, height), key)
-      val group = videoGroupKey(video)
-      synchronized(thumbnailKeysByVideo) {
-        thumbnailKeysByVideo.getOrPut(group) { LinkedHashSet() }.add(key)
-      }
     }
 
   /**
-   * Size-independent identity of a video's thumbnail.
-   *
-   * Built from [Video]'s own fields only, never from [videoBaseKey], so it stays safe to evaluate
-   * during composition where filesystem and MediaStore access are not allowed.
-   */
-  private fun videoGroupKey(video: Video): String =
-    "${video.path}|${video.uri}|${video.size}|${video.dateModified}|${video.duration}" +
-      "|${thumbnailModeKey()}|${thumbnailQualityKey()}"
-
-  /**
-   * Non-blocking peek for composition, safe to call from the main thread.
-   *
-   * Tries the card's own size first, then any size this video was decoded at, then the frame
-   * decoded from disk. Building keys through [thumbnailKey] would hit the filesystem, so only
-   * previously recorded identities are consulted.
+   * Non-blocking peek for composition. Building a key can hit the filesystem or MediaStore, so this
+   * only answers once [thumbnailKey] has run on a worker thread and returns null otherwise.
    */
   fun peekThumbnailFromMemory(
     video: Video,
     widthPx: Int,
     heightPx: Int,
   ): Bitmap? {
-    val sizedKey = resolvedThumbnailKeys.get(peekIdentity(video, widthPx, heightPx))
-    if (sizedKey != null) {
-      synchronized(memoryCache) { memoryCache.get(sizedKey) }?.let { return it }
+    val key = resolvedThumbnailKeys.get(peekIdentity(video, widthPx, heightPx)) ?: return null
+    return synchronized(memoryCache) {
+      memoryCache.get(key)
     }
-    // This video's frame may already be decoded at another size (folder prefetch, grid/list
-    // switch), or decoded from disk but not yet scaled for this card. Showing either beats
-    // flashing the placeholder.
-    val group = videoGroupKey(video)
-    val candidates = synchronized(thumbnailKeysByVideo) { thumbnailKeysByVideo[group]?.toList() }
-    if (candidates != null) {
-      synchronized(memoryCache) { candidates.firstNotNullOfOrNull { memoryCache.get(it) } }
-        ?.let { return it }
-    }
-    val diskKey = synchronized(diskKeysByVideoGroup) { diskKeysByVideoGroup[group] } ?: return null
-    return synchronized(decodedDiskCache) { decodedDiskCache.get(diskKey) }
   }
 
   private fun peekIdentity(
@@ -520,11 +475,7 @@ class ThumbnailRepository(
   // Keep extraction-quality changes from reusing smaller legacy images that were
   // cached without their requested dimensions in the key.
   fun diskCacheKey(video: Video): String =
-    "video-thumb-v2|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey()}".also { key ->
-      val group = videoGroupKey(video)
-      // LruCache exposes put(), not a set operator.
-      synchronized(diskKeysByVideoGroup) { diskKeysByVideoGroup.put(group, key) }
-    }
+    "video-thumb-v2|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   private fun canonicalLocalPath(video: Video): String {
     val raw = video.path.ifBlank { video.uri.toString() }
@@ -668,7 +619,13 @@ class ThumbnailRepository(
     val dimension = maxOf(widthPx, heightPx, MAX_THUMBNAIL_SIZE).coerceAtMost(thumbnailMaxSize())
 
     if (video.isAudio || mode == ThumbnailMode.Smart || mode == ThumbnailMode.EmbeddedThumbnail) {
-      generateEmbeddedArtwork(video)?.let { return scaleBitmap(it, widthPx, heightPx) }
+      // Opening a MediaMetadataRetriever here means a second demuxer on the very file the native
+      // decode below is about to open. Smart mode wants a real frame anyway, so only pay for the
+      // probe when a sidecar image is provably there. Audio and EmbeddedThumbnail keep it: there
+      // is no native frame to fall back to.
+      if (mode != ThumbnailMode.Smart || EmbeddedArtworkCandidates.hasSidecarArtwork(canonicalLocalPath(video))) {
+        generateEmbeddedArtwork(video)?.let { return scaleBitmap(it, widthPx, heightPx) }
+      }
       if (video.isAudio) return null
     }
 
@@ -904,16 +861,19 @@ class ThumbnailRepository(
       return bitmap
     }
 
-    // The source bitmap is deliberately not recycled: it can still be referenced by
-    // decodedDiskCache or memoryCache, and a card holding it would crash on a recycled bitmap.
     val scaledWidth = max(1, (bitmap.width * scale).roundToInt())
     val scaledHeight = max(1, (bitmap.height * scale).roundToInt())
-    return try {
-      Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
-    } catch (_: IllegalArgumentException) {
-      // Bitmap was recycled between the check and the scale call
-      bitmap
+    val scaled =
+      try {
+        Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+      } catch (_: IllegalArgumentException) {
+        // Bitmap was recycled between the check and the scale call
+        return bitmap
+      }
+    if (scaled != bitmap && !bitmap.isRecycled) {
+      bitmap.recycle()
     }
+    return scaled
   }
 
   private fun isNetworkUrl(path: String): Boolean =
@@ -1606,151 +1566,24 @@ class ThumbnailRepository(
 
       // Use the first video as the folder thumbnail
       getThumbnail(filteredVideos.first(), widthPx, heightPx)
-        ?.also { frame -> folderThumbnailMemory.put(folderId, frame) }
     }
 
-  /** Non-blocking peek of the last frame shown for [folderId]; safe to call during composition. */
-  fun peekFolderThumbnail(folderId: String): Bitmap? = folderThumbnailMemory.get(folderId)
-
-  /**
-   * Last resolved frame for a folder card, so scrolling back to it paints immediately instead of
-   * flashing the placeholder while the thumbnail is fetched and decoded again.
-   */
-  private val folderThumbnailMemory = FolderThumbnailMemory()
-
-  private class FolderThumbnailMemory {
-    private val frames = LinkedHashMap<String, Bitmap>()
-    private val lock = Any()
-
-    fun get(folderId: String): Bitmap? =
-      synchronized(lock) { frames[folderId] }
-
-    fun put(
-      folderId: String,
-      bitmap: Bitmap,
-    ) {
-      synchronized(lock) {
-        frames.remove(folderId)
-        frames[folderId] = bitmap
-        while (frames.size > MAX_TRACKED_FOLDER_FRAMES) {
-          val oldest = frames.keys.firstOrNull() ?: break
-          frames.remove(oldest)
-        }
-      }
-    }
-
-    fun clear() {
-      synchronized(lock) { frames.clear() }
-    }
-
-    private companion object {
-      const val MAX_TRACKED_FOLDER_FRAMES = 32
-    }
-  }
-
-  /**
-   * Identity of a batch's render settings, independent of which videos happen to be visible.
-   *
-   * Progress is tracked per video (see [completedFolderVideoKeys]) rather than by list index, so
-   * a different scroll position no longer looks like a brand new batch.
-   */
   private fun folderSignature(
+    videos: List<Video>,
     widthPx: Int,
     heightPx: Int,
-  ): String = "$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}"
-
-  /**
-   * Per-batch state for folder thumbnail generation: the render settings the marks belong to, and
-   * the per-video completion marks themselves, keyed as in [videoGroupKey]. The map is bounded to
-   * the most recently used folders, so a long browsing session stays bounded.
-   *
-   * Keeping the signature next to the marks is what stops the two from drifting apart: a signature
-   * change can then never leave marks recorded under settings nobody is using any more.
-   */
-  private val completedFolderVideoKeys = FolderCompletionTracker()
-
-  private class FolderCompletionTracker {
-    private class Batch(
-      val signature: String,
-      val marks: MutableSet<String>,
-    )
-
-    private val batches = LinkedHashMap<String, Batch>()
-    private val lock = Any()
-
-    /**
-     * Selects [folderId]'s batch for [signature], creating it or resetting it when the render
-     * settings changed. Returns true when the settings changed, i.e. the previous marks are void.
-     */
-    fun selectBatch(
-      folderId: String,
-      signature: String,
-    ): Boolean =
-      synchronized(lock) {
-        // Re-insert first so the bounded map evicts the least recently used folder.
-        val existing = batches.remove(folderId)
-        val settingsChanged = existing == null || existing.signature != signature
-        batches[folderId] =
-          if (settingsChanged) {
-            Batch(signature, Collections.synchronizedSet(HashSet<String>()))
-          } else {
-            existing!!
-          }
-        while (batches.size > MAX_TRACKED_FOLDER_BATCHES) {
-          val oldest = batches.keys.firstOrNull() ?: break
-          batches.remove(oldest)
-        }
-        settingsChanged
-      }
-
-    /** The mark set for [folderId]; empty when the folder has no batch. Call after [selectBatch]. */
-    fun marksFor(folderId: String): MutableSet<String> =
-      synchronized(lock) { batches[folderId]?.marks ?: Collections.synchronizedSet(HashSet<String>()) }
-
-    fun clear() {
-      synchronized(lock) { batches.clear() }
+  ): String {
+    val md = MessageDigest.getInstance("MD5")
+    md.update("$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}|".toByteArray())
+    for (video in videos) {
+      md.update(video.path.toByteArray())
+      md.update("|".toByteArray())
+      md.update(video.size.toString().toByteArray())
+      md.update("|".toByteArray())
+      md.update(video.dateModified.toString().toByteArray())
+      md.update(";".toByteArray())
     }
-
-    private companion object {
-      const val MAX_TRACKED_FOLDER_BATCHES = 8
-    }
-  }
-
-  // Disk-cache key per size-independent video identity. Recording it on a worker thread lets
-  // composition reach [decodedDiskCache] without the filesystem access [diskCacheKey] needs.
-  private val diskKeysByVideoGroup = LruCache<String, String>(2048)
-
-  /**
-   * True when this video failed to produce a frame recently enough that another attempt would
-   * just repeat the same decoder work. The mark is dropped once it expires, so a transient cause
-   * (storage remounted, permission granted, decoder contention) still recovers on its own.
-   */
-  private fun hasRecentLocalThumbnailFailure(groupKey: String): Boolean {
-    val failedAt = localThumbnailFailedAt[groupKey] ?: return false
-    if (SystemClock.elapsedRealtime() - failedAt < LOCAL_THUMBNAIL_FAILURE_RETRY_MS) return true
-    localThumbnailFailedAt.remove(groupKey, failedAt)
-    return false
-  }
-
-  /**
-   * True when this video has no decoded frame in memory yet, i.e. there is still work to do.
-   *
-   * A frame that only exists on disk still counts as pending: [getCachedThumbnail] performs the
-   * disk read, and [decodedDiskCache] makes that a one-off per process rather than a cost paid on
-   * every scroll settle. Treating "on disk" as finished would leave the list with placeholders,
-   * because cards only read memory and never decode by themselves.
-   */
-  private fun needsThumbnailWork(
-    video: Video,
-    widthPx: Int,
-    heightPx: Int,
-  ): Boolean {
-    val sizedKey = resolvedThumbnailKeys.get(peekIdentity(video, widthPx, heightPx))
-    if (sizedKey != null && synchronized(memoryCache) { memoryCache.get(sizedKey) } != null) {
-      return false
-    }
-    val groupKeys = synchronized(thumbnailKeysByVideo) { thumbnailKeysByVideo[videoGroupKey(video)]?.toList() }
-    return groupKeys == null || synchronized(memoryCache) { groupKeys.none { memoryCache.get(it) != null } }
+    return md.digest().joinToString("") { byte -> "%02x".format(byte) }
   }
 
   private fun thumbnailModeKey(): String =

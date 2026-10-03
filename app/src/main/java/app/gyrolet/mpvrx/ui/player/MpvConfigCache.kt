@@ -31,6 +31,14 @@ class MpvConfigCache(
   private val atomicConfigFile = AtomicFile(configFile)
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+  /**
+   * The exact bytes of the last read/written mpv.conf, mirrored from [readCachedContent] and
+   * [writeCachedContent] while [lock] is held. [ensureCurrent] already reads the whole file to
+   * decide whether it must be rewritten, so [configurationKey] can hash this copy instead of
+   * reading the same file a second time in the same open. Never mutated in place, only replaced.
+   */
+  private var cachedBytes: ByteArray? = null
+
   init {
     scope.launch {
       preferences.mpvConf.changes().collect {
@@ -60,28 +68,40 @@ class MpvConfigCache(
 
   fun configurationKey(): String {
     ensureCurrent()
-    val bytes = synchronized(lock) { atomicConfigFile.readFully() }
-    val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-    return Base64.encodeToString(digest, Base64.NO_WRAP or Base64.URL_SAFE)
+    return synchronized(lock) {
+      // [ensureCurrent] always leaves [cachedBytes] matching the file. The fallback only covers a
+      // concurrent external writer between that call and here; it keeps the pre-existing behaviour
+      // of hashing whatever is on disk instead of trusting a possibly stale mirror.
+      val bytes = cachedBytes ?: atomicConfigFile.readFully().also { cachedBytes = it }
+      val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+      Base64.encodeToString(digest, Base64.NO_WRAP or Base64.URL_SAFE)
+    }
   }
 
-  private fun readCachedContent(): String? =
+  private fun readCachedContent(): String? {
     if (!configFile.isFile) {
-      null
-    } else {
-      runCatching { atomicConfigFile.readFully().toString(StandardCharsets.UTF_8) }.getOrNull()
+      cachedBytes = null
+      return null
     }
+    val bytes =
+      runCatching { atomicConfigFile.readFully() }
+        .onSuccess { cachedBytes = it }
+        .getOrNull()
+    return bytes?.toString(StandardCharsets.UTF_8)
+  }
 
   private fun writeCachedContent(content: String) {
     configFile.parentFile?.mkdirs()
+    val bytes = content.toByteArray(StandardCharsets.UTF_8)
     val output = atomicConfigFile.startWrite()
     try {
-      output.write(content.toByteArray(StandardCharsets.UTF_8))
+      output.write(bytes)
       atomicConfigFile.finishWrite(output)
     } catch (error: Throwable) {
       atomicConfigFile.failWrite(output)
       throw error
     }
+    cachedBytes = bytes
   }
 
   private fun updateLocked(

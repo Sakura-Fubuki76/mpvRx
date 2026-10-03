@@ -24,14 +24,23 @@ import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.FoldersPreferences
 import app.gyrolet.mpvrx.utils.media.MediaInfoOps
+import app.gyrolet.mpvrx.utils.media.ProgressiveResultsPublisher
+import app.gyrolet.mpvrx.utils.storage.FileFilterUtils
 import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import app.gyrolet.mpvrx.utils.storage.FolderViewScanner
 import app.gyrolet.mpvrx.utils.storage.MediaScanOptions
+import app.gyrolet.mpvrx.utils.storage.NoMediaPathFilter
 import app.gyrolet.mpvrx.utils.storage.StorageVolumeUtils
 import app.gyrolet.mpvrx.utils.storage.TreeViewScanner
 import app.gyrolet.mpvrx.utils.storage.VideoScanUtils
 import app.gyrolet.mpvrx.utils.storage.mediaPathKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
@@ -61,7 +70,8 @@ object MediaFileRepository : KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val database: MpvRxDatabase by inject()
 
-  private fun currentScanOptions(includeAudioOverride: Boolean? = null): MediaScanOptions =
+  /** Public so a persisted listing can be namespaced by the options that produced it. */
+  fun currentScanOptions(includeAudioOverride: Boolean? = null): MediaScanOptions =
     MediaScanOptions(
       includeNoMediaFolders = foldersPreferences.includeNoMediaFolders.get(),
       hiddenFolderMarkerNames = foldersPreferences.hiddenFolderMarkerNames.get(),
@@ -145,6 +155,7 @@ object MediaFileRepository : KoinComponent {
     onProgress: ((Int) -> Unit)? = null,
     forceFileSystemCheck: Boolean = false,
     includeAudioOverride: Boolean? = null,
+    onSnapshot: (suspend (List<VideoFolder>) -> Unit)? = null,
   ): List<VideoFolder> =
     withContext(Dispatchers.IO) {
       val options = currentScanOptions(includeAudioOverride)
@@ -153,6 +164,7 @@ object MediaFileRepository : KoinComponent {
           context = context,
           options = options,
           forceFileSystemCheck = forceFileSystemCheck,
+          onSnapshot = onSnapshot,
         )
       folders.distinctBy { it.path.lowercase(Locale.ROOT) }
         .sortedBy { it.name.lowercase(Locale.getDefault()) }
@@ -169,9 +181,24 @@ object MediaFileRepository : KoinComponent {
   suspend fun getAllAudioFolders(
     context: Context,
     minimumAudioDurationSeconds: Int = 0,
+    onSnapshot: (suspend (List<VideoFolder>) -> Unit)? = null,
   ): List<VideoFolder> =
     withContext(Dispatchers.IO) {
       val aggregates = linkedMapOf<String, AudioFolderAggregate>()
+      val publisher =
+        ProgressiveResultsPublisher(onSnapshot, snapshot = {
+          aggregates.values.map { agg ->
+            VideoFolder(
+              bucketId = agg.path,
+              name = leafName(agg.path),
+              path = agg.path,
+              videoCount = agg.count,
+              totalSize = agg.size,
+              totalDuration = agg.duration,
+              lastModified = agg.lastModified,
+            )
+          }
+        })
       try {
         val projection =
           arrayOf(
@@ -193,6 +220,7 @@ object MediaFileRepository : KoinComponent {
             val durationColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             while (cursor.moveToNext()) {
+              currentCoroutineContext().ensureActive()
               val path = cursor.getString(dataColumn)
               if (path == null) continue
               val file = File(path)
@@ -208,11 +236,18 @@ object MediaFileRepository : KoinComponent {
               aggregate.duration += durationMs
               aggregate.lastModified = maxOf(aggregate.lastModified, cursor.getLong(dateColumn))
               aggregate.count += 1
+              publisher.publishIfNeeded()
             }
           }
+      } catch (cancelled: CancellationException) {
+        throw cancelled
       } catch (e: Exception) {
         Log.e(TAG, "Error scanning for audio folders", e)
+        // Best-effort callers take what was aggregated; a caller watching a scan cannot tell an
+        // empty music library from a failed query, so it is told instead.
+        if (onSnapshot != null) throw e
       }
+      publisher.publishIfNeeded(force = true)
       aggregates.values
         .map { agg ->
           VideoFolder(
@@ -353,12 +388,14 @@ object MediaFileRepository : KoinComponent {
   /**
    * Gets all videos in a specific folder
    * @param bucketId Folder path
+   * @param onSnapshot invoked with this folder's contents as they are discovered
    */
   suspend fun getVideosInFolder(
     context: Context,
     bucketId: String,
     forceFileSystemCheck: Boolean = false,
     includeAudioOverride: Boolean? = null,
+    onSnapshot: (suspend (List<Video>) -> Unit)? = null,
   ): List<Video> =
     withContext(Dispatchers.IO) {
       try {
@@ -367,40 +404,103 @@ object MediaFileRepository : KoinComponent {
           bucketId,
           currentScanOptions(includeAudioOverride),
           forceFileSystemCheck,
+          onSnapshot,
         )
+      } catch (cancellation: CancellationException) {
+        throw cancellation
       } catch (e: Exception) {
         Log.e(TAG, "Error getting videos for bucket $bucketId", e)
+        // A best-effort caller wants the folders that did work. A caller watching a progressive
+        // scan cannot tell an empty folder from a broken one, so it is told instead.
+        if (onSnapshot != null) throw e
         emptyList()
       }
     }
 
   /**
+   * Folders scanned at once. Every bucket costs a MediaStore query plus, for hidden folders, a
+   * native metadata pass per file, so they are resolved concurrently in bounded chunks rather
+   * than one after another.
+   */
+  private const val BUCKET_SCAN_CHUNK_SIZE = 8
+
+  /**
    * Gets videos from multiple folders
    * Shows all videos including hidden ones.
+   *
+   * @param onSnapshot invoked with the videos resolved so far, so callers can paint before the whole
+   *   library is listed. Folders are scanned concurrently, so this arrives from several coroutines
+   *   at once: the accumulator is guarded, and the callback is always invoked outside that guard
+   *   because it suspends.
    */
   suspend fun getVideosForBuckets(
     context: Context,
     bucketIds: Set<String>,
     includeAudioOverride: Boolean? = null,
+    onSnapshot: (suspend (List<Video>) -> Unit)? = null,
   ): List<Video> =
     withContext(Dispatchers.IO) {
       val result = linkedMapOf<String, Video>()
-      for (id in bucketIds) {
-        runCatching {
-          getVideosInFolder(
-            context,
-            id,
-            includeAudioOverride = includeAudioOverride,
-          ).forEach { media ->
-            val key = mediaPathKey(media.path) ?: media.path
-            val existing = result[key]
-            if (existing == null || shouldReplaceMedia(existing, media)) {
-              result[key] = media
-            }
+      val resultLock = Any()
+
+      fun absorb(media: List<Video>) {
+        for (item in media) {
+          val key = mediaPathKey(item.path) ?: item.path
+          val existing = result[key]
+          if (existing == null || shouldReplaceMedia(existing, item)) {
+            result[key] = item
           }
         }
       }
-      result.values.toList()
+
+      for (chunk in bucketIds.chunked(BUCKET_SCAN_CHUNK_SIZE)) {
+        currentCoroutineContext().ensureActive()
+        val resolved =
+          coroutineScope {
+            chunk
+              .map { id ->
+                async(Dispatchers.IO) {
+                  try {
+                    getVideosInFolder(
+                      context = context,
+                      bucketId = id,
+                      includeAudioOverride = includeAudioOverride,
+                      // Republish a folder's own progress as it arrives rather than only once the
+                      // folder is finished, so one slow folder does not hold the list back.
+                      onSnapshot =
+                        if (onSnapshot == null) {
+                          null
+                        } else { partial ->
+                          val running =
+                            synchronized(resultLock) {
+                              absorb(partial)
+                              result.values.toList()
+                            }
+                          onSnapshot(running)
+                        },
+                    )
+                  } catch (cancellation: CancellationException) {
+                    // Never absorbed: swallowing this would keep a superseded scan alive.
+                    throw cancellation
+                  } catch (error: Exception) {
+                    // Per folder, not per library. A removed SD card or a directory that lost its
+                    // permission is expected noise, and one of those emptying the whole list would
+                    // be far worse than a library that is missing a folder.
+                    Log.w(TAG, "Unable to scan folder $id", error)
+                    emptyList()
+                  }
+                }
+              }.awaitAll()
+          }
+        val running =
+          synchronized(resultLock) {
+            absorb(resolved.flatten())
+            result.values.toList()
+          }
+        onSnapshot?.invoke(running)
+      }
+
+      synchronized(resultLock) { result.values.toList() }
     }
 
   private fun shouldReplaceMedia(
@@ -560,14 +660,84 @@ object MediaFileRepository : KoinComponent {
     )
   }
 
+  /**
+   * Every video in the library, listed folder by folder.
+   *
+   * Deliberately not "list the folders, then list their videos". The first phase is what decides how
+   * long the user waits, because nothing can be shown until the whole folder list exists. Instead
+   * each folder is scanned the moment it is discovered, so the first files appear while the folder
+   * scan is still running.
+   *
+   * @param onSnapshot invoked with the library as it accumulates.
+   */
   suspend fun getAllVideos(
     context: Context,
     includeAudioOverride: Boolean? = null,
+    onSnapshot: (suspend (List<Video>) -> Unit)? = null,
   ): List<Video> =
     withContext(Dispatchers.IO) {
-      val folders = getAllVideoFolders(context, includeAudioOverride = includeAudioOverride)
-      val bucketIds = folders.map { it.bucketId }.toSet()
-      getVideosForBuckets(context, bucketIds, includeAudioOverride)
+      val videos = linkedMapOf<String, Video>()
+      val videosLock = Any()
+      val scanned = hashSetOf<String>()
+      val pending = ArrayDeque<String>()
+
+      suspend fun publishRunning() {
+        val running = synchronized(videosLock) { videos.values.toList() }
+        onSnapshot?.invoke(running)
+      }
+
+      // Buckets still waiting for a scan slot. Drained in chunks so folders are scanned in parallel
+      // the way a whole-library scan always has, while discovery stays ahead of it.
+      suspend fun drain(force: Boolean) {
+        while (pending.size >= BUCKET_SCAN_CHUNK_SIZE || (force && pending.isNotEmpty())) {
+          val chunk = pending.take(BUCKET_SCAN_CHUNK_SIZE)
+          repeat(BUCKET_SCAN_CHUNK_SIZE) { pending.removeFirst() }
+          getVideosForBuckets(
+            context = context,
+            bucketIds = chunk.toSet(),
+            includeAudioOverride = includeAudioOverride,
+            // Always wired, because this is what fills [videos]; publishing is what makes it
+            // optional. What comes back covers this chunk only, so it is merged into the running
+            // total before the consumer hears about it: publishing it directly would make the list
+            // shrink every time a chunk finished.
+            onSnapshot = { chunkVideos ->
+              synchronized(videosLock) {
+                chunkVideos.forEach { videos[mediaPathKey(it.path) ?: it.path] = it }
+              }
+              publishRunning()
+            },
+          )
+        }
+      }
+
+      suspend fun scan(found: List<VideoFolder>) {
+        for (folder in found) {
+          // The MediaStore phase and the indexed hidden-folder phase report the same folder, and
+          // the hidden pass is not exhaustive; scanning one twice would double its cost.
+          if (scanned.add(folder.bucketId.lowercase(Locale.ROOT))) {
+            pending.addLast(folder.bucketId)
+          }
+        }
+        drain(force = false)
+      }
+
+      scan(
+        getAllVideoFoldersFast(
+          context = context,
+          includeAudioOverride = includeAudioOverride,
+          // Scan each folder while the folder scan that found it is still running.
+          onSnapshot = if (onSnapshot == null) null else { found -> scan(found) },
+        ),
+      )
+      scan(
+        FolderViewScanner.getIndexedNoMediaFolders(
+          currentScanOptions(includeAudioOverride),
+          database.directoryScanDao(),
+        ),
+      )
+      drain(force = true)
+      publishRunning()
+      synchronized(videosLock) { videos.values.toList() }
     }
 
   // =============================================================================
@@ -605,6 +775,8 @@ object MediaFileRepository : KoinComponent {
    * OPTIMIZED: Uses UnifiedMediaScanner for fast, consistent results
    * @param showAllFileTypes If true, shows all files. If false, shows only videos.
    * @param useFastCount If true, uses fast shallow counting (immediate children only). If false, uses deep recursive counting.
+   * @param onSnapshot invoked with the directory's contents as they are found: the subfolders first,
+   *   since those come from a cache, then each video as the scan reaches it.
    */
   suspend fun scanDirectory(
     context: Context,
@@ -612,6 +784,7 @@ object MediaFileRepository : KoinComponent {
     showAllFileTypes: Boolean = false,
     useFastCount: Boolean = false,
     forceFileSystemCheck: Boolean = false,
+    onSnapshot: (suspend (List<FileSystemItem>) -> Unit)? = null,
   ): Result<List<FileSystemItem>> =
     withContext(Dispatchers.IO) {
       try {
@@ -632,6 +805,56 @@ object MediaFileRepository : KoinComponent {
         }
 
         val items = mutableListOf<FileSystemItem>()
+
+        // Fast first pass, and only when someone is watching.
+        //
+        // The two passes below are both slow: the tree index is a recursive walk, and the video
+        // scan is a MediaStore query plus metadata. Neither is needed to know that a directory
+        // contains "Movies" and "Recordings", which is what listFiles answers in one read. Without
+        // this a launch into tree mode shows nothing until the whole tree has been indexed.
+        //
+        // Filtered exactly as the authoritative pass filters, so an entry that appears here is an
+        // entry that will still be there when the real result replaces this list.
+        if (onSnapshot != null) {
+          val noMediaPathFilter = NoMediaPathFilter(scanOptions)
+          val quick = mutableListOf<FileSystemItem>()
+          for (file in directory.listFiles().orEmpty()) {
+            currentCoroutineContext().ensureActive()
+            when {
+              file.isDirectory -> {
+                if (!FileFilterUtils.shouldSkipFolder(file, scanOptions, noMediaPathFilter)) {
+                  quick.add(
+                    FileSystemItem.Folder(
+                      name = file.name,
+                      path = file.absolutePath,
+                      lastModified = file.lastModified(),
+                    ),
+                  )
+                }
+              }
+              file.isFile -> {
+                if (FileFilterUtils.shouldSkipFile(file, scanOptions, noMediaPathFilter)) {
+                  continue
+                }
+                if (!FileTypeUtils.isSupportedMediaFile(file, scanOptions)) continue
+                val isAudio = FileTypeUtils.isAudioFile(file)
+                val durationMs = if (isAudio) FileTypeUtils.getDurationMs(file) else 0L
+                if (isAudio && durationMs / 1000 < scanOptions.minimumAudioDurationSeconds) continue
+                quick.add(
+                  toVideoItem(
+                    createVideoFromFileWithMetadata(
+                      file = file,
+                      bucketId = directory.absolutePath,
+                      bucketDisplayName = directory.name,
+                      metadata = null,
+                    ).copy(isAudio = isAudio),
+                  ),
+                )
+              }
+            }
+          }
+          if (quick.isNotEmpty()) onSnapshot(quick)
+        }
 
         // Get folders using TreeViewScanner (instant from cache)
         val (showNewLabels, thresholdDays, playedMediaTitles, newLabelOverrides) = getTreeViewNewBadgeParams()
@@ -661,19 +884,39 @@ object MediaFileRepository : KoinComponent {
             ),
           )
         }
+        // The subfolders are known before a single file has been read, and they are what a user
+        // opening a directory is usually looking for. Publishing them here means the screen has
+        // something to show while the files are still being found.
+        onSnapshot?.invoke(items.toList())
 
-        // Get videos in current directory
-        val videos = VideoScanUtils.getVideosInFolder(context, path, scanOptions, forceFileSystemCheck)
-        videos.forEach { video ->
-          items.add(
-            FileSystemItem.VideoFile(
-              name = video.displayName,
-              path = video.path,
-              lastModified = File(video.path).lastModified(),
-              video = video,
-            ),
-          )
-        }
+        // Get videos in current directory.
+        //
+        // Best effort on purpose: a directory the scan cannot read fully still has folders worth
+        // showing, and turning that into a failed Result would empty the screen over one bad
+        // subdirectory. The scan reports its own failures to a caller watching it.
+        val videos =
+          try {
+            VideoScanUtils.getVideosInFolder(
+              context = context,
+              folderPath = path,
+              options = scanOptions,
+              forceFileSystemCheck = forceFileSystemCheck,
+              onSnapshot =
+                if (onSnapshot == null) {
+                  null
+                } else { partial ->
+                  // Published against the folder list rather than [items], which is still being
+                  // built: appending here and rebuilding later would duplicate every video.
+                  onSnapshot(items + partial.map(::toVideoItem))
+                },
+            )
+          } catch (cancelled: CancellationException) {
+            throw cancelled
+          } catch (error: Exception) {
+            Log.e(TAG, "Error listing media in directory: $path", error)
+            emptyList()
+          }
+        videos.forEach { items.add(toVideoItem(it)) }
 
         Result.success(items)
       } catch (error: kotlinx.coroutines.CancellationException) {
@@ -688,46 +931,49 @@ object MediaFileRepository : KoinComponent {
     }
 
   /**
-   * Gets all storage volume roots with recursive video counts
+   * The scan already knows when a file changed, so the tree does not stat it again. One stat per
+   * video is a round trip through FUSE on every file in the directory.
    */
-  suspend fun getStorageRoots(
+  private fun toVideoItem(video: Video): FileSystemItem.VideoFile =
+    FileSystemItem.VideoFile(
+      name = video.displayName,
+      path = video.path,
+      lastModified = video.dateModified * 1000L,
+      video = video,
+    )
+
+/**
+ * Gets all storage volume roots with recursive video counts
+ *
+ * The volumes themselves are cheap to enumerate; the recursive counts are a walk of everything on
+ * them. So the list is published before any counting starts, and again after each volume finishes.
+ * A storage picker that waits for the counts shows nothing at all on a large library, and it does
+ * not need the counts to let someone pick a volume.
+ *
+ * @param includeCounts set false by a caller that only needs the volumes.
+ * @param onSnapshot invoked with the roots as they are known, starting with zero counts.
+ */
+suspend fun getStorageRoots(
     context: Context,
     forceFileSystemCheck: Boolean = false,
+    includeCounts: Boolean = true,
+    onSnapshot: (suspend (List<FileSystemItem.Folder>) -> Unit)? = null,
   ): List<FileSystemItem.Folder> =
     withContext(Dispatchers.IO) {
       val roots = mutableListOf<FileSystemItem.Folder>()
 
       try {
-        val (showNewLabels, thresholdDays, playedMediaTitles, newLabelOverrides) = getTreeViewNewBadgeParams()
-
         // Primary storage (internal)
         val primaryStorage = Environment.getExternalStorageDirectory()
         if (primaryStorage.exists() && primaryStorage.canRead()) {
           val primaryPath = primaryStorage.absolutePath
-
-          // Get recursive count for this storage root
-          val folderData =
-            TreeViewScanner.getFolderDataRecursive(
-              context,
-              primaryPath,
-              currentScanOptions(),
-              forceFileSystemCheck,
-              playedMediaTitles,
-              showNewLabels,
-              thresholdDays,
-              newLabelOverrides,
-            )
 
           roots.add(
             FileSystemItem.Folder(
               name = "Internal Storage",
               path = primaryPath,
               lastModified = primaryStorage.lastModified(),
-              videoCount = folderData?.videoCount ?: 0,
-              totalSize = folderData?.totalSize ?: 0L,
-              totalDuration = folderData?.totalDuration ?: 0L,
               hasSubfolders = true,
-              newCount = folderData?.newCount ?: 0,
             ),
           )
         }
@@ -741,39 +987,54 @@ object MediaFileRepository : KoinComponent {
             if (volumeDir.exists() && volumeDir.canRead()) {
               val volumeName = volume.getDescription(context)
 
-              // Get recursive count for this storage root
-              val folderData =
-                TreeViewScanner.getFolderDataRecursive(
-                  context,
-                  volumePath,
-                  currentScanOptions(),
-                  forceFileSystemCheck,
-                  playedMediaTitles,
-                  showNewLabels,
-                  thresholdDays,
-                  newLabelOverrides,
-                )
-
               roots.add(
                 FileSystemItem.Folder(
                   name = volumeName,
                   path = volumeDir.absolutePath,
                   lastModified = volumeDir.lastModified(),
-                  videoCount = folderData?.videoCount ?: 0,
-                  totalSize = folderData?.totalSize ?: 0L,
-                  totalDuration = folderData?.totalDuration ?: 0L,
                   hasSubfolders = true,
-                  newCount = folderData?.newCount ?: 0,
                 ),
               )
             }
           }
         }
+
+        onSnapshot?.invoke(roots.toList())
+
+        if (includeCounts) {
+          val (showNewLabels, thresholdDays, playedMediaTitles, newLabelOverrides) = getTreeViewNewBadgeParams()
+          for (index in roots.indices) {
+            currentCoroutineContext().ensureActive()
+            val root = roots[index]
+            val folderData =
+              TreeViewScanner.getFolderDataRecursive(
+                context,
+                root.path,
+                currentScanOptions(),
+                forceFileSystemCheck,
+                playedMediaTitles,
+                showNewLabels,
+                thresholdDays,
+                newLabelOverrides,
+              )
+            if (folderData == null) continue
+            roots[index] =
+              root.copy(
+                videoCount = folderData.videoCount,
+                totalSize = folderData.totalSize,
+                totalDuration = folderData.totalDuration,
+                newCount = folderData.newCount,
+              )
+            onSnapshot?.invoke(roots.toList())
+          }
+        }
+      } catch (cancelled: CancellationException) {
+        throw cancelled
       } catch (e: Exception) {
         Log.e(TAG, "Error getting storage roots", e)
       }
 
-      roots
+      roots.toList()
     }
 
   // =============================================================================

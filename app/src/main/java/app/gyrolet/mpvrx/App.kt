@@ -37,12 +37,14 @@ import app.gyrolet.mpvrx.presentation.crash.CrashReportStore
 import app.gyrolet.mpvrx.domain.network.NetworkImageRepository
 import app.gyrolet.mpvrx.repository.NetworkRepository
 import app.gyrolet.mpvrx.ui.player.MediaPlayerWidget
-import app.gyrolet.mpvrx.ui.player.PlaybackPhase
+import app.gyrolet.mpvrx.ui.player.PlaybackCorePrewarmer
 import app.gyrolet.mpvrx.ui.player.PlaybackPerformanceTrace
+import app.gyrolet.mpvrx.ui.player.PlaybackPhase
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.theme.AppTheme
 import app.gyrolet.mpvrx.ui.theme.DarkMode
+import app.gyrolet.mpvrx.utils.media.VideoCodecSupportInspector
 import com.developer.crashx.config.CrashConfig
 import `is`.xyz.mpv.FastThumbnails
 import kotlinx.coroutines.CancellationException
@@ -55,6 +57,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.koin.androidContext
@@ -95,9 +98,15 @@ class App :
   companion object {
     private const val TAG = "App"
     private const val POST_START_MAINTENANCE_DELAY_MS = 10_000L
-    private const val THUMBNAIL_WARMUP_DELAY_MS = 1_500L
+    private const val THUMBNAIL_WARMUP_DELAY_MS = 5_000L
     private const val IDLE_MPV_CORE_GRACE_MS = 3L * 60L * 1000L
     private const val WATCH_STATS_INTERVAL_MS = 15_000L
+
+    /**
+     * Phases in which the playback core is not doing any work, so process-wide background jobs may
+     * run. No core at all is the launch state, and a core with nothing loaded is a settled session.
+     */
+    private val IDLE_BACKGROUND_PHASES = setOf(PlaybackPhase.IDLE, PlaybackPhase.UNINITIALIZED)
   }
 
   override fun onCreate() {
@@ -162,6 +171,7 @@ class App :
     PlaybackSession.addObserver(PlaybackPerformanceTrace)
     startPlaybackPerformanceTracing()
     startIdleMpvCoreReaper()
+    prewarmPlaybackStartup()
     startWidgetUpdates()
     startWatchStatsTracking()
 
@@ -207,6 +217,10 @@ class App :
     // TextMate grammar/theme assets for the script editor are initialized lazily on first use.
     // Metadata cache maintenance and native thumbnail startup are intentionally kept out of the
     // Application cold-start path so they cannot compete with first composition / first frame.
+    // The thumbnail warmup additionally waits THUMBNAIL_WARMUP_DELAY_MS — the same deferred-asset
+    // cadence PlayerActivity uses for its user MPV asset sync — so it lands well after a bare video
+    // open has finished instead of inside it. Nothing on the open path needs FastThumbnails: only
+    // the browser grid and playlist sheets do.
 
     // MediaStore is Android's source of truth for the normal library. Do not trigger a recursive
     // scan of the entire external-storage root from process startup: on large libraries that can
@@ -378,7 +392,7 @@ class App :
       is PlayerActivity -> {
         PlaybackPerformanceTrace.mark("PLAYER_ACTIVITY_RESUMED")
         activity.window.decorView.postOnAnimation {
-          PlaybackPerformanceTrace.mark("PLAYER_FIRST_FRAME")
+          PlaybackPerformanceTrace.markFirstFrame()
         }
       }
       is MainActivity -> {
@@ -424,10 +438,41 @@ class App :
   }
 
   /**
+   * Pays the process-constant startup costs that used to land on the first video open, off the main
+   * thread and in the same application scope as the idle core reaper.
+   *
+   * - [PlaybackCorePrewarmer] prepares the MPV config/scripts/fonts and then runs the whole
+   *   `MPVLib.init()` — shared-library load, mpv.conf parse, Lua/JS script loading and shader
+   *   compilation — from a never-attached MPVView. This is the largest single cost on the open
+   *   path, and it used to run on the main thread inside `PlayerActivity.setupMPV()`, in series
+   *   with window creation.
+   * - `hardwareDecoderCodecIds()` fills [VideoCodecSupportInspector]'s hardware-decoder MIME-type
+   *   cache, which `MPVView.initOptions` otherwise populates mid-open.
+   *
+   * A failure here is deliberately neither fatal nor surfaced: [PlaybackCorePrewarmer] leaves the
+   * core uninitialized and the open path initializes it exactly as it did before, including the
+   * renderer-fallback retry that has no equivalent at prewarm time.
+   */
+  private fun prewarmPlaybackStartup() {
+    applicationScope.launch {
+      runCatching { PlaybackSession.prewarmNativeCore(this@App) }
+        .onFailure { error -> Log.e(TAG, "Failed to prewarm the libmpv core on launch", error) }
+      runCatching { VideoCodecSupportInspector.hardwareDecoderCodecIds() }
+        .onFailure { error -> Log.e(TAG, "Failed to prewarm the hardware decoder capabilities", error) }
+      PlaybackCorePrewarmer.start(this@App, applicationScope)
+    }
+  }
+
+  /**
    * Keep libmpv warm for quick navigation/re-entry, but do not pin its native decoder/renderer
    * allocation forever after playback has genuinely ended. collectLatest makes this self-cancelling:
    * any new load, surface attachment, background session, or other state change aborts the grace
    * timer before destruction can run.
+   *
+   * The reaper deliberately ignores a core that has not played anything yet. Reaping exists to
+   * release native decoder/renderer allocation that playback accumulated; a core that
+   * [PlaybackCorePrewarmer] initialized at launch holds none. Destroying it would hand the next open
+   * the entire cold-init cost the prewarm just paid, for no memory saved.
    */
   private fun startIdleMpvCoreReaper() {
     applicationScope.launch {
@@ -436,7 +481,8 @@ class App :
           state.phase == PlaybackPhase.IDLE &&
             state.currentItem == null &&
             !state.surfaceAttached &&
-            PlaybackSession.isInitialized
+            PlaybackSession.isInitialized &&
+            PlaybackSession.hasEverLoadedMedia
         if (!isFullyIdle) return@collectLatest
 
         delay(IDLE_MPV_CORE_GRACE_MS)
@@ -446,7 +492,8 @@ class App :
           latest.phase == PlaybackPhase.IDLE &&
             latest.currentItem == null &&
             !latest.surfaceAttached &&
-            PlaybackSession.isInitialized
+            PlaybackSession.isInitialized &&
+            PlaybackSession.hasEverLoadedMedia
         if (stillFullyIdle) {
           Log.d(TAG, "Destroying libmpv after idle grace period")
           PlaybackSession.destroy()
@@ -517,7 +564,10 @@ class App :
     if (!metadataMaintenanceStarted.compareAndSet(false, true)) return
     applicationScope.launch(Dispatchers.IO) {
       try {
-        delay(POST_START_MAINTENANCE_DELAY_MS)
+        // performMaintenance stats every cached metadata row, so a plain wall-clock delay put it
+        // straight into the user's first video open. Run it once playback has been idle for the
+        // settle window instead; when idle this is identical to the previous fixed delay.
+        awaitIdlePlaybackWindow(POST_START_MAINTENANCE_DELAY_MS)
         val metadataCache: VideoMetadataCacheRepository = getKoin().get()
         metadataCache.performMaintenance()
       } catch (cancellation: CancellationException) {
@@ -534,7 +584,9 @@ class App :
     if (!imageCacheCleanupStarted.compareAndSet(false, true)) return
     applicationScope.launch(Dispatchers.IO) {
       try {
-        delay(POST_START_MAINTENANCE_DELAY_MS)
+        // Recursive deletes plus a cache sweep: gate it on playback idle for the same reason as
+        // the metadata maintenance above, so it cannot land inside a video open.
+        awaitIdlePlaybackWindow(POST_START_MAINTENANCE_DELAY_MS)
         app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia.clearLegacyCache(
           this@App,
           PlaybackSession.state.value.currentItem?.originalUri,
@@ -564,10 +616,15 @@ class App :
       try {
         delay(500)
         val repository = getKoin().get<NetworkRepository>()
-        val connections = repository.getAutoConnectConnections()
-        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.saved", detail = "autoConnectCount=${connections.size}")
-        connections.forEach { connection ->
-          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.connect.begin", connection.id, detail = "protocol=${connection.protocol}")
+        // Warm the Room database, its migrations and the Android Keystore credential path now: the
+        // browser needs all of them anyway, and warming costs no network round trips. The share
+        // handshakes below are what must not compete with a video open.
+        runCatching { repository.getAutoConnectConnections() }
+          .onFailure { error -> Log.w(TAG, "Failed to warm saved network shares", error) }
+        awaitIdlePlaybackWindow(0)
+        // Re-read after the wait so a share added or edited in the meantime is not auto-connected
+        // from a stale row.
+        repository.getAutoConnectConnections().forEach { connection ->
           Log.d(TAG, "Auto-connecting to network share: ${connection.name}")
           repository
             .connect(connection)
@@ -591,6 +648,23 @@ class App :
         networkAutoConnectStarted.set(false)
         Log.e(TAG, "Failed to auto-connect saved network shares", error)
       }
+    }
+  }
+
+  /**
+   * Suspends until the playback core has been idle for [idleMs], then returns. Background work
+   * started on a wall-clock timer used to land in the middle of a video open; this defers it until
+   * the session is genuinely free instead. A phase change away from idle during the settle window
+   * restarts the window, matching the self-cancelling `collectLatest` idiom in [startIdleMpvCoreReaper].
+   *
+   * [PlaybackPhase.UNINITIALIZED] counts as idle so these jobs still run when the player was never
+   * opened; that is the app's own launch state, not a busy session.
+   */
+  private suspend fun awaitIdlePlaybackWindow(idleMs: Long) {
+    while (true) {
+      PlaybackSession.state.first { state -> state.phase in IDLE_BACKGROUND_PHASES }
+      delay(idleMs)
+      if (PlaybackSession.state.value.phase in IDLE_BACKGROUND_PHASES) return
     }
   }
 
