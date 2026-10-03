@@ -75,6 +75,18 @@ class CloudMetadataRepository(
     }
   }
 
+  fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId)
+
+  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository) {
+    val scanner = app.gyrolet.mpvrx.domain.cloud.CloudFolderScanner(connection.id, { path ->
+      network.listFiles(connection, path).also { result ->
+        result.getOrNull()?.let { saveDirectory(connection.id, path, it) }
+      }
+    }, { dao.putFolder(it) })
+    paths.forEach { scanner.scan(it) }
+    dao.refreshFolderDurations(connection.id)
+  }
+
   suspend fun probeMissing(connection: NetworkConnection, files: List<NetworkFile>) = coroutineScope {
     files.filter { !it.isDirectory && (it.mimeType?.startsWith("video/") == true ||
       it.name.substringAfterLast('.', "").lowercase() in FileTypeUtils.VIDEO_EXTENSIONS) }
@@ -139,6 +151,7 @@ class CloudMetadataRepository(
   suspend fun publish(connectionId: Long, path: String, size: Long, modified: Long,
     duration: Long, width: Int, height: Int, updatedAt: Long = System.currentTimeMillis()) {
     dao.mergeCurrentVideo(connectionId, NetworkPath.from(path).value, size, modified, duration, width, height, updatedAt)
+    if (duration > 0) dao.refreshFolderDurations(connectionId)
   }
 
   private fun CloudVideoMetadataEntity.matches(file: NetworkFile): Boolean =

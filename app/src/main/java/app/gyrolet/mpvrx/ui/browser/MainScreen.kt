@@ -180,6 +180,7 @@ object MainScreen : Screen {
     val backStack = LocalBackStack.current
     val appearancePreferences = koinInject<AppearancePreferences>()
     val playerPreferences = koinInject<PlayerPreferences>()
+    val browserPreferences = koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
     val navStyle by playerPreferences.appNavStyle.collectAsState()
     val animSpeed by playerPreferences.animationSpeed.collectAsState()
     val duration = navigationDurationMillis(animSpeed)
@@ -377,7 +378,7 @@ object MainScreen : Screen {
               LocalNavigationBarHeight provides contentBottomPadding,
               LocalMainNavigationBar provides mainNavBar,
             ) {
-              FolderListScreen.Content()
+              if (browserPreferences.cloudLibraryMode.collectAsState().value) app.gyrolet.mpvrx.ui.browser.networkstreaming.CloudLibraryScreen.Content() else FolderListScreen.Content()
             }
           }
         } else {
@@ -399,7 +400,7 @@ object MainScreen : Screen {
             ) { page ->
               val tab = visibleTabs.getOrNull(page) ?: return@NavigationPager
               when (tab) {
-                MainTab.HOME -> FolderListScreen.Content()
+                MainTab.HOME -> if (browserPreferences.cloudLibraryMode.collectAsState().value) app.gyrolet.mpvrx.ui.browser.networkstreaming.CloudLibraryScreen.Content() else FolderListScreen.Content()
                 MainTab.MUSIC -> {
                   if (musicSourceProvider == MusicSourceProvider.JELLYFIN) {
                     val jellyfinUiState by jellyfinViewModel.uiState.collectAsStateWithLifecycle()

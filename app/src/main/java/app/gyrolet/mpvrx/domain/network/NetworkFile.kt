@@ -23,4 +23,6 @@ data class NetworkFile(
   val lastModified: Long = 0,
   val mimeType: String? = null,
   val durationMs: Long = 0,
+  val videoCount: Int? = null,
+  val folderScanComplete: Boolean = false,
 )

@@ -160,7 +160,8 @@ data class NetworkBrowserScreen(
 
     val directoryFiles by viewModel.files.collectAsState()
     val indexResults by viewModel.searchResults.collectAsState()
-    val files = indexResults ?: directoryFiles
+    val hideEmptyFolders by browserPreferences.hideEmptyCloudFolders.collectAsState()
+    val files = (indexResults ?: directoryFiles).filterNot { hideEmptyFolders && it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
     val connection by viewModel.connection.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()

@@ -96,8 +96,10 @@ fun NetworkVideoCard(
   val density = LocalDensity.current
   val thumbSizePx = with(density) { thumbSizeDp.roundToPx() }
 
+  val advancedMp4 by browserPreferences.advancedMp4Thumbnails.collectAsState()
+  val advancedMkv by browserPreferences.advancedMkvThumbnails.collectAsState()
   val thumbnailKey =
-    remember(file.path, file.size, file.lastModified, connection, thumbSizePx, displayThumb) {
+    remember(file.path, file.size, file.lastModified, connection, thumbSizePx, displayThumb, advancedMp4, advancedMkv) {
       if (displayThumb) {
         thumbnailRepository.thumbnailKeyForNetworkPath(
           path = file.path,

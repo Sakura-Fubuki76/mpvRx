@@ -76,6 +76,7 @@ class NetworkBrowserViewModel(
   private var directoryJob: Job? = null
   private var metadataObserver: Job? = null
   private var metadataProbe: Job? = null
+  private var folderScan: Job? = null
   private var loadGeneration = 0L
   private val playlistRepository: PlaylistRepository by inject()
   private val browserPreferences: BrowserPreferences by inject()
@@ -100,6 +101,7 @@ class NetworkBrowserViewModel(
    * Load files in the current directory
    */
   fun loadFiles() {
+    folderScan?.cancel()
     directoryJob?.cancel()
     metadataObserver?.cancel()
     metadataProbe?.cancel()
@@ -121,7 +123,17 @@ class NetworkBrowserViewModel(
           val sorted = fileList.sortedWith(compareBy<NetworkFile> { !it.isDirectory }.thenBy { it.name.lowercase() })
           _files.value = sorted
           metadataObserver = viewModelScope.launch {
-            cloudMetadata.observeVideos(connectionId, sorted).collect { enriched ->
+            kotlinx.coroutines.flow.combine(cloudMetadata.observeVideos(connectionId, sorted),
+              cloudMetadata.observeFolders(connectionId)) { videos, folders ->
+              val summaries = folders.associateBy { it.path }
+              videos.map { file ->
+                val summary = summaries[file.path]
+                if (file.isDirectory && summary != null) file.copy(videoCount = summary.videoCount,
+                  size = summary.totalSize, durationMs = summary.totalDurationMs,
+                  folderScanComplete = summary.scanComplete && System.currentTimeMillis() - summary.updatedAt < 24 * 60 * 60 * 1000L)
+                else file
+              }
+            }.collect { enriched ->
               if (generation == loadGeneration) _files.value = enriched
             }
           }
@@ -136,6 +148,8 @@ class NetworkBrowserViewModel(
             if (generation == loadGeneration) {
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
               publish(fileList)
+              folderScan?.cancel()
+              folderScan = viewModelScope.launch { cloudMetadata.scanFolders(connection, fileList.filter { it.isDirectory }.map { it.path }, repository) }
             }
           }.onFailure { e ->
             _error.value = e.message ?: "Unknown error"

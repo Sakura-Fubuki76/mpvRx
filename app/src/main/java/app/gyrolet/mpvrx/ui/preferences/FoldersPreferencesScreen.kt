@@ -219,7 +219,8 @@ object FoldersPreferencesScreen : Screen {
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            items(allBlacklistedFolders, key = { it }) { folderPath ->
+            item { CloudFolderPreferences() }
+      items(allBlacklistedFolders, key = { it }) { folderPath ->
               val isVideo = folderPath in blacklistedVideoFolders
               val isAudio = folderPath in blacklistedAudioFolders
               val scope = when {

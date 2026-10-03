@@ -146,6 +146,7 @@ object MediaServersPreferencesScreen : Screen {
               .padding(padding)
               .then(settingsHighlight),
         ) {
+          item { CloudServersPreferences() }
           // --- JELLYFIN SECTION ---
           item {
             PreferenceSectionHeader(
@@ -1110,7 +1111,7 @@ private fun SeerrServerAvatar(
 }
 
 @Composable
-private fun ServerPreferenceItem(
+internal fun ServerPreferenceItem(
   title: @Composable () -> Unit,
   summary: @Composable () -> Unit,
   icon: @Composable () -> Unit,

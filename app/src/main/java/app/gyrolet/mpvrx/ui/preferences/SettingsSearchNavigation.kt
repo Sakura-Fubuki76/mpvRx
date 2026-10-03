@@ -214,9 +214,9 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
       ),
     MediaServersPreferencesScreen to
       listOf(
-        SettingsSearchListAnchor(titleRes = R.string.pref_media_servers_title, itemIndex = 0),
-        SettingsSearchListAnchor(titleRes = R.string.pref_jellyfin_server_management, itemIndex = 1),
-        SettingsSearchListAnchor(titleRes = R.string.pref_seerr_server_management, itemIndex = 2),
+        SettingsSearchListAnchor(titleRes = R.string.pref_media_servers_title, itemIndex = 1),
+        SettingsSearchListAnchor(titleRes = R.string.pref_jellyfin_server_management, itemIndex = 2),
+        SettingsSearchListAnchor(titleRes = R.string.pref_seerr_server_management, itemIndex = 3),
       ),
     NetworkConfigurationPreferencesScreen to
       listOf(

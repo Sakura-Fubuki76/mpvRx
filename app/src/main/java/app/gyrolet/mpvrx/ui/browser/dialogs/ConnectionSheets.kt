@@ -39,6 +39,7 @@ fun AddConnectionSheet(
     title = stringResource(R.string.ui_add_network_connection),
     initialConnection = initialConnection,
     isEditing = false,
+    allowedProtocols = listOf(NetworkProtocol.SMB, NetworkProtocol.FTP, NetworkProtocol.SFTP),
     onDismiss = onDismiss,
     onSave = { connection, _ -> onSave(connection) },
     modifier = modifier,

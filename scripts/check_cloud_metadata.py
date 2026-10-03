@@ -22,8 +22,8 @@ assert db.execute("SELECT value FROM existing_data").fetchone() == ("keep",)
 dao = (base / "database/dao/CloudMetadataDao.kt").read_text(encoding="utf-8")
 merge = re.search(r'@Query\("""(INSERT OR REPLACE INTO cloud_video_metadata.*?)"""\)', dao, re.S).group(1)
 
-def write(server=1, size=100, modified=10, duration=0, width=0, height=0):
-    db.execute(merge, dict(connectionId=server, path="/same.mp4", size=size,
+def write(server=1, size=100, modified=10, duration=0, width=0, height=0, path="/same.mp4"):
+    db.execute(merge, dict(connectionId=server, path=path, size=size,
                           lastModified=modified, durationMs=duration, width=width,
                           height=height, updatedAt=1000))
 
@@ -42,10 +42,25 @@ assert read() == (0, 0, 0), "replacement must invalidate old metadata"
 db.execute("INSERT INTO cloud_directory_state VALUES (1, '/empty', 1000)")
 assert db.execute("SELECT scannedAt FROM cloud_directory_state WHERE path='/empty'").fetchone()
 assert not db.execute("SELECT * FROM cloud_directory_items WHERE parentPath='/empty'").fetchall()
+db.execute("INSERT INTO cloud_folder_metadata VALUES (1, '/tree', 0, 0, 0, 0, 1, 1000)")
+for path, duration in [("/tree/100%_movie.mp4", 6000), ("/tree_other/movie.mp4", 9000)]:
+    write(path=path, duration=duration)
+    db.execute("INSERT INTO cloud_directory_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+               (1, path.rsplit('/', 1)[0], path, path.rsplit('/', 1)[1], 100, 10, 0, 'video/mp4'))
+refresh = re.search(r'@Query\("""(UPDATE cloud_folder_metadata.*?)"""\)', dao, re.S).group(1)
+db.execute(refresh, {"connectionId": 1})
+assert db.execute("SELECT totalDurationMs FROM cloud_folder_metadata WHERE path='/tree'").fetchone() == (6000,), "literal subtree prefix must not include sibling names"
+write(path="/tree/100%_movie.mp4", size=200, duration=3000)
+db.execute(refresh, {"connectionId": 1})
+assert db.execute("SELECT totalDurationMs FROM cloud_folder_metadata WHERE path='/tree'").fetchone() == (0,), "folder duration must exclude mismatched revisions"
+subtree = re.search(r'@Query\("(DELETE FROM cloud_video_metadata WHERE connectionId = :id.*?)"\)', dao).group(1)
+db.execute(subtree, {"id": 1, "path": "/tree"})
+assert db.execute("SELECT durationMs FROM cloud_video_metadata WHERE path='/tree_other/movie.mp4'").fetchone() == (9000,)
+assert not db.execute("SELECT durationMs FROM cloud_video_metadata WHERE path='/tree/100%_movie.mp4'").fetchone()
 db.commit()
 db.close()
 reopened = sqlite3.connect(database_path)
 assert reopened.execute("SELECT durationMs FROM cloud_video_metadata WHERE connectionId=2").fetchone() == (7000,)
 reopened.close()
 temporary.cleanup()
-print("PASS: migration preserves data; merge, isolation, replacement, empty directories and persistence")
+print("PASS: migration, merge, isolation, replacement, empty directories, subtree summaries/deletion and persistence")

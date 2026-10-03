@@ -75,6 +75,7 @@ internal fun ConnectionEditorSheet(
   onDismiss: () -> Unit,
   onSave: (NetworkConnection, clearPassword: Boolean) -> Unit,
   modifier: Modifier = Modifier,
+  allowedProtocols: List<NetworkProtocol> = NetworkProtocol.entries,
 ) {
   var name by remember(initialConnection) { mutableStateOf(initialConnection.name) }
   var protocol by remember(initialConnection) { mutableStateOf(initialConnection.protocol) }
@@ -179,7 +180,7 @@ internal fun ConnectionEditorSheet(
           expanded = protocolMenuExpanded,
           onDismissRequest = { protocolMenuExpanded = false },
         ) {
-          NetworkProtocol.entries.forEach { selectedProtocol ->
+          allowedProtocols.forEach { selectedProtocol ->
             DropdownMenuItem(
               text = { Text(selectedProtocol.displayName) },
               onClick = {

@@ -118,6 +118,7 @@ fun NetworkFolderCard(
             tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
           )
         }
+        if (file.videoCount != null) Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.cloud_video_count, file.videoCount ?: 0), style = MaterialTheme.typography.labelSmall)
         Spacer(modifier = Modifier.height(4.dp))
         Text(
           file.name,
@@ -156,6 +157,7 @@ fun NetworkFolderCard(
         Column(
           modifier = Modifier.weight(1f),
         ) {
+          if (file.videoCount != null) Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.cloud_video_count, file.videoCount ?: 0), style = MaterialTheme.typography.labelSmall)
           Text(
             file.name,
             style = MaterialTheme.typography.titleMedium,

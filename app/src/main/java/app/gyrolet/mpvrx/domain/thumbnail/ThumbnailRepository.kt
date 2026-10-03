@@ -1222,11 +1222,16 @@ class ThumbnailRepository(
     // Tombstones included: the cache key needs only this connection's identity, and an entry whose
     // share was deleted must keep showing the frame that is already on disk.
     val connection = networkRepository.getConnectionIncludingDeleted(connectionId) ?: return null
+    val entry = KoinJavaComponent.get<app.gyrolet.mpvrx.database.dao.CloudMetadataDao>(app.gyrolet.mpvrx.database.dao.CloudMetadataDao::class.java)
+      .getItem(connectionId, app.gyrolet.mpvrx.domain.network.NetworkPath.from(path).value)
     return getThumbnailForNetworkPath(
       path = path,
       widthPx = widthPx,
       heightPx = heightPx,
       connection = connection,
+      fileSize = entry?.size ?: -1L,
+      lastModified = entry?.lastModified ?: 0L,
+      mimeType = entry?.mimeType,
     )
   }
 
@@ -1358,6 +1363,8 @@ class ThumbnailRepository(
   ): Bitmap? {
     val extension = app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(path)
     if (!cloudKeyframes.supports(extension)) return null
+    if (extension in setOf("mp4", "mov", "m4v") && !browserPreferences.advancedMp4Thumbnails.get()) return null
+    if (extension in setOf("mkv", "webm") && !browserPreferences.advancedMkvThumbnails.get()) return null
 
     val (targetPercent, solidFallback) = keyframeTargets(strategy)
     return try {
@@ -1443,7 +1450,7 @@ class ThumbnailRepository(
     identity: String,
     widthPx: Int,
     heightPx: Int,
-  ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+  ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}|${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}"
 
   /**
    * Builds the same key as [networkThumbnailKey] but records it against [identity] so
@@ -1460,7 +1467,7 @@ class ThumbnailRepository(
   }
 
   private fun networkThumbnailDiskKey(identity: String): String =
-    "video-thumb-v3|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+    "video-thumb-v3|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}|${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}"
 
   private fun hasRecentNetworkThumbnailFailure(identity: String): Boolean {
     val failedAt = networkThumbnailFailedAt[identity] ?: return false

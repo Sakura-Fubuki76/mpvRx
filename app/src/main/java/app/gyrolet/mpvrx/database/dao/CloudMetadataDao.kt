@@ -62,16 +62,39 @@ abstract class CloudMetadataDao {
 
   @Transaction
   open suspend fun replaceDirectory(state: CloudDirectoryStateEntity, items: List<CloudDirectoryItemEntity>) {
+    val retained = items.map { it.path }.toSet()
+    getDirectory(state.connectionId, state.path).filter { it.path !in retained }.forEach {
+      deleteVideoSubtree(state.connectionId, it.path)
+      deleteItemSubtree(state.connectionId, it.path)
+      deleteStateSubtree(state.connectionId, it.path)
+      deleteFolderSubtree(state.connectionId, it.path)
+    }
     deleteDirectory(state.connectionId, state.path)
     insertItems(items)
     putState(state)
   }
+
+  @Query("DELETE FROM cloud_video_metadata WHERE connectionId = :id AND (path = :path OR substr(path, 1, length(:path) + 1) = :path || '/')")
+  abstract suspend fun deleteVideoSubtree(id: Long, path: String)
+  @Query("DELETE FROM cloud_directory_items WHERE connectionId = :id AND (path = :path OR substr(path, 1, length(:path) + 1) = :path || '/')")
+  abstract suspend fun deleteItemSubtree(id: Long, path: String)
+  @Query("DELETE FROM cloud_directory_state WHERE connectionId = :id AND (path = :path OR substr(path, 1, length(:path) + 1) = :path || '/')")
+  abstract suspend fun deleteStateSubtree(id: Long, path: String)
+  @Query("DELETE FROM cloud_folder_metadata WHERE connectionId = :id AND (path = :path OR substr(path, 1, length(:path) + 1) = :path || '/')")
+  abstract suspend fun deleteFolderSubtree(id: Long, path: String)
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   abstract suspend fun putFolder(folder: CloudFolderMetadataEntity)
 
   @Query("SELECT * FROM cloud_folder_metadata WHERE connectionId = :connectionId")
   abstract fun observeFolders(connectionId: Long): Flow<List<CloudFolderMetadataEntity>>
+
+  @Query("""UPDATE cloud_folder_metadata SET totalDurationMs = COALESCE((
+    SELECT SUM(v.durationMs) FROM cloud_video_metadata v WHERE v.connectionId = :connectionId
+    AND (cloud_folder_metadata.path = '/' OR substr(v.path, 1, length(cloud_folder_metadata.path) + 1) = cloud_folder_metadata.path || '/')
+    AND EXISTS(SELECT 1 FROM cloud_directory_items i WHERE i.connectionId = v.connectionId AND i.path = v.path
+      AND i.size = v.size AND i.lastModified = v.lastModified)), 0) WHERE connectionId = :connectionId""")
+  abstract suspend fun refreshFolderDurations(connectionId: Long)
 
   @Query("DELETE FROM cloud_video_metadata WHERE connectionId = :connectionId")
   abstract suspend fun deleteVideos(connectionId: Long)
