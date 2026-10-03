@@ -2640,6 +2640,7 @@ class PlayerActivity :
   }
 
   private fun prepareUserMpvAssetsForStartup() {
+    app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.migrateLegacyBank(this)
     ensureConfigCacheForStartup()
     val syncPreferences = getSharedPreferences(MPV_ASSET_SYNC_PREFERENCES, MODE_PRIVATE)
     val currentSelection = currentUserMpvAssetSelection()
@@ -2695,7 +2696,7 @@ class PlayerActivity :
       File(filesDir, "scripts").isDirectory &&
       File(filesDir, "script-modules").isDirectory &&
       File(filesDir, "shaders").isDirectory &&
-      File(filesDir, "fonts").isDirectory
+      File(filesDir, "font-bank").isDirectory
 
   private fun cachedConfigsMatchPreferences(): Boolean =
     cachedConfigMatchesPreference("mpv.conf", advancedPreferences.mpvConf.get()) &&
@@ -2976,7 +2977,7 @@ class PlayerActivity :
     tree: DocumentFile,
     rootChildren: Array<DocumentFile>,
   ) {
-    val internalFontsDir = File(filesDir, "fonts")
+    val internalFontsDir = File(filesDir, "font-bank")
     internalFontsDir.mkdirs()
     internalFontsDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
 
@@ -3052,7 +3053,7 @@ class PlayerActivity :
   private fun syncSubtitleFontsFromPreferenceFolder() {
     val sourceDir = resolveSubtitleFontSourceDirectory() ?: return
 
-    val destinationDir = File(filesDir, "fonts")
+    val destinationDir = File(filesDir, "font-bank")
     destinationDir.mkdirs()
     destinationDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
     syncFontDirectory(sourceDir, destinationDir)
@@ -3330,7 +3331,7 @@ class PlayerActivity :
       // Ensure scripts directory exists even without user dir
       File(filesDir, "scripts").mkdirs()
       File(filesDir, "script-modules").mkdirs()
-      File(filesDir, "fonts").mkdirs()
+      File(filesDir, "font-bank").mkdirs()
       File(filesDir, "shaders").mkdirs()
     }.onFailure { e ->
       Log.e(TAG, "Error creating fallback config files", e)
@@ -3338,7 +3339,7 @@ class PlayerActivity :
   }
 
   private fun sanitizeInternalFontsDirectory() {
-    val fontsDir = File(filesDir, "fonts")
+    val fontsDir = File(filesDir, "font-bank")
     if (!fontsDir.exists()) {
       return
     }

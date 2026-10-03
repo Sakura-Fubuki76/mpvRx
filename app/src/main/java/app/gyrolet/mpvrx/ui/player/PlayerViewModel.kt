@@ -2944,6 +2944,9 @@ val isBrightnessSliderShown = MutableStateFlow(false)
 
           customButtonsScriptPaths = generatedPaths.toMap()
           deleteCustomButtonsScriptFiles(activePaths = generatedPaths.values.toSet())
+          if (isMpvReadyForCustomButtons) {
+            PlaybackSession.state.first { it.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) }
+          }
           withContext(Dispatchers.Main) {
             customButtonScriptTargets
               .filter { it.language !in generatedPaths.keys }

@@ -19,6 +19,13 @@ import kotlinx.serialization.json.Json
 
 /** Keep the font bank, but expose only fonts requested by this media's ASS styles to libass. */
 object SubtitleFontCache {
+  /** Move the bank out of mpv's automatic config/fonts scan, preserving every source file. */
+  @Synchronized fun migrateLegacyBank(context: Context) {
+    relocateLegacyFontBank(context.filesDir)?.let { count ->
+      CloudTrace.event("fonts.bank.migrated", detail = "files=$count")
+    }
+  }
+
   private val lock = Mutex()
   private val json = Json { ignoreUnknownKeys = true }
   private val extensions = setOf("ttf", "otf", "ttc", "woff", "woff2")
@@ -41,7 +48,7 @@ object SubtitleFontCache {
         CloudTrace.event("fonts.select", detail = "requested=${families.size} selected=0 genericOnly=true elapsedMs=${(System.nanoTime()-start)/1000000}")
         return@withLock active.path
       }
-      val bank = File(context.filesDir, "fonts")
+      val bank = File(context.filesDir, "font-bank")
       val manifest = File(context.filesDir, "font-names.json")
       val old = runCatching { json.decodeFromString<List<Entry>>(manifest.readText()) }.getOrDefault(emptyList()).associateBy { it.name }
       bank.mkdirs()
@@ -144,7 +151,7 @@ object SubtitleFontCache {
 
   suspend fun prewarmSources(context: Context) = withContext(Dispatchers.IO) {
     // Source traversal never holds the font selection lock and never gates subtitle registration.
-    importRequestedFonts(context, File(context.filesDir, "fonts"), emptySet(), allowSourceScan = true)
+    importRequestedFonts(context, File(context.filesDir, "font-bank"), emptySet(), allowSourceScan = true)
   }
 
   suspend fun prepareMedia(context: Context, item: PlaybackItem, preferredFamily: String, cachedOnly: Boolean = true, expectedGeneration: Long? = null): String {

@@ -72,7 +72,7 @@ data class CustomFontEntry(
  */
 suspend fun loadCustomFontEntries(context: Context): List<CustomFontEntry> =
   withContext(Dispatchers.IO) {
-    val fontsDir = File(context.filesDir, "fonts")
+    val fontsDir = File(context.filesDir, "font-bank")
     if (!fontsDir.exists()) return@withContext emptyList()
 
     val fontFiles =

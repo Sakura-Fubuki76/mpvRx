@@ -846,7 +846,7 @@ object AdvancedPreferencesScreen : Screen {
                     }
 
                   // Fonts cache size
-                  val fontsDir = File(context.filesDir, "fonts")
+                  val fontsDir = File(context.filesDir, "font-bank")
                   if (fontsDir.exists()) {
                     val fontFiles =
                       fontsDir.listFiles()?.filter {
@@ -994,7 +994,7 @@ object AdvancedPreferencesScreen : Screen {
                 },
                 onClick = {
                   scope.launch(Dispatchers.IO) {
-                    val fontsDir = File(context.filesDir, "fonts")
+                    val fontsDir = File(context.filesDir, "font-bank")
                     runCatching {
                       check(!fontsDir.exists() || fontsDir.deleteRecursively()) {
                         "Unable to clear fonts cache directory: ${fontsDir.absolutePath}"
