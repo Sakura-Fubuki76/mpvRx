@@ -105,7 +105,6 @@ private enum class GestureOwner {
   PLAYLIST,
   PINCH,
   HORIZONTAL_SEEK,
-  SUBTITLE_SEEK,
 }
 
 private fun nearestHoldSpeedPreset(speed: Float): Float =
@@ -183,8 +182,6 @@ fun GestureHandler(
   val enableCenterSwipeUpGesture by gesturePreferences.enableCenterSwipeUpGesture.collectAsState()
   val enableVideoMiniPlayer by playerPreferences.enableVideoMiniPlayer.collectAsState()
   val pinchToZoomSubtitles by gesturePreferences.pinchToZoomSubtitles.collectAsState()
-  val swipeSubtitlesToSeekDialog by gesturePreferences.swipeSubtitlesToSeekDialog.collectAsState()
-  val isSwipeSubtitlesInverted by gesturePreferences.swipeSubtitlesInvertDirection.collectAsState()
   var isDoubleTapSeeking by remember { mutableStateOf(false) }
   var lastSeekRegion by remember { mutableStateOf<String?>(null) }
   var lastSeekTime by remember { mutableStateOf<Long?>(null) }
@@ -1201,11 +1198,9 @@ fun GestureHandler(
           areControlsLocked,
           gesturePreferences,
           isVerticalGestureActive,
-          swipeSubtitlesToSeekDialog,
-          isSwipeSubtitlesInverted,
           anyPanelShown,
         ) {
-          if ((!horizontalSwipeToSeek && !swipeSubtitlesToSeekDialog) ||
+          if (!horizontalSwipeToSeek ||
             areControlsLocked ||
             isVerticalGestureActive
           ) {
@@ -1217,20 +1212,6 @@ fun GestureHandler(
             beginGesture(down.id.value, down.uptimeMillis)
             val startPosition = down.position
             val startTime = System.currentTimeMillis()
-
-            val hasActiveSubtitle = getTrackSelectionId("sid") > 0 || getTrackSelectionId("secondary-sid") > 0
-            val subPos = PlaybackSession.getPropertyInt("sub-pos") ?: subtitlesPreferences.subPos.get()
-            val subtitleScreenY = getSubtitleScreenY(subPos, size.width.toFloat(), size.height.toFloat())
-
-            val isCenterTouchX = startPosition.x in (size.width * 0.2f)..(size.width * 0.8f)
-            val (lowerBound, upperBound) = getSubtitleHitboxBounds(size.width.toFloat(), size.height.toFloat())
-            val isSubtitleTouchY = (subtitleScreenY - startPosition.y) in lowerBound..upperBound
-
-            val chapterIndex = PlaybackSession.getPropertyInt("chapter") ?: -1
-            val chapterTitle = PlaybackSession.getPropertyString("chapter-list/$chapterIndex/title").orEmpty()
-            val inIntroChapter = chapterTitle.contains("intro", true) || chapterTitle.contains("opening", true) || chapterTitle.equals("OP", true)
-            val hasVisibleSubtitle = !PlaybackSession.getPropertyString("sub-text").isNullOrBlank()
-            val isSubtitleTouch = swipeSubtitlesToSeekDialog && hasActiveSubtitle && hasVisibleSubtitle && !inIntroChapter && isCenterTouchX && isSubtitleTouchY
 
             var gestureType: String? = null
             var hasStartedSeeking = false
@@ -1252,33 +1233,6 @@ fun GestureHandler(
                     val deltaY = currentPosition.y - startPosition.y
                     val timeSinceStart = System.currentTimeMillis() - startTime
 
-                    if (
-                      gestureType == null &&
-                      isSubtitleTouch &&
-                      abs(deltaX) > 40f &&
-                      abs(deltaX) > abs(deltaY) * 2f &&
-                      claimGesture(GestureOwner.SUBTITLE_SEEK)
-                    ) {
-                      gestureType = "subtitle_dialog_seek"
-                      hasStartedSeeking = true
-                      val isForward = if (isSwipeSubtitlesInverted) deltaX < 0 else deltaX > 0
-                      val direction = if (isForward) "1" else "-1"
-                      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("gesture.subtitle.seek", detail = "direction=$direction chapter=${PlaybackSession.getPropertyInt("chapter")}")
-                      PlaybackSession.command("sub-seek", direction)
-                      viewModel.playerUpdate.update {
-                        PlayerUpdates.ShowText(
-                          context.getString(
-                            if (isForward) R.string.player_next_dialog else R.string.player_previous_dialog,
-                          ),
-                        )
-                      }
-                      change.consume()
-                    }
-
-                    if (gestureType == "subtitle_dialog_seek") {
-                      change.consume()
-                    }
-
                     // Only activate if this is clearly a horizontal gesture
                     // and not conflicting with other gestures
                     if (gestureType == null &&
@@ -1286,7 +1240,6 @@ fun GestureHandler(
                       !speedHoldPending &&
                       !suppressHorizontalSeekForPointer &&
                       horizontalSwipeToSeek &&
-                      !isSubtitleTouch &&
                       abs(deltaX) > 30f &&
                       abs(deltaX) > abs(deltaY) * 2f &&
                       // Must be strongly horizontal
@@ -1299,7 +1252,7 @@ fun GestureHandler(
                       !anyPanelShown
                     ) { // Only when no panels are shown
                       if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
-                        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("gesture.timeline.seek", detail = "chapter=${PlaybackSession.getPropertyInt("chapter")} subtitleVisible=$hasVisibleSubtitle")
+                        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("gesture.timeline.seek", detail = "chapter=${PlaybackSession.getPropertyInt("chapter")}")
                         gestureType = "horizontal_seek"
                         hasStartedSeeking = true
                         initialVideoPosition = position?.toFloat() ?: 0f
@@ -1363,7 +1316,6 @@ fun GestureHandler(
                   viewModel.playerUpdate.update { PlayerUpdates.None }
                 }
                 releaseGesture(GestureOwner.HORIZONTAL_SEEK)
-                releaseGesture(GestureOwner.SUBTITLE_SEEK)
                 break
               }
             } while (event.changes.any { it.pressed })
@@ -1385,7 +1337,6 @@ fun GestureHandler(
               }
             }
             releaseGesture(GestureOwner.HORIZONTAL_SEEK)
-            releaseGesture(GestureOwner.SUBTITLE_SEEK)
           }
         },
   )

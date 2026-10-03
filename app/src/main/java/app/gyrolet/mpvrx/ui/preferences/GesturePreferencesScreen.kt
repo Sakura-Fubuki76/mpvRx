@@ -197,32 +197,6 @@ object GesturePreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              val swipeSubtitlesToSeekDialog by preferences.swipeSubtitlesToSeekDialog.collectAsState()
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_swipe_subtitles_to_seek_dialog),
-                value = swipeSubtitlesToSeekDialog,
-                onValueChange = preferences.swipeSubtitlesToSeekDialog::set,
-                title = { Text(stringResource(R.string.pref_player_gestures_swipe_subtitles_to_seek_dialog)) },
-              )
-
-              PreferenceDivider()
-
-              val swipeSubtitlesInvertDirection by preferences.swipeSubtitlesInvertDirection.collectAsState()
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_swipe_subtitles_invert_direction),
-                value = swipeSubtitlesInvertDirection,
-                onValueChange = preferences.swipeSubtitlesInvertDirection::set,
-                title = { Text(stringResource(R.string.pref_player_gestures_swipe_subtitles_invert_direction)) },
-                summary = {
-                  Text(
-                    stringResource(R.string.pref_player_gestures_swipe_subtitles_invert_direction_summary),
-                  )
-                },
-                enabled = swipeSubtitlesToSeekDialog,
-              )
-
-              PreferenceDivider()
-
               val horizontalSwipeToSeek by playerPreferences.horizontalSwipeToSeek.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_gestures_horizontal_swipe_to_seek),
