@@ -14,7 +14,6 @@ import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
@@ -178,7 +177,7 @@ class CastPlaybackController(
     released = false
     try {
       CastContext
-        .getSharedInstance(activity.applicationContext, ContextCompat.getMainExecutor(activity))
+        .getSharedInstance(activity.applicationContext, castModuleExecutor)
         .addOnSuccessListener { context ->
           if (released) return@addOnSuccessListener
           castContext = context
@@ -420,6 +419,12 @@ class CastPlaybackController(
   }
 
   companion object {
+    // CastContext uses this executor to load its internal module. A main executor freezes
+    // Activity rendering and delays the queued media load during module discovery.
+    private val castModuleExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+      Thread(task, "CastModuleLoader").apply { isDaemon = true }
+    }
+
     const val TAG = "CastPlaybackController"
 
     @Volatile

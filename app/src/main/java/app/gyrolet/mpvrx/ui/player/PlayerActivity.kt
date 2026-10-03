@@ -826,7 +826,7 @@ class PlayerActivity :
         }
       }
     }
-    setupCastPlayback()
+    traceStartup("setupCastPlayback") { setupCastPlayback() }
 
     // Only set orientation immediately if NOT in Video mode
     // For Video mode, wait for video-params/aspect to become available
@@ -835,7 +835,7 @@ class PlayerActivity :
     }
 
     // Apply persisted shuffle state after playlist is loaded
-    viewModel.applyPersistedShuffleState()
+    traceStartup("applyPersistedShuffleState") { viewModel.applyPersistedShuffleState() }
 
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -5826,11 +5826,26 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
               null
             }
           if (networkSource != null) {
-            withContext(Dispatchers.Main) {
-              ensureCurrentMediaRequest(requestGeneration)
-              intent.putExtra("network_connection_id", networkSource.connectionId)
-              intent.putExtra("network_file_path", networkSource.relativePath)
+            val mainDispatchStarted = System.nanoTime()
+            app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.source.main.wait")
+            val mainThread = android.os.Looper.getMainLooper().thread
+            val watchdog = lifecycleScope.launch(Dispatchers.IO) {
+              repeat(10) {
+                delay(500)
+                val frames = mainThread.stackTrace.take(16).joinToString(";") {
+                  "${it.className}.${it.methodName}:${it.lineNumber}"
+                }
+                app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.source.main.stack", detail = "frames=$frames")
+              }
             }
+            try {
+              withContext(Dispatchers.Main) {
+                app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.source.main.enter", detail = "elapsedMs=${(System.nanoTime() - mainDispatchStarted) / 1000000}")
+                ensureCurrentMediaRequest(requestGeneration)
+                intent.putExtra("network_connection_id", networkSource.connectionId)
+                intent.putExtra("network_file_path", networkSource.relativePath)
+              }
+            } finally { watchdog.cancel() }
           }
           val item =
             if (!isTorrentRequest) {

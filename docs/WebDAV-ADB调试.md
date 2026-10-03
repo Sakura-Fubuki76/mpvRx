@@ -77,3 +77,5 @@ adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/clou
 黑屏复测：core.end=1791045658953，fonts.media.begin=1791045665996（间隔 7043ms），loadfile=1791045666018，native.restart=1791045668065（2047ms）；render=11ms，paused-for-cache=false。修正已知 networkSource 文件走 yt-dlp 的判断，跳过 Python runtime 准备，并在 loadfile 使用局部 ytdl=no，避免无扩展名代理 URL 被原生网页钩子处理。player.extractor.ready 输出 required 和 elapsedMs；真正网页的运行环境准备保持原逻辑。
 
 再次复测 required=false/0ms，core.end 到 extractor.ready 8214ms，说明网页提取器不是此次黑屏的主要等待。新增 player.prepare.begin/end（核心就绪、音频/控件/媒体会话、队列、名称/身份、请求头、URI 等）、player.request.begin/dispatched/resolved、player.cookies.begin/end、player.issue.begin、player.position.ready 覆盖此前未计时区间。只记录阶段和耗时，不记录请求头或 Cookie 内容。
+
+两个入口来源阶段分别 6667ms/6739ms，其他前台初始化约 0–1ms。发现 Cast 初始化传入 MainExecutor，而其参数用于加载内部模块（官方说明：https://developers.google.com/android/reference/com/google/android/gms/cast/framework/CastContext）；修复为共享 CastModuleLoader 后台线程，保留主线程 API 调用及结果监听。新增 source.main.wait/enter 和等待时主线程栈，确认后台化是否消除来源提交的主线程等待。
