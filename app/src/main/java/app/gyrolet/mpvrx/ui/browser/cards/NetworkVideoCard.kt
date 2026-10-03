@@ -89,10 +89,14 @@ fun NetworkVideoCard(
   val showNetworkThumbs by appearancePreferences.showNetworkThumbnails.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
 
+  val gestures = koinInject<app.gyrolet.mpvrx.preferences.GesturePreferences>()
+  val tapThumbnailToSelect by gestures.tapThumbnailToSelect.collectAsState()
+  val onThumbnailClick = if (tapThumbnailToSelect && onLongClick != null) onLongClick else onClick
+
   val displayThumb = showVideoThumbnails && showNetworkThumbs
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
 
-  val thumbSizeDp = 128.dp
+  val thumbSizeDp = 160.dp
   val density = LocalDensity.current
   val thumbSizePx = with(density) { thumbSizeDp.roundToPx() }
 
@@ -177,6 +181,24 @@ fun NetworkVideoCard(
 
   val displayName = if (showExtensionField) file.name else file.name.substringBeforeLast('.', file.name)
 
+  if (connection.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) {
+    val video = app.gyrolet.mpvrx.domain.media.model.Video(
+      id = ("${connection.id}:${file.path}").hashCode().toLong(), title = displayName, displayName = file.name,
+      path = file.path, uri = android.net.Uri.parse(file.path), duration = file.durationMs,
+      durationFormatted = if (file.durationMs > 0) formatCloudDuration(file.durationMs) else "--",
+      size = file.size, sizeFormatted = formatCardFileSize(file.size), dateModified = file.lastModified / 1000,
+      dateAdded = 0, mimeType = file.mimeType ?: "video/*", bucketId = "cloud:${connection.id}",
+      bucketDisplayName = connection.name, width = file.width, height = file.height, fps = 0f,
+      resolution = app.gyrolet.mpvrx.utils.storage.VideoScanUtils.formatResolution(file.width, file.height),
+    )
+    VideoCard(video = video, onClick = onClick, modifier = modifier, onLongClick = onLongClick,
+      isSelected = isSelected, onThumbClick = onThumbnailClick, isGridMode = isGridMode,
+      allowThumbnailGeneration = false, allowThumbnailLoading = false,
+      externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig().copy(showThumbnails = displayThumb),
+      showSubtitleIndicator = false)
+    return
+  }
+
   Card(
     modifier =
       modifier
@@ -217,7 +239,8 @@ fun NetworkVideoCard(
               .fillMaxWidth()
               .aspectRatio(16f / 10f)
               .clip(AppShapeScale.medium)
-              .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+              .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+              .combinedClickable(onClick = onThumbnailClick, onLongClick = onLongClick),
           contentAlignment = Alignment.Center,
         ) {
           val thumbnailBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }
@@ -313,7 +336,7 @@ fun NetworkVideoCard(
               .clip(AppShapeScale.medium)
               .background(MaterialTheme.colorScheme.surfaceContainerHigh)
               .combinedClickable(
-                onClick = onClick,
+                onClick = onThumbnailClick,
                 onLongClick = onLongClick,
               ),
           contentAlignment = Alignment.Center,

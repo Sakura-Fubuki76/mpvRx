@@ -22,7 +22,6 @@ import org.koin.compose.koinInject
 @Composable
 internal fun CloudFolderPreferences() {
   val preferences = koinInject<BrowserPreferences>()
-  val cloudMode by preferences.cloudLibraryMode.collectAsState()
   val stored by preferences.cloudStorageSelection.collectAsState()
   val selected = stored.split(',').mapNotNull(String::toLongOrNull).toSet()
   val context = LocalContext.current
@@ -33,9 +32,6 @@ internal fun CloudFolderPreferences() {
   Column {
     PreferenceSectionHeader(title = stringResource(R.string.cloud_library_source))
     PreferenceCard {
-      SwitchPreference(value = cloudMode, onValueChange = preferences.cloudLibraryMode::set,
-        title = { Text(stringResource(R.string.cloud_library_mode)) },
-        summary = { Text(stringResource(if (cloudMode) R.string.cloud_library_mode_cloud else R.string.cloud_library_mode_local)) })
       storages.forEach { storage ->
         PreferenceDivider()
         val checked = selected.isEmpty() || storage.id in selected

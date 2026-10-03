@@ -133,7 +133,6 @@ class BrowserPreferences(
   val showDurationField = preferenceStore.getBoolean("show_duration_field", true)
 
   // Visibility preferences for video card chips
-  val cloudLibraryMode = preferenceStore.getBoolean("cloud_library_mode", false)
   val hideEmptyCloudFolders = preferenceStore.getBoolean("hide_empty_cloud_folders", true)
   val cloudStorageSelection = preferenceStore.getString("cloud_storage_selection", "")
   val advancedMp4Thumbnails = preferenceStore.getBoolean("advanced_mp4_thumbnails", true)

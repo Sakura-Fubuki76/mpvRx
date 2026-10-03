@@ -2779,7 +2779,7 @@
     <string name="cloud_sprite_previews">Video sprite previews when seeking</string>
     <string name="cloud_video_count">%1$d videos</string>
     <string name="cloud_library_source">Library source</string>
-    <string name="cloud_library_mode">Use cloud video library</string>
+    <string name="cloud_library_mode">Show WebDAV tab</string>
     <string name="cloud_library_mode_cloud">Cloud folders</string>
     <string name="cloud_library_mode_local">Local folders</string>
     <string name="cloud_select_storages_hint">Choose WebDAV or OpenList storage in Settings → Folders</string>

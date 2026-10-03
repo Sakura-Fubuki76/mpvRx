@@ -166,6 +166,12 @@ data class NetworkBrowserScreen(
     val hideEmptyFolders by browserPreferences.hideEmptyCloudFolders.collectAsState()
     val files = (indexResults ?: directoryFiles).filterNot { hideEmptyFolders && it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
     val connection by viewModel.connection.collectAsState()
+    val libraryFolderLayout by browserPreferences.folderViewFolderLayoutMode.collectAsState()
+    val libraryVideoLayout by browserPreferences.folderViewVideoLayoutMode.collectAsState()
+    val isCloudLibrary = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)
+    val effectiveLayout = if (isCloudLibrary) {
+      if (files.any { it.isDirectory }) libraryFolderLayout else libraryVideoLayout
+    } else networkLayoutMode
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -309,7 +315,7 @@ data class NetworkBrowserScreen(
           )
         } else {
           BrowserTopBar(
-            title = connectionName,
+            title = normalizedPath.segments.lastOrNull() ?: connectionName,
             isInSelectionMode = selectionManager.isInSelectionMode,
             selectedCount = selectedFiles.size,
             // Folders and playlist files are not selectable here, so the selectable media is the
@@ -396,7 +402,7 @@ data class NetworkBrowserScreen(
         error = error,
         networkSortType = networkSortType,
         networkSortOrder = networkSortOrder,
-        networkLayoutMode = networkLayoutMode,
+        networkLayoutMode = effectiveLayout,
         manualGridColumnsEnabled = manualGridColumnsEnabled,
         videoGridColumnsPortrait = videoGridColumnsPortrait,
         videoGridColumnsLandscape = videoGridColumnsLandscape,
@@ -740,6 +746,8 @@ private fun NetworkBrowserContent(
               browserSection(gridColumns, folders, folderHeaderText, topPadding = 8.dp) { folder ->
                 NetworkFolderCard(
                   file = folder,
+                  useLibraryStyle = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST),
+                  connectionId = connection?.id ?: 0,
                   onClick = { onFolderClick(folder) },
                   isGridMode = true,
                 )
@@ -784,6 +792,8 @@ private fun NetworkBrowserContent(
               browserSection(folders, folderHeaderText, topPadding = 8.dp) { folder ->
                 NetworkFolderCard(
                   file = folder,
+                  useLibraryStyle = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST),
+                  connectionId = connection?.id ?: 0,
                   onClick = { onFolderClick(folder) },
                   isGridMode = false,
                 )

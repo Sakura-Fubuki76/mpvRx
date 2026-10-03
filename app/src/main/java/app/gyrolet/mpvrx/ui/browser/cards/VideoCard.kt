@@ -232,6 +232,7 @@ fun VideoCard(
   /** Path line under the title, mirroring the network card's source line. */
   sourceSubtitle: String? = null,
   titleAction: (@Composable () -> Unit)? = null,
+  externalThumbnail: Bitmap? = null,
 ) {
   // Screens hoist this once and pass it down; collecting per card would register a dozen
   // preference observers for every visible item in a grid.
@@ -364,7 +365,7 @@ fun VideoCard(
 
           // Cached reads stay enabled while scrolling; only generation is gated.
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, showThumbnails) {
-            if (!allowThumbnailGeneration && thumbnail == null && showThumbnails) {
+            if (allowThumbnailLoading && !allowThumbnailGeneration && thumbnail == null && showThumbnails) {
               thumbnail =
                 withContext(Dispatchers.IO) {
                   thumbnailRepository.getThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
@@ -373,7 +374,8 @@ fun VideoCard(
           }
 
           // Update thumbnail when the repository emits that this key became ready (folder prefetch or any other source).
-          LaunchedEffect(thumbnailRequestKey) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailLoading) {
+            if (!allowThumbnailLoading) return@LaunchedEffect
             thumbnailRepository.thumbnailReadyKeys
               .filter { key -> thumbnailRepository.isThumbnailKeyForVideo(key, video) }
               .flowOn(Dispatchers.IO)
@@ -395,7 +397,7 @@ fun VideoCard(
             }
           }
 
-          val thumbnailBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }
+          val thumbnailBitmap = remember(thumbnail, externalThumbnail) { (externalThumbnail ?: thumbnail)?.asImageBitmap() }
 
           // Thumbnail
           Box(
@@ -718,7 +720,7 @@ fun VideoCard(
 
           // Cached reads stay enabled while scrolling; only generation is gated.
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, showThumbnails) {
-            if (!allowThumbnailGeneration && thumbnail == null && showThumbnails) {
+            if (allowThumbnailLoading && !allowThumbnailGeneration && thumbnail == null && showThumbnails) {
               thumbnail =
                 withContext(Dispatchers.IO) {
                   thumbnailRepository.getThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx)
@@ -727,7 +729,8 @@ fun VideoCard(
           }
 
           // Update thumbnail when the repository emits that this key became ready (folder prefetch or any other source).
-          LaunchedEffect(thumbnailRequestKey) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailLoading) {
+            if (!allowThumbnailLoading) return@LaunchedEffect
             thumbnailRepository.thumbnailReadyKeys
               .filter { key -> thumbnailRepository.isThumbnailKeyForVideo(key, video) }
               .flowOn(Dispatchers.IO)
@@ -749,7 +752,7 @@ fun VideoCard(
             }
           }
 
-          val listThumbnailBitmap = remember(thumbnail) { thumbnail?.asImageBitmap() }
+          val listThumbnailBitmap = remember(thumbnail, externalThumbnail) { (externalThumbnail ?: thumbnail)?.asImageBitmap() }
 
           Box(
             modifier =

@@ -92,6 +92,7 @@ fun FolderCard(
   onSwipeAction: ((VideoFolder, VideoSwipeAction) -> Unit)? = null,
   placeholderIconSize: Dp? = null,
   viewPreferences: BrowserPageViewPreferences? = null,
+  loadLocalThumbnail: Boolean = true,
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
@@ -120,13 +121,14 @@ fun FolderCard(
 
   LaunchedEffect(
     folder.bucketId,
+    loadLocalThumbnail,
     folder.path,
     showFolderThumbnails,
     thumbnailQuality,
     isGridMode,
     thumbnailSize,
   ) {
-    if (folder.path.isNotBlank() && isGridMode && showFolderThumbnails && thumbnailSize.width > 0 && thumbnailSize.height > 0) {
+    if (loadLocalThumbnail && folder.path.isNotBlank() && isGridMode && showFolderThumbnails && thumbnailSize.width > 0 && thumbnailSize.height > 0) {
       withContext(Dispatchers.IO) {
         val videos =
           app.gyrolet.mpvrx.repository.MediaFileRepository

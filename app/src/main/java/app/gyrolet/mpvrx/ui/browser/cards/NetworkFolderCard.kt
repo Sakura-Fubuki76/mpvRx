@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,7 +59,43 @@ fun NetworkFolderCard(
   onLongClick: (() -> Unit)? = null,
   isSelected: Boolean = false,
   isGridMode: Boolean = false,
+  useLibraryStyle: Boolean = false,
+  connectionId: Long = 0,
 ) {
+  if (useLibraryStyle) {
+    val browser = koinInject<BrowserPreferences>()
+    val appearance = koinInject<AppearancePreferences>()
+    val showFolderImages by browser.showFolderThumbnails.collectAsState()
+    val showNetworkImages by appearance.showNetworkThumbnails.collectAsState()
+    var preview by remember(connectionId, file.path) { androidx.compose.runtime.mutableStateOf<android.graphics.Bitmap?>(null) }
+    androidx.compose.runtime.LaunchedEffect(connectionId, file.path, showFolderImages, showNetworkImages, isGridMode) {
+      preview = null
+      if (isGridMode && showFolderImages && showNetworkImages) {
+        preview = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+          val dao = org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.database.dao.CloudMetadataDao>(app.gyrolet.mpvrx.database.dao.CloudMetadataDao::class.java)
+          val video = dao.getDirectory(connectionId, file.path).firstOrNull { !it.isDirectory && it.mimeType?.startsWith("video/") == true }
+          video?.let {
+            org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
+              .getThumbnailForNetworkSource(connectionId, it.path, 480, 300)
+          }
+        }
+      }
+    }
+    FolderCard(
+      folder = app.gyrolet.mpvrx.domain.media.model.VideoFolder(
+        bucketId = "cloud:$connectionId:${file.path}", name = file.name, path = file.path,
+        videoCount = if (file.folderScanComplete) file.videoCount ?: 0 else 0,
+        totalSize = if (file.folderScanComplete) file.size else 0,
+        totalDuration = if (file.folderScanComplete) file.durationMs else 0,
+        lastModified = file.lastModified,
+      ),
+      onClick = onClick, modifier = modifier, onLongClick = onLongClick,
+      isSelected = isSelected, onThumbClick = onClick, isGridMode = isGridMode,
+      loadLocalThumbnail = false,
+      thumbnail = preview?.asImageBitmap(),
+    )
+    return
+  }
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()

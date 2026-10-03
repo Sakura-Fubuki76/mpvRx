@@ -136,6 +136,7 @@ object MainScreen : Screen {
     RECENTS,
     PLAYLISTS,
     NETWORK,
+    CLOUD,
     JELLYFIN,
     SNAPSHOTS,
   }
@@ -201,12 +202,14 @@ object MainScreen : Screen {
     val isDualPaneFolderSelected = NavigationBarState.isDualPaneFolderSelected
     val isMiniPlayerVisible = NavigationBarState.isMiniPlayerVisible
 
+    val showCloudTab by appearancePreferences.showCloudTab.collectAsState()
     val visibleTabs =
       remember(
         showMusicTab,
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
+        showCloudTab,
         showJellyfinTab,
         showSnapshotTab,
       ) {
@@ -216,6 +219,7 @@ object MainScreen : Screen {
           if (showMusicTab) add(MainTab.MUSIC)
           if (showRecentsTab) add(MainTab.RECENTS)
           if (showPlaylistsTab) add(MainTab.PLAYLISTS)
+          if (showCloudTab) add(MainTab.CLOUD)
           if (showNetworkTab) add(MainTab.NETWORK)
           if (showJellyfinTab) add(MainTab.JELLYFIN)
           if (showSnapshotTab) add(MainTab.SNAPSHOTS)
@@ -378,7 +382,7 @@ object MainScreen : Screen {
               LocalNavigationBarHeight provides contentBottomPadding,
               LocalMainNavigationBar provides mainNavBar,
             ) {
-              if (browserPreferences.cloudLibraryMode.collectAsState().value) app.gyrolet.mpvrx.ui.browser.networkstreaming.CloudLibraryScreen.Content() else FolderListScreen.Content()
+              FolderListScreen.Content()
             }
           }
         } else {
@@ -400,7 +404,7 @@ object MainScreen : Screen {
             ) { page ->
               val tab = visibleTabs.getOrNull(page) ?: return@NavigationPager
               when (tab) {
-                MainTab.HOME -> if (browserPreferences.cloudLibraryMode.collectAsState().value) app.gyrolet.mpvrx.ui.browser.networkstreaming.CloudLibraryScreen.Content() else FolderListScreen.Content()
+                MainTab.HOME -> FolderListScreen.Content()
                 MainTab.MUSIC -> {
                   if (musicSourceProvider == MusicSourceProvider.JELLYFIN) {
                     val jellyfinUiState by jellyfinViewModel.uiState.collectAsStateWithLifecycle()
@@ -588,6 +592,7 @@ object MainScreen : Screen {
                 }
                 MainTab.RECENTS -> RecentlyPlayedScreen.Content()
                 MainTab.PLAYLISTS -> PlaylistScreen.Content()
+                MainTab.CLOUD -> app.gyrolet.mpvrx.ui.browser.networkstreaming.CloudLibraryScreen.Content()
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
                 MainTab.JELLYFIN -> app.gyrolet.mpvrx.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.SNAPSHOTS -> app.gyrolet.mpvrx.ui.framecapture.SnapshotScreen.Content()
@@ -731,6 +736,7 @@ internal fun ExpressivePillNavigationBar(
       MainScreen.MainTab.MUSIC -> 92.dp
       MainScreen.MainTab.RECENTS -> 104.dp
       MainScreen.MainTab.PLAYLISTS -> 108.dp
+      MainScreen.MainTab.CLOUD -> 100.dp
       MainScreen.MainTab.NETWORK -> 106.dp
       MainScreen.MainTab.JELLYFIN -> 100.dp
       MainScreen.MainTab.SNAPSHOTS -> 100.dp
@@ -795,6 +801,7 @@ internal fun ExpressivePillNavigationBar(
                 MainScreen.MainTab.MUSIC -> stringResource(R.string.ui_music)
                 MainScreen.MainTab.RECENTS -> stringResource(R.string.ui_recents)
                 MainScreen.MainTab.PLAYLISTS -> stringResource(R.string.ui_playlists)
+                MainScreen.MainTab.CLOUD -> "WebDAV"
                 MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
                 MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
                 MainScreen.MainTab.SNAPSHOTS -> stringResource(R.string.ui_snapshots)
@@ -866,6 +873,7 @@ private fun MainTabIcon(
     MainScreen.MainTab.MUSIC -> Icons.RoundedFilled.Audiotrack
     MainScreen.MainTab.RECENTS -> Icons.RoundedFilled.History
     MainScreen.MainTab.PLAYLISTS -> Icons.RoundedFilled.Subscriptions
+    MainScreen.MainTab.CLOUD -> Icons.RoundedFilled.Folder
     MainScreen.MainTab.NETWORK -> Icons.RoundedFilled.BringYourOwnIp
     MainScreen.MainTab.JELLYFIN -> null
     MainScreen.MainTab.SNAPSHOTS -> Icons.RoundedFilled.Image

@@ -90,17 +90,19 @@ internal fun WallpaperHomePreviewDialog(
   val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
   val showJellyfinTab by appearancePreferences.showJellyfinTab.collectAsState()
   val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
+  val showCloudTab by appearancePreferences.showCloudTab.collectAsState()
   val layoutMode by browserPreferences.folderViewFolderLayoutMode.collectAsState()
 
   // Same tab order as MainScreen: Home is always first, the pill only shows with 2+ tabs.
   val navigationTabs =
-    remember(showMusicTab, showRecentsTab, showPlaylistsTab, showNetworkTab, showJellyfinTab) {
+    remember(showMusicTab, showRecentsTab, showPlaylistsTab, showNetworkTab, showJellyfinTab, showCloudTab) {
       val tabs =
         buildList {
           add(MainScreen.MainTab.HOME)
           if (showMusicTab) add(MainScreen.MainTab.MUSIC)
           if (showRecentsTab) add(MainScreen.MainTab.RECENTS)
           if (showPlaylistsTab) add(MainScreen.MainTab.PLAYLISTS)
+          if (showCloudTab) add(MainScreen.MainTab.CLOUD)
           if (showNetworkTab) add(MainScreen.MainTab.NETWORK)
           if (showJellyfinTab) add(MainScreen.MainTab.JELLYFIN)
         }

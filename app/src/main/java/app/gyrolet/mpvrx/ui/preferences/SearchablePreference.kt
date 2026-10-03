@@ -1838,7 +1838,7 @@ object SearchablePreferences {
       SearchablePreference(titleRes = R.string.cloud_sprite_previews, keywords = listOf("sprite seek preview 雪碧图 预览"),
         category = "Media Servers", screen = MediaServersPreferencesScreen, anchorItemIndex = 0),
       SearchablePreference(titleRes = R.string.cloud_library_mode, keywords = listOf("webdav openlist local cloud 本地 云端 多选 存储 切换"),
-        category = "Folders", screen = FoldersPreferencesScreen),
+        category = "Appearance", screen = AppearancePreferencesScreen),
       SearchablePreference(
         titleRes = R.string.pref_media_servers_title,
         summaryRes = R.string.pref_media_servers_summary,

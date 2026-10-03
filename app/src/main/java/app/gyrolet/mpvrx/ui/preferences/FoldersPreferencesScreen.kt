@@ -14,6 +14,7 @@ import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -162,6 +164,16 @@ object FoldersPreferencesScreen : Screen {
             .then(settingsHighlight),
       ) {
         if (!selectionState.isInSelectionMode) {
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(max = 320.dp)
+              .verticalScroll(androidx.compose.foundation.rememberScrollState()),
+          ) {
+            me.zhanghai.compose.preference.ProvidePreferenceLocals {
+              CloudFolderPreferences()
+            }
+          }
           // ── Media Library ─────────────────────────────────────────────
           PreferenceSectionHeader(
             title = stringResource(R.string.pref_media_library_section),
@@ -219,8 +231,7 @@ object FoldersPreferencesScreen : Screen {
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            item { CloudFolderPreferences() }
-      items(allBlacklistedFolders, key = { it }) { folderPath ->
+            items(allBlacklistedFolders, key = { it }) { folderPath ->
               val isVideo = folderPath in blacklistedVideoFolders
               val isAudio = folderPath in blacklistedAudioFolders
               val scope = when {

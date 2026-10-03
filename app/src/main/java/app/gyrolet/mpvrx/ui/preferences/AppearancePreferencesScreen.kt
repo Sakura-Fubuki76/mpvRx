@@ -863,6 +863,7 @@ object AppearancePreferencesScreen : Screen {
               val showMusicTab by preferences.showMusicTab.collectAsState()
               val showRecentsTab by preferences.showRecentsTab.collectAsState()
               val showPlaylistsTab by preferences.showPlaylistsTab.collectAsState()
+              val showCloudTab by preferences.showCloudTab.collectAsState()
               val showNetworkTab by preferences.showNetworkTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
               val showSnapshotTab by preferences.showSnapshotTab.collectAsState()
@@ -910,6 +911,15 @@ object AppearancePreferencesScreen : Screen {
                 },
               )
 
+              PreferenceDivider()
+
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.cloud_library_mode),
+                value = showCloudTab,
+                onValueChange = preferences.showCloudTab::set,
+                title = { Text(stringResource(R.string.cloud_library_mode)) },
+                summary = { Text(stringResource(R.string.cloud_add_server_summary)) },
+              )
               PreferenceDivider()
 
               SwitchPreference(

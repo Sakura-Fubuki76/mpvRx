@@ -91,6 +91,7 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
 import app.gyrolet.mpvrx.database.repository.NetworkStreamEntryRepository
 import app.gyrolet.mpvrx.domain.network.ConnectionStatus
+import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
 import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
@@ -241,9 +242,9 @@ object NetworkStreamingScreen : Screen {
     val filteredConnections =
       remember(connections, searchQuery) {
         if (searchQuery.isBlank()) {
-          connections
+          connections.filter { it.protocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) }
         } else {
-          connections.filter {
+          connections.filter { it.protocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) }.filter {
             it.name.contains(searchQuery, ignoreCase = true) ||
               it.host.contains(searchQuery, ignoreCase = true) ||
               it.protocol.displayName.contains(searchQuery, ignoreCase = true)
