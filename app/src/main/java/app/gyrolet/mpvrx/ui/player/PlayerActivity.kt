@@ -698,17 +698,17 @@ class PlayerActivity :
     // its StateFlow declarations register native properties during ViewModel initialization.
     viewModel.attachHost(this)
     viewModelHostAttached = true
-    viewModel.onMpvCoreInitialized()
+    traceStartup("viewModel.onMpvCoreInitialized") { viewModel.onMpvCoreInitialized() }
     MediaPlaybackService.createNotificationChannel(this)
-    setupAudio()
-    setupBackPressHandler()
-    setupVideoAmbientBackground()
-    setupPlayerControls()
-    setupVideoTransformObserver()
-    setupAudioPlayerViewObserver()
-    setupMediaSession()
-    observePlaybackSessionQueue()
-    observeTorrentStreamingState()
+    traceStartup("setupAudio") { setupAudio() }
+    traceStartup("setupBackPressHandler") { setupBackPressHandler() }
+    traceStartup("setupVideoAmbientBackground") { setupVideoAmbientBackground() }
+    traceStartup("setupPlayerControls") { setupPlayerControls() }
+    traceStartup("setupVideoTransformObserver") { setupVideoTransformObserver() }
+    traceStartup("setupAudioPlayerViewObserver") { setupAudioPlayerViewObserver() }
+    traceStartup("setupMediaSession") { setupMediaSession() }
+    traceStartup("observePlaybackSessionQueue") { observePlaybackSessionQueue() }
+    traceStartup("observeTorrentStreamingState") { observeTorrentStreamingState() }
     // Note: screenStateReceiver is now registered in onStart() and
     // unregistered in onStop(), matching the noisyReceiver pattern.
     // Previously it was registered here in onCreate and stayed registered
@@ -720,7 +720,7 @@ class PlayerActivity :
     playlistId = intent.getIntExtra("playlist_id", -1).takeIf { it != -1 }
     playlistIndex = intent.getIntExtra("playlist_index", -1).takeIf { it >= 0 }
       ?: intent.getIntExtra("playlistIndex", 0)
-    loadNetworkPlaylistMetadata(intent)
+    traceStartup("loadNetworkPlaylistMetadata") { loadNetworkPlaylistMetadata(intent) }
 
     // Load playlist from intent extras first (fast path - backward compatibility)
     playlist =
@@ -732,7 +732,7 @@ class PlayerActivity :
       }
 
     val preparedPlaybackQueue =
-      playlist.isEmpty() && restorePreparedPlaybackQueue(intent)
+      playlist.isEmpty() && traceStartup("restorePreparedPlaybackQueue") { restorePreparedPlaybackQueue(intent) }
 
     var restoredSavedPlaylistItem = false
     if (playlist.isNotEmpty()) {
@@ -775,12 +775,12 @@ class PlayerActivity :
     }
 
     // Extract fileName early so it's available when video loads
-    fileName = getFileName(intent)
+    fileName = traceStartup("getFileName") { getFileName(intent) }
     if (fileName.isBlank()) {
       fileName = intent.data?.lastPathSegment ?: "Unknown Video"
     }
     legacyMediaIdentifier = getLegacyMediaIdentifier(intent, fileName)
-    mediaIdentifier = getMediaIdentifier(intent, fileName)
+    mediaIdentifier = traceStartup("getMediaIdentifier") { getMediaIdentifier(intent, fileName) }
 
     // A validated process-local session still owns its queue. Do not clear or republish it before
     // the saved-state attachment below has a chance to claim that exact current item.
@@ -792,7 +792,7 @@ class PlayerActivity :
     }
 
     // Set HTTP headers (including referer) BEFORE playing the file
-    setHttpHeadersFromExtras(intent.extras)
+    traceStartup("setHttpHeadersFromExtras") { setHttpHeadersFromExtras(intent.extras) }
 
     val attachedToCurrentSession =
       attachToCurrentPlaybackSessionIfRequested() || attachToSavedPlaybackSessionIfValid()
@@ -805,7 +805,7 @@ class PlayerActivity :
       pendingSavedPlaylistSelection = null
       loadPlaylistItemInternal(playlistIndex, saveCurrentPlaybackState = false)
     } else if (!attachedToCurrentSession && !awaitingRoomPlaylistRestore) {
-      getPlayableUri(intent)?.let { playableUri ->
+      traceStartup("getPlayableUri") { getPlayableUri(intent) }?.let { playableUri ->
         currentPlayableUri = playableUri
         isReady = false
         viewModel.onVideoLoadStarted()
@@ -5664,11 +5664,20 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
   }
 
+  private inline fun <T> traceStartup(stage: String, block: () -> T): T {
+    val started = System.nanoTime()
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.prepare.begin", detail = "stage=$stage")
+    try { return block() } finally {
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.prepare.end", detail = "stage=$stage elapsedMs=${(System.nanoTime() - started) / 1000000}")
+    }
+  }
+
   private fun startMediaLoad(
     playableUri: String,
     originalUri: String? = null,
     expandM3u: Boolean = false,
   ) {
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.request.begin")
     if (!ownsPlaybackSession()) return
     mediaLoadJob?.cancel()
     cancelPlaybackLoadRecovery()
@@ -5692,6 +5701,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       isTorrentSource(requestedSource, sourceIntent.type) || isTorrentSource(playableUri, sourceIntent.type)
     mediaLoadJob =
       lifecycleScope.launch(mediaLoadDispatcher) {
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.request.dispatched")
         try {
           val bookId = sourceIntent.getLongExtra(AudiobookPlayback.EXTRA_BOOK_ID, -1L)
           if (sourceIntent.getBooleanExtra("internal_launch", false) && bookId > 0 && requestedQueueItem?.audiobook?.bookId != bookId) {
@@ -5849,6 +5859,9 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
               item
             }
 
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.request.resolved")
+          val cookieStarted = System.nanoTime()
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.cookies.begin")
           val cookieSource =
             sequenceOf(resolvedPlayableUri, resolvedOriginalUri)
               .firstOrNull { value -> value.startsWith("http://", true) || value.startsWith("https://", true) }
@@ -5857,6 +5870,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
               .exportForPlayback(cookieSource, AndroidCookieJar.playbackCookieFile(this@PlayerActivity))
               .onFailure { error -> Log.w(TAG, "Failed to prepare playback cookies", error) }
           }
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.cookies.end", detail = "elapsedMs=${(System.nanoTime() - cookieStarted) / 1000000}")
           ensureCurrentMediaRequest(requestGeneration)
           if (requestedQueueItem == null || isTorrentRequest) {
             val torrentSeries = torrentResult?.takeIf { it.playableFiles.size > 1 }
@@ -5942,6 +5956,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     ytdlFormat: String? = null,
     positionRestoreOverride: PlaybackPositionRestoreOverride? = null,
   ) {
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.issue.begin")
+    val positionStarted = System.nanoTime()
     ensureCurrentMediaRequest(requestGeneration)
     val scriptRestore = if (intent.getStringExtra(EXTRA_SCRIPT_RESTORE_MEDIA_ID) == item.stableId) {
       PlaybackPositionRestoreOverride(
@@ -5980,6 +5996,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     ensureCurrentMediaRequest(requestGeneration)
     // Proxy routes intentionally have no media extension. Their known network source is a
     // direct file, so never prepare a webpage extractor or its Python runtime for them.
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.position.ready", detail = "elapsedMs=${(System.nanoTime() - positionStarted) / 1000000}")
     val requiresYtdlp = item.networkSource == null &&
       sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
     val ytdlpStarted = System.nanoTime()

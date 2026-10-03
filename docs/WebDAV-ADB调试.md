@@ -75,3 +75,5 @@ adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/clou
 本次再播放：恢复 259 秒，network=false，externalCount=0；file-loaded=1791045042347，恢复暂停释放=1791045042492，restart=1791045049423。字幕恢复不是该次约 6.9 秒额外等待的原因。修复历史/队列入口的云端 connection/path 丢失，并增加 player.buffer.state（paused-for-cache/seeking）、player.native.restart（原生事件进入时刻）、player.render.begin/end；与 Activity 的 restart 对比可判断事件转发延迟，缓冲状态可判断 mpv 缓冲等待。仍需新版日志证明等待根因，未调整 cache-pause 或跳过初始化。
 
 黑屏复测：core.end=1791045658953，fonts.media.begin=1791045665996（间隔 7043ms），loadfile=1791045666018，native.restart=1791045668065（2047ms）；render=11ms，paused-for-cache=false。修正已知 networkSource 文件走 yt-dlp 的判断，跳过 Python runtime 准备，并在 loadfile 使用局部 ytdl=no，避免无扩展名代理 URL 被原生网页钩子处理。player.extractor.ready 输出 required 和 elapsedMs；真正网页的运行环境准备保持原逻辑。
+
+再次复测 required=false/0ms，core.end 到 extractor.ready 8214ms，说明网页提取器不是此次黑屏的主要等待。新增 player.prepare.begin/end（核心就绪、音频/控件/媒体会话、队列、名称/身份、请求头、URI 等）、player.request.begin/dispatched/resolved、player.cookies.begin/end、player.issue.begin、player.position.ready 覆盖此前未计时区间。只记录阶段和耗时，不记录请求头或 Cookie 内容。
