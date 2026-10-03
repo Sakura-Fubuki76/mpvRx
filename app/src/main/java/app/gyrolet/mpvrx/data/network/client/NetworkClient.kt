@@ -17,6 +17,7 @@ import java.io.InputStream
  * Common interface for all network protocol clients
  */
 interface NetworkClient {
+  suspend fun getThumbnailBytes(path: String): Result<ByteArray?> = Result.success(null)
   /**
    * Connect to the server
    */

@@ -99,6 +99,30 @@ class OpenListClient(
   }
 
   override suspend fun getFileSize(path: String): Result<Long> = result { get(path).long("size") }
+  override suspend fun getThumbnailBytes(path: String): Result<ByteArray?> = result {
+    repeat(2) { attempt ->
+      val data = get(path)
+      val raw = sequenceOf("thumb_512", "thumb_1024", "thumb").map { data.string(it) }.firstOrNull { it.isNotBlank() }
+        ?: return@result null
+      var url = origin.resolve(raw)?.takeIf { it.scheme in setOf("http", "https") } ?: return@result null
+      if (raw.startsWith('/') && data.string("sign").isNotBlank() && url.queryParameter("sign") == null) {
+        url = url.newBuilder().addQueryParameter("sign", data.string("sign")).build()
+      }
+      val request = Request.Builder().url(url)
+      if (url.host == origin.host && url.port == origin.port && url.scheme == origin.scheme) {
+        authorization()?.let { request.header("Authorization", it) }
+      }
+      val response = withContext(Dispatchers.IO) { runInterruptible { http.newCall(request.build()).execute() } }
+      response.use {
+        if (it.code in setOf(401, 403) && attempt == 0) return@use
+        if (!it.isSuccessful) return@result null
+        val bytes = withContext(Dispatchers.IO) { runInterruptible { it.body.byteStream().readNBytes(8 * 1024 * 1024 + 1) } }
+        check(bytes.size <= 8 * 1024 * 1024) { "OpenList thumbnail response too large" }
+        return@result bytes
+      }
+    }
+    null
+  }
   private suspend fun get(path: String) = api("fs/get", buildJsonObject { put("path", fullPath(path)); put("password", "") })
 
   override suspend fun getFileUri(path: String): Result<Uri> = result {
@@ -191,8 +215,10 @@ class OpenListClient(
   private fun JsonObject.long(key: String) = (get(key) as? JsonPrimitive)?.longOrNull ?: 0L
   private fun JsonObject.file(path: NetworkPath): NetworkFile {
     val directory = (get("is_dir") as? JsonPrimitive)?.booleanOrNull == true
-    return NetworkFile(string("name"), path.value, long("size"), directory,
-      runCatching { Instant.parse(string("modified")).toEpochMilli() }.getOrDefault(0L),
-      if (directory) null else NetworkMimeTypes.forFileName(string("name")))
+    val modified = string("modified").toLongOrNull()?.let { if (it < 10_000_000_000L) it * 1000 else it }
+      ?: runCatching { Instant.parse(string("modified")).toEpochMilli() }.getOrDefault(0L)
+    return NetworkFile(string("name"), path.value, long("size"), directory, modified,
+      if (directory) null else NetworkMimeTypes.forFileName(string("name")),
+      width = long("width").coerceIn(0, 32768).toInt(), height = long("height").coerceIn(0, 32768).toInt())
   }
 }

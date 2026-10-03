@@ -70,4 +70,27 @@ class OpenListClientTest {
     assertNotEquals(cloudMediaKey(connection, "/movie.mp4", 1, 2), cloudMediaKey(connection, "/movie.mp4", 2, 2))
     assertEquals("mp4", cloudMediaExtension("https://example.test/movie.mp4?sign=123"))
   }
+  @Test fun thumbnailRefreshesExpiredCdnAddressWithoutApiCredentials() = runBlocking {
+    var resolves = 0
+    val client = OpenListClient(connection, OkHttpClient.Builder().addInterceptor { chain ->
+      val request = chain.request()
+      var code = 200
+      val body = when {
+        request.url.encodedPath == "/api/auth/login" -> """{"code":200,"data":{"token":"private-token"}}"""
+        request.url.host == "example.test" -> {
+          assertEquals("private-token", request.header("Authorization"))
+          """{"code":200,"data":{"thumb_512":"https://cdn.test/cover?sign=${++resolves}"}}"""
+        }
+        else -> {
+          assertNull(request.header("Authorization"))
+          if (resolves == 1) { code = 403; "expired" } else "image"
+        }
+      }
+      Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(code).message("OK")
+        .body(body.toResponseBody()).build()
+    }.build())
+    assertEquals("image", client.getThumbnailBytes("/video.mp4").getOrThrow()!!.toString(Charsets.UTF_8))
+    assertEquals(2, resolves)
+  }
+
 }

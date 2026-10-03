@@ -258,6 +258,14 @@ class NetworkRepository(
       }
     }
 
+  suspend fun getThumbnailBytes(connection: NetworkConnection, path: String): Result<ByteArray?> = withContext(Dispatchers.IO) {
+    try {
+      val client = clientFactory(resolveCredential(dao.getConnectionById(connection.id) ?: connection))
+      try { client.getThumbnailBytes(path) } finally { client.disconnect() }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (error: Exception) { Result.failure(error) }
+  }
+
   suspend fun searchFiles(connection: NetworkConnection, path: String, query: String): Result<List<NetworkFile>> =
     withContext(Dispatchers.IO) {
       try {

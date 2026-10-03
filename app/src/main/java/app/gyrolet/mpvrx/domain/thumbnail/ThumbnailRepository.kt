@@ -92,6 +92,7 @@ class ThumbnailRepository(
 
   private val memoryCache: LruCache<String, Bitmap>
   private val localDiskDir = File(context.filesDir, "thumbnails/local").apply { mkdirs() }
+  private var lastNetworkDiskTrim = 0L
   private val networkDiskDir = File(context.filesDir, "thumbnails/network").apply { mkdirs() }
   private val diskCacheLock = ReentrantReadWriteLock()
   private val ongoingOperations = ConcurrentHashMap<String, Deferred<Bitmap?>>()
@@ -109,6 +110,7 @@ class ThumbnailRepository(
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
   private val networkGenerationSemaphore = Semaphore(1)
+  private val cloudWorkQueue = app.gyrolet.mpvrx.domain.cloud.CloudWorkQueue()
   private val maxFolderBatchSize = 48
 
   // Per-batch progress lives in [completedFolderVideoKeys], keyed per video, so it survives both a
@@ -181,6 +183,14 @@ class ThumbnailRepository(
   ): Bitmap? =
     withContext(Dispatchers.IO) {
       val key = thumbnailKey(video, widthPx, heightPx)
+      app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(video.path)?.let { reference ->
+        val bitmap = getThumbnailForNetworkSource(reference.connectionId, reference.path.value, widthPx, heightPx)
+        if (bitmap != null) {
+          synchronized(memoryCache) { memoryCache.put(key, bitmap) }
+          _thumbnailReadyKeys.tryEmit(key)
+        }
+        return@withContext bitmap
+      }
 
       if (isNetworkUrl(video.path) && !isNetworkThumbnailAllowed(video.path)) {
         return@withContext null
@@ -255,6 +265,12 @@ class ThumbnailRepository(
       synchronized(memoryCache) {
         memoryCache.get(key)
       }?.let { return@withContext it }
+
+      app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(video.path)?.let { reference ->
+        val bitmap = getThumbnailForNetworkSource(reference.connectionId, reference.path.value, widthPx, heightPx, generate = false)
+        if (bitmap != null) synchronized(memoryCache) { memoryCache.put(key, bitmap) }
+        return@withContext bitmap
+      }
 
       val diskKey = diskCacheKey(video)
       val decoded =
@@ -844,11 +860,27 @@ class ThumbnailRepository(
       }.getOrNull() ?: return
 
     diskCacheLock.write {
-      runCatching {
-        FileOutputStream(file).use { output ->
-          output.write(encoded)
+      val temporary = File(file.parentFile, ".${file.name}.${System.nanoTime()}.tmp")
+      try {
+        FileOutputStream(temporary).use { it.write(encoded) }
+        try {
+          java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        } catch (_: java.nio.file.AtomicMoveNotSupportedException) {
+          java.nio.file.Files.move(temporary.toPath(), file.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
         }
-      }
+        if (network && SystemClock.elapsedRealtime() - lastNetworkDiskTrim > 60_000) {
+          lastNetworkDiskTrim = SystemClock.elapsedRealtime()
+          val images = networkDiskDir.listFiles()?.filter { it.extension == "jpg" }?.sortedBy { it.lastModified() }.orEmpty()
+          var bytes = images.sumOf { it.length() }
+          for (image in images) {
+            if (bytes <= 256L * 1024 * 1024) break
+            val length = image.length()
+            if (image != file && image.delete()) bytes -= length
+          }
+        }
+      } catch (error: Exception) {
+        android.util.Log.w("ThumbnailRepository", "Could not persist thumbnail", error)
+      } finally { temporary.delete() }
     }
   }
 
@@ -885,6 +917,7 @@ class ThumbnailRepository(
   }
 
   private fun isNetworkUrl(path: String): Boolean =
+    path.startsWith("mpvrx-network://", ignoreCase = true) ||
     path.startsWith("http://", ignoreCase = true) ||
       path.startsWith("https://", ignoreCase = true) ||
       path.startsWith("rtmp://", ignoreCase = true) ||
@@ -1128,6 +1161,30 @@ class ThumbnailRepository(
    * a local HTTP stream and then extracts the frame.
    * Respects the [showNetworkThumbnails] preference gate.
    */
+  /** Schedule every video in a directory/tree, including cards outside the lazy viewport. */
+  suspend fun prefetchNetworkDirectory(connection: NetworkConnection, files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>) = coroutineScope {
+    val videos = files.filter { !it.isDirectory && (it.mimeType?.startsWith("video/") == true ||
+      it.name.substringAfterLast('.', "").lowercase() in app.gyrolet.mpvrx.utils.storage.FileTypeUtils.VIDEO_EXTENSIONS) }.distinctBy { it.path }
+    val completed = java.util.concurrent.atomic.AtomicInteger()
+    val succeeded = java.util.concurrent.atomic.AtomicInteger()
+    android.util.Log.d("CloudBatch", "start connection=${connection.id} total=${videos.size}")
+    try {
+      videos.chunked(32).forEach { batch ->
+        batch.map { file -> async {
+          try {
+            // Waiting for the bounded decoder is not a network timeout. Every queued item gets its turn.
+            if (getThumbnailForNetworkPath(file.path, 480, 300, connection, file.size, file.mimeType, file.lastModified, backgroundWork = true) != null) succeeded.incrementAndGet()
+          } catch (cancelled: CancellationException) { throw cancelled }
+          catch (error: Exception) { android.util.Log.w("CloudBatch", "thumbnail failed", error) }
+          finally {
+            val count = completed.incrementAndGet()
+            if (count % 10 == 0 || count == videos.size) android.util.Log.d("CloudBatch", "progress connection=${connection.id} completed=$count/${videos.size} ready=${succeeded.get()}")
+          }
+        } }.awaitAll()
+      }
+    } finally { android.util.Log.d("CloudBatch", "end connection=${connection.id} completed=${completed.get()}/${videos.size} ready=${succeeded.get()} cancelled=${currentCoroutineContext()[kotlinx.coroutines.Job]?.isActive == false}") }
+  }
+
   suspend fun getThumbnailForNetworkPath(
     path: String,
     widthPx: Int,
@@ -1136,13 +1193,16 @@ class ThumbnailRepository(
     fileSize: Long = -1L,
     mimeType: String? = null,
     lastModified: Long = 0L,
+    backgroundWork: Boolean = false,
+    ignoreDisplayPreference: Boolean = false,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
-      if (!appearancePreferences.showNetworkThumbnails.get()) return@withContext null
+      if (!ignoreDisplayPreference && !appearancePreferences.showNetworkThumbnails.get()) return@withContext null
 
       val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
       val memKey = networkThumbnailMemoryKey(identity, widthPx, heightPx)
       synchronized(memoryCache) { memoryCache.get(memKey) }?.let { return@withContext it }
+      if (!backgroundWork) cloudWorkQueue.promote(networkThumbnailDiskKey(identity))
       ongoingOperations[memKey]?.let { return@withContext it.await() }
 
       val candidate =
@@ -1157,6 +1217,7 @@ class ThumbnailRepository(
               fileSize = fileSize,
               mimeType = mimeType,
               lastModified = lastModified,
+              backgroundWork = backgroundWork,
             )
           }
 
@@ -1177,7 +1238,10 @@ class ThumbnailRepository(
               browserPreferences.thumbnailFramePosition.get(),
             )
           val bitmap =
-            networkGenerationSemaphore.withPermit {
+            cloudWorkQueue.run(diskKey, backgroundWork) {
+        kotlinx.coroutines.withTimeoutOrNull(60_000) {
+        readBitmapFromDisk(diskKey, network = true)?.let { return@withTimeoutOrNull scaleBitmap(it, widthPx, heightPx) }
+        networkGenerationSemaphore.withPermit {
               (
                 extractKeyframeByIndex(path, path, connection, strategy, fileSize, lastModified)
                   ?: extractNetworkVideoFrame(
@@ -1189,6 +1253,8 @@ class ThumbnailRepository(
                   ?: generateFastNetworkThumbnail(path, widthPx, heightPx)
               )?.let { scaleBitmap(it, widthPx, heightPx) }
             }
+      }
+      }
 
           if (bitmap == null) {
             android.util.Log.w("ThumbnailRepository", "All strategies failed for network stream $path")
@@ -1218,12 +1284,21 @@ class ThumbnailRepository(
     path: String,
     widthPx: Int,
     heightPx: Int,
+    generate: Boolean = true,
+    respectDisplayPreference: Boolean = true,
   ): Bitmap? {
     // Tombstones included: the cache key needs only this connection's identity, and an entry whose
     // share was deleted must keep showing the frame that is already on disk.
     val connection = networkRepository.getConnectionIncludingDeleted(connectionId) ?: return null
     val entry = KoinJavaComponent.get<app.gyrolet.mpvrx.database.dao.CloudMetadataDao>(app.gyrolet.mpvrx.database.dao.CloudMetadataDao::class.java)
       .getItem(connectionId, app.gyrolet.mpvrx.domain.network.NetworkPath.from(path).value)
+    if (!generate) {
+      if (respectDisplayPreference && !appearancePreferences.showNetworkThumbnails.get()) return null
+      val identity = networkThumbnailIdentity(path, connection, entry?.size ?: -1L, entry?.lastModified ?: 0L)
+      val key = networkThumbnailMemoryKey(identity, widthPx, heightPx)
+      synchronized(memoryCache) { memoryCache.get(key) }?.let { return it }
+      return readBitmapFromDisk(networkThumbnailDiskKey(identity), network = true)?.let { scaleBitmap(it, widthPx, heightPx) }
+    }
     return getThumbnailForNetworkPath(
       path = path,
       widthPx = widthPx,
@@ -1232,7 +1307,24 @@ class ThumbnailRepository(
       fileSize = entry?.size ?: -1L,
       lastModified = entry?.lastModified ?: 0L,
       mimeType = entry?.mimeType,
+      ignoreDisplayPreference = !respectDisplayPreference,
     )
+  }
+
+  fun isNetworkThumbnailCached(connection: NetworkConnection, file: app.gyrolet.mpvrx.domain.network.NetworkFile): Boolean {
+    val identity = networkThumbnailIdentity(file.path, connection, file.size, file.lastModified)
+    return File(networkDiskDir, keyToFileName(networkThumbnailDiskKey(identity))).length() > 0
+  }
+
+  private suspend fun getOpenListApiThumbnail(connection: NetworkConnection, path: String, width: Int, height: Int): Bitmap? {
+    if (connection.protocol != app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST) return null
+    val bytes = networkRepository.getThumbnailBytes(connection, path).getOrNull() ?: return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth !in 1..8192 || bounds.outHeight !in 1..8192 || bounds.outWidth.toLong() * bounds.outHeight > 32_000_000) return null
+    val options = BitmapFactory.Options()
+    while (bounds.outWidth / options.inSampleSize > maxOf(width, 512) * 2 || bounds.outHeight / options.inSampleSize > maxOf(height, 512) * 2) options.inSampleSize *= 2
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
   }
 
   private suspend fun getNonHttpNetworkThumbnail(
@@ -1244,6 +1336,7 @@ class ThumbnailRepository(
     fileSize: Long,
     mimeType: String?,
     lastModified: Long,
+    backgroundWork: Boolean,
   ): Bitmap? {
     if (hasRecentNetworkThumbnailFailure(identity)) {
       android.util.Log.d("ThumbnailRepository", "Skipping network thumbnail (previously failed): $path")
@@ -1269,10 +1362,13 @@ class ThumbnailRepository(
       )
 
     val bitmap =
-      networkGenerationSemaphore.withPermit {
+      cloudWorkQueue.run(diskKey, backgroundWork) {
+        kotlinx.coroutines.withTimeoutOrNull(60_000) {
+        readBitmapFromDisk(diskKey, network = true)?.let { return@withTimeoutOrNull scaleBitmap(it, widthPx, heightPx) }
+        networkGenerationSemaphore.withPermit {
         (
           if (connection != null) {
-            extractNetworkVideoFrameViaProxy(
+            getOpenListApiThumbnail(connection, path, widthPx, heightPx) ?: extractNetworkVideoFrameViaProxy(
               path = path,
               connection = connection,
               strategy = strategy,
@@ -1287,6 +1383,8 @@ class ThumbnailRepository(
           }
         )?.let { scaleBitmap(it, widthPx, heightPx) }
       }
+      }
+      }
 
     if (bitmap == null) {
       android.util.Log.w("ThumbnailRepository", "All strategies failed for network path $path")
@@ -1300,7 +1398,8 @@ class ThumbnailRepository(
     writeBitmapToDisk(diskKey, bitmap, network = true)
 
     synchronized(memoryCache) { memoryCache.put(memKey, bitmap) }
-    _thumbnailReadyKeys.tryEmit(memKey)
+    val ready = synchronized(networkKeysByIdentity) { networkKeysByIdentity[identity]?.toList().orEmpty() }
+    (ready + memKey).distinct().forEach { _thumbnailReadyKeys.tryEmit(it) }
     return bitmap
   }
 
