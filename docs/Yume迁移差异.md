@@ -38,7 +38,15 @@ CloudSpriteRepository 已改为外围适配器，不再自写生成算法。旧�
 
 ## 2026-10-04 剩余差异核对
 
-- WebDAV 播放优化尚不能认定完整一致。yume PlayerService.kt 的 ScrubbingAwareLoadControl 按实测带宽调整前后缓冲总容量，并在拖动进度时切换缓冲阈值。mpvRx MPVView.kt 目前设置 cache=auto、cache-pause-wait=2、demuxer-max-bytes=64MiB，尚无对应的带宽自适应和拖动状态缓冲切换实现。需要按 mpv 的缓存机制适配并验证，不能照抄 Media3 参数。
+### 缓冲与刷新策略结论修正
+
+上一轮将 yume 带宽自适应/拖动缓冲以及 OpenList refresh 参数直接列为待适配，依据不足，撤回必迁结论。MPVView 的 64MiB 是应用默认前向解复用缓冲上限，不是整个 mpv 缓存体系，也不是不可修改的上限。MpvConfigOverride.NETWORK_BUFFERING 包含 cache、cache-pause、cache-pause-wait、demuxer-max-bytes 等；PlaybackSession.setOptionString 会跳过交由 mpv.conf 控制的选项。后向缓存等应用未设置的选项可由配置文件交给 mpv 管理。
+
+保留 mpv 原有前后向缓存、缓存内 seek 和缓冲恢复机制，当前不迁入 yume 的 Media3 LoadControl 策略，也不新增自动调参层。仅在实际日志证明 mpv 现有机制或配置不足时再讨论。OpenList refresh=false 是使用服务端缓存的策略差异，不认定为缺陷；无实际服务端缓存失效问题时不强制 refresh=true。
+
+验证应聚焦迁入代码的接缝：鉴权/直链刷新、代理 Range 与重连、字体、元数据身份及雪碧图任务生命周期。yume 的正常使用是原算法的有效依据，不要求重新证明全部算法；但不同代理、协程、文件入口及 mpv/libass 集成后的行为仍不能仅凭源项目正常就认定验收通过。
+
+- yume PlayerService.kt 的 ScrubbingAwareLoadControl 按实测带宽调整缓冲并在拖动时切换阈值；mpvRx 采用 mpv 缓冲体系。两者实现不同，不再列为必须补齐的迁移项。
 - OpenList 已接入登录/鉴权刷新、分页列目录、搜索、fs/get 直链及请求头。与 yume OpenListApi 相比，listDirectory 的 refresh 参数尚未贯通：当前 fs/list 固定 refresh=false；界面刷新不能据此宣称会强制刷新服务端目录缓存。独立 probeImageDimensions 接口未原样迁入，现有封面下载解码不能称作该接口的完整迁移。目录密码当前固定为空，不支持密码保护目录。
 - 用户已确认本轮播放启动快且没有闪退。字体库移出 mpv 配置目录的默认 fonts 扫描位置是主要修复，另有自定义按钮脚本延后初始化；未做逐项隔离测试，不能把全部收益定量归因于字体。
 - 雪碧图完整生成后发布和 WebP+JSON 复用已实现，包括普通本地文件入口。实际 ASS 字体样式、雪碧图最终质量及跨重启复用、本地/云端/最近卡片进度持久显示仍需完整真机验收；content URI 等入口也不能以普通文件路径测试代替。
