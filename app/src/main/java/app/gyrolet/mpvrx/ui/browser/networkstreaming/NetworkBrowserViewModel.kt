@@ -103,33 +103,29 @@ class NetworkBrowserViewModel(
   /**
    * Load files in the current directory
    */
-  private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>, treeReady: kotlinx.coroutines.Deferred<Unit>? = null) {
+  private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>) {
     thumbnailBatch?.cancel()
     thumbnailBatch = viewModelScope.launch {
       kotlinx.coroutines.flow.combine(appearance.showNetworkThumbnails.changes(), browserPreferences.showVideoThumbnails.changes(),
         browserPreferences.advancedMp4Thumbnails.changes(), browserPreferences.advancedMkvThumbnails.changes()) { network, video, _, _ -> network && video }
         .collectLatest { enabled ->
           Log.d("CloudBatch", "directory connection=${connection.id} files=${files.size} enabled=$enabled")
+          cloudMetadata.scanStorage(connection, repository, enabled,
+            "${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}")
           cloudMetadata.cacheMissingMetadata(connection, files,
             app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND, enabled)
-          if (treeReady != null) {
-            treeReady.await()
-            val directPaths = files.map { it.path }.toSet()
-            val tree = cloudMetadata.cachedFilesBelow(connection.id, currentPath).filter { it.path !in directPaths }
-            cloudMetadata.cacheMissingMetadata(connection, tree,
-              app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, enabled)
-          }
+
         }
     }
   }
 
-  fun loadFiles() {
+  fun loadFiles(forceStorageScan: Boolean = false) {
+    if (forceStorageScan) cloudMetadata.cancelStorage(connectionId)
     thumbnailBatch?.cancel()
     folderScan?.cancel()
     directoryJob?.cancel()
     metadataObserver?.cancel()
     metadataProbe?.cancel()
-    val treeReady = kotlinx.coroutines.CompletableDeferred<Unit>()
     val generation = ++loadGeneration
     directoryJob = viewModelScope.launch {
       _isLoading.value = true
@@ -162,7 +158,7 @@ class NetworkBrowserViewModel(
               if (generation == loadGeneration) _files.value = enriched
             }
           }
-          scheduleThumbnails(connection, sorted, treeReady)
+          scheduleThumbnails(connection, sorted)
         }
 
         cloudMetadata.cachedDirectory(connectionId, currentPath)?.let { publish(it) }
@@ -173,18 +169,7 @@ class NetworkBrowserViewModel(
             if (generation == loadGeneration) {
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
               publish(fileList)
-              folderScan?.cancel()
-              folderScan = viewModelScope.launch {
-                try {
-                  cloudMetadata.scanFolders(connection, listOf(currentPath), repository)
-                } catch (cancelled: CancellationException) {
-                  throw cancelled
-                } catch (error: Exception) {
-                  Log.w("CloudBatch", "Directory scan failed; using cached tree", error)
-                } finally {
-                  treeReady.complete(Unit)
-                }
-              }
+
               if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery)
             }
           }.onFailure { e ->
@@ -195,7 +180,6 @@ class NetworkBrowserViewModel(
       } catch (e: Exception) {
         _error.value = e.message ?: "Unknown error"
       } finally {
-        if (folderScan?.isActive != true) treeReady.complete(Unit)
         if (generation == loadGeneration) _isLoading.value = false
       }
     }
@@ -210,11 +194,11 @@ class NetworkBrowserViewModel(
     searchJob?.cancel()
     _searchResults.value = null
     val connection = _connection.value ?: return
-    if (connection.protocol != NetworkProtocol.OPENLIST || query.isBlank()) return
+    if (connection.protocol !in setOf(NetworkProtocol.OPENLIST, NetworkProtocol.WEBDAV) || query.isBlank()) return
     searchJob = viewModelScope.launch {
       kotlinx.coroutines.delay(350)
-      repository.searchFiles(connection, currentPath, query).onSuccess { results ->
-        cloudMetadata.registerIndexedFiles(connectionId, results)
+      repository.searchFiles(connection, currentPath, query).onSuccess { indexed ->
+        val results = cloudMetadata.registerIndexedFiles(connectionId, indexed)
         scheduleThumbnails(connection, results)
         kotlinx.coroutines.coroutineScope {
 

@@ -409,7 +409,7 @@ data class NetworkBrowserScreen(
         // Upstream added the manual-grid columns; the picker keeps overriding include-audio.
         includeAudio = targetPlaylistIsAudio ?: includeAudioInBrowser,
         searchQuery = if (indexResults != null) "" else searchQuery,
-        onRefresh = { viewModel.loadFiles() },
+        onRefresh = { viewModel.loadFiles(forceStorageScan = true) },
         onFolderClick = { folder ->
           backstack.navigateTo(
             NetworkBrowserScreen(

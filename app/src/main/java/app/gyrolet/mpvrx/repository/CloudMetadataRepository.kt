@@ -15,6 +15,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -45,6 +46,38 @@ class CloudMetadataRepository(
   private val workers = Semaphore(2)
   private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(2)
   private val locks = Array(64) { Mutex() }
+
+  private val storageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+  private data class StorageScan(val revision: String, val job: kotlinx.coroutines.Job, var completedAt: Long = 0)
+  private val storageScans = java.util.concurrent.ConcurrentHashMap<Long, StorageScan>()
+
+  /** Survives directory navigation; starts at the connection root, not the visible folder. */
+  @Synchronized
+  fun scanStorage(connection: NetworkConnection, network: NetworkRepository, includeThumbnails: Boolean,
+    strategy: String = "", force: Boolean = false) {
+    if (connection.protocol !in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) return
+    val revision = "${connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode()}|$includeThumbnails|$strategy"
+    val previous = storageScans[connection.id]
+    if (!force && previous?.revision == revision && (previous.job.isActive ||
+      previous.completedAt > 0 && System.currentTimeMillis() - previous.completedAt < 30 * 60_000)) return
+    previous?.job?.cancel()
+    val job = storageScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+      try {
+        android.util.Log.d("CloudBatch", "storage start connection=${connection.id}")
+        // Enumerate first so empty-folder filtering does not wait for video decoding.
+        val enumerationComplete = scanFolders(connection, listOf("/"), network)
+        val files = cachedFilesBelow(connection.id, "/")
+        cacheMissingMetadata(connection, files, app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails)
+        if (enumerationComplete) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
+        android.util.Log.d("CloudBatch", "storage complete connection=${connection.id} files=${files.size} enumerationComplete=$enumerationComplete")
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (error: Exception) { android.util.Log.w("CloudBatch", "Storage scan failed; retaining cache", error) }
+    }
+    storageScans[connection.id] = StorageScan(revision, job)
+    job.start()
+  }
+
+  fun cancelStorage(connectionId: Long) { storageScans.remove(connectionId)?.job?.cancel() }
 
   suspend fun cachedDirectory(connectionId: Long, rawPath: String): List<NetworkFile>? = withContext(Dispatchers.IO) {
     val path = NetworkPath.from(rawPath).value
@@ -97,22 +130,35 @@ class CloudMetadataRepository(
 
   fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId).distinctUntilChanged()
 
-  suspend fun registerIndexedFiles(connectionId: Long, files: List<NetworkFile>) = withContext(Dispatchers.IO) {
-    dao.insertItems(files.map { file ->
+  suspend fun registerIndexedFiles(connectionId: Long, files: List<NetworkFile>): List<NetworkFile> = withContext(Dispatchers.IO) {
+    // AList search omits modified timestamps; absence must not invalidate a listed file's version.
+    val resolved = files.map { file ->
+      val current = dao.getItem(connectionId, NetworkPath.from(file.path).value)
+      if (current != null && current.size == file.size && file.lastModified == 0L)
+        file.copy(lastModified = current.lastModified)
+      else file
+    }
+    dao.insertItems(resolved.map { file ->
       val path = NetworkPath.from(file.path)
       val parent = NetworkPath.from(path.segments.dropLast(1).joinToString("/"))
       CloudDirectoryItemEntity(connectionId, parent.value, path.value, file.name, file.size, file.lastModified, file.isDirectory, file.mimeType)
     })
+    enrichVideos(connectionId, resolved)
   }
 
-  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository) {
+  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository): Boolean {
     val scanner = app.gyrolet.mpvrx.domain.cloud.CloudFolderScanner(connection.id, { path ->
+      val current = network.getConnectionById(connection.id)
+      if (current == null || current.isDeleted || current.copy(lastConnected = 0, name = "", autoConnect = false) !=
+        connection.copy(lastConnected = 0, name = "", autoConnect = false)) throw CancellationException("Storage settings changed")
       network.listFiles(connection, path).also { result ->
+        currentCoroutineContext().ensureActive()
         result.getOrNull()?.let { saveDirectory(connection.id, path, it) }
       }
     }, { dao.putScannedFolder(it) })
-    paths.forEach { scanner.scan(it) }
+    val complete = paths.map { scanner.scan(it).scanComplete }.all { it }
     dao.refreshFolderDurations(connection.id)
+    return complete
   }
 
   /** yume's complete-directory entry point: preload, skip completed rows, then submit all pending items. */

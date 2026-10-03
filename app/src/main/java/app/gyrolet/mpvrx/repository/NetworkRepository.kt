@@ -151,6 +151,7 @@ class NetworkRepository(
         dao.update(updated)
       }
       if (reconnectRequired) {
+        org.koin.java.KoinJavaComponent.getOrNull<CloudMetadataRepository>(CloudMetadataRepository::class.java)?.cancelStorage(connection.id)
         cloudMetadataDao?.invalidateConnection(connection.id)
         val oldClient = activeClients.remove(connection.id)
         val closeError = oldClient?.let { closeClient(it) }
@@ -170,6 +171,7 @@ class NetworkRepository(
     withContext(Dispatchers.IO) {
       clientLifecycleMutex.withLock {
         // Tombstoned rather than removed; see addConnection for why the row id must survive.
+        org.koin.java.KoinJavaComponent.getOrNull<CloudMetadataRepository>(CloudMetadataRepository::class.java)?.cancelStorage(connection.id)
         dao.markDeleted(connection.id)
         val oldClient = activeClients.remove(connection.id)
         _connectionStatuses.update { it - connection.id }

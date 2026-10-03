@@ -42,7 +42,7 @@ abstract class CloudMetadataDao {
 
   @Query("""SELECT * FROM cloud_directory_items WHERE connectionId = :connectionId AND isDirectory = 0
     AND (:path = '/' OR substr(path, 1, length(:path) + 1) = :path || '/')
-    ORDER BY CASE WHEN parentPath = :path THEN 0 ELSE 1 END, path LIMIT 10000""")
+    ORDER BY CASE WHEN parentPath = :path THEN 0 ELSE 1 END, path""")
   abstract suspend fun getFilesBelow(connectionId: Long, path: String): List<CloudDirectoryItemEntity>
 
   @Transaction
