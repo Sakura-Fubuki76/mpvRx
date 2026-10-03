@@ -63,6 +63,7 @@ class Anime4KManager(
     B_PLUS(app.gyrolet.mpvrx.R.string.anime4k_mode_b_plus),
     C_PLUS(app.gyrolet.mpvrx.R.string.anime4k_mode_c_plus),
     ARTCNN(app.gyrolet.mpvrx.R.string.anime4k_mode_artcnn),
+    X(app.gyrolet.mpvrx.R.string.anime4k_mode_x),
   }
 
   private var shaderDir: File? = null
@@ -451,6 +452,10 @@ class Anime4KManager(
 
     // Add shaders based on mode
     when (mode) {
+      Mode.X -> {
+        // Restore at source resolution; the common clamp remains before this pass.
+        shaders.add(getShaderFile("Anime4K_Restore_CNN_$q.glsl"))
+      }
       Mode.A -> {
         // Mode A: Restore -> Upscale -> Upscale
         shaders.add(getShaderFile("Anime4K_Restore_CNN_$q.glsl"))

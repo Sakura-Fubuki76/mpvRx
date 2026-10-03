@@ -468,6 +468,7 @@
   <string name="anime4k_mode_b_plus">B+</string>
   <string name="anime4k_mode_c_plus">C+</string>
   <string name="anime4k_mode_artcnn">ArtCNN</string>
+  <string name="anime4k_mode_x">X (Restore only)</string>
   <string name="anime4k_quality_fast">Fast</string>
   <string name="anime4k_quality_balanced">Balanced</string>
   <string name="anime4k_quality_high">High</string>

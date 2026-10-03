@@ -54,6 +54,8 @@ internal fun selectRuntimeStableAnime4K(
   if (staticSelection.mode == Anime4KManager.Mode.OFF) {
     return staticSelection
   }
+  // Pressure relief must not introduce upscaling into the restore-only preset.
+  val fallbackMode = if (mode == Anime4KManager.Mode.X) Anime4KManager.Mode.X else Anime4KManager.Mode.C
 
   // ── Proactive thermal guard (API 30+) ────────────────────────────────────
   // Check the device's thermal headroom *before* inspecting frame-drop counters.
@@ -65,12 +67,12 @@ internal fun selectRuntimeStableAnime4K(
     if (ThermalMonitor.shouldThrottleAnime4K(headroom)) {
       Log.i(
         "Anime4KPlayback",
-        "Thermal headroom low (%.2f) — preemptively downgrading Anime4K to C/Fast".format(headroom),
+        "Thermal headroom low (%.2f) — preemptively downgrading Anime4K to $fallbackMode/Fast".format(headroom),
       )
       return Anime4KSelection(
-        mode = Anime4KManager.Mode.C,
+        mode = fallbackMode,
         quality = Anime4KManager.Quality.FAST,
-        reason = "Thermal headroom low (headroom=%.2f); preemptive downgrade to C/Fast".format(headroom),
+        reason = "Thermal headroom low (headroom=%.2f); preemptive downgrade to $fallbackMode/Fast".format(headroom),
       )
     }
   }
@@ -92,9 +94,9 @@ internal fun selectRuntimeStableAnime4K(
   }
 
   return Anime4KSelection(
-    mode = Anime4KManager.Mode.C,
+    mode = fallbackMode,
     quality = Anime4KManager.Quality.FAST,
-    reason = "Runtime pressure detected (drop=$droppedFrames delayed=$delayedFrames mistimed=$mistimedFrames); downgraded to C/Fast",
+    reason = "Runtime pressure detected (drop=$droppedFrames delayed=$delayedFrames mistimed=$mistimedFrames); downgraded to $fallbackMode/Fast",
   )
 }
 

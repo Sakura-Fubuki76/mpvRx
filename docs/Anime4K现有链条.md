@@ -11,6 +11,7 @@
 | B_PLUS | Sq → Uq → D → Sq → Uq |
 | C_PLUS | Nq → D → Rq → Uq |
 | ARTCNN | Ani4Kv2_ArtCNN_C4F32_i2_CMP.glsl |
+| X | Rq（仅修复原分辨率，不做 CNN 放大；仍先执行 Clamp_Highlights） |
 | OFF | 无 Anime4K 链 |
 
 q 对应 S/M/L，文件名完整展开：
@@ -42,3 +43,5 @@ Deblur 始终是 Anime4K_Deblur_DoG.glsl。三种后处理开关在 DecoderPrefe
 - applyAnime4KShaderChain 把当前内置 Anime4K 链放在保留的其他 shader 前面；缺少所需文件时不提交链条。
 
 审计来源：domain/anime4k/Anime4KManager.kt，preferences/DecoderPreferences.kt，ui/player/anime4k/Anime4KPlayback.kt，ui/player/MPVView.kt。此轮只修复 WebDAV 搜索与书签星入口，不修改上述 Anime4K 策略。
+
+2026-10-04：按用户要求新增 X 链，质量仍映射 S/M/L，后处理沿用现有独立开关。热状态/掉帧降级时 X 仅降为 X/FAST，避免降到包含 Upscale 的 C 链。新增模式不依赖 mpv.conf 着色器配置。
