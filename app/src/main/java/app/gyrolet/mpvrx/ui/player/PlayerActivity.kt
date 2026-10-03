@@ -5978,11 +5978,16 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         null
       }
     ensureCurrentMediaRequest(requestGeneration)
-    val requiresYtdlp = sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
-    val ytdlpReady =
+    // Proxy routes intentionally have no media extension. Their known network source is a
+    // direct file, so never prepare a webpage extractor or its Python runtime for them.
+    val requiresYtdlp = item.networkSource == null &&
+      sequenceOf(item.originalUri, item.playableUri).any(YtdlpManager::requiresYtdlp)
+    val ytdlpStarted = System.nanoTime()
+    val ytdlpReady = !requiresYtdlp ||
       YtdlpManager.prepareForPlayback(this, item.playableUri) { line ->
         line.trim().takeIf { it.isNotEmpty() }?.let { message -> Log.d(TAG, message) }
       }
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.extractor.ready", detail = "required=$requiresYtdlp elapsedMs=${(System.nanoTime() - ytdlpStarted) / 1000000}")
     if (!ytdlpReady) throw IllegalStateException("yt-dlp could not be prepared for web playback")
     ensureCurrentMediaRequest(requestGeneration)
     if (!PlaybackSession.awaitStopCompletion()) {

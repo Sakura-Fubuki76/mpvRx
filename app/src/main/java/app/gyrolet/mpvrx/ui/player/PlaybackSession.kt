@@ -943,6 +943,9 @@ object PlaybackSession : MPVLib.EventObserver {
       val loadOptions =
         buildList {
           add("pause=yes")
+          // A registered network stream is already resolved; its extensionless loopback URL
+          // must not enter mpv's ytdl hook either. Keep this option local to the loaded file.
+          if (resolvedItem.networkSource != null) add("ytdl=no")
           applicationContext?.let { context ->
             val fonts = app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.directory(context, resolvedItem.stableId)
             if (fonts.isDirectory) add("sub-fonts-dir=${fonts.path}")
