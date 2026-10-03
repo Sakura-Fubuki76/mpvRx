@@ -939,6 +939,7 @@ object PlaybackSession : MPVLib.EventObserver {
       // it during asynchronous URI preparation can blank playback even when that work is cancelled.
       MPVLib.setPropertyString("vid", "no")
 
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.load.options", detail = "resumeSeconds=$initialPosition network=${resolvedItem.networkSource != null}")
       val loadOptions =
         buildList {
           add("pause=yes")

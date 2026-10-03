@@ -271,14 +271,27 @@ class NetworkStreamingProxy private constructor() :
     return discovered
   }
 
-  private fun getStream(
-    streamInfo: StreamInfo,
-    path: NetworkPath,
-    offset: Long,
-  ): InputStream? =
-    awaitProxyIo {
+  private fun getStream(streamInfo: StreamInfo, path: NetworkPath, offset: Long): InputStream? {
+    val begin = System.nanoTime()
+    val stream = awaitProxyIo {
       withConnectedClient(streamInfo) { client -> client.getFileStream(path.value, offset) }
     }.getOrNull()
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("proxy.open", streamInfo.connectionId, path.value,
+      "offset=$offset elapsedMs=${(System.nanoTime()-begin)/1000000} success=${stream != null}")
+    if (stream == null) return null
+    return object : java.io.FilterInputStream(stream) {
+      private var first = true
+      private fun record(bytes: Int) {
+        if (first && bytes != 0) {
+          first = false
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("proxy.first.byte", streamInfo.connectionId, path.value,
+            "offset=$offset elapsedMs=${(System.nanoTime()-begin)/1000000} eof=${bytes < 0}")
+        }
+      }
+      override fun read(): Int = super.read().also { record(if (it < 0) -1 else 1) }
+      override fun read(buffer: ByteArray, off: Int, len: Int): Int = `in`.read(buffer, off, len).also(::record)
+    }
+  }
 
   /**
    * NanoHTTPD's serve API is synchronous, but upstream clients are suspend-based. Do not use
@@ -338,7 +351,10 @@ class NetworkStreamingProxy private constructor() :
             return@withLock Result.failure(error)
           }
         try {
+          val connectStart = System.nanoTime()
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("proxy.connect.begin", streamInfo.connectionId)
           candidate.connect().getOrThrow()
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("proxy.connect.end", streamInfo.connectionId, detail = "elapsedMs=${(System.nanoTime()-connectStart)/1000000}")
           streamInfo.client = candidate
           client = candidate
         } catch (cancellation: CancellationException) {

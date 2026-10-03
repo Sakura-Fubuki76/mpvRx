@@ -55,3 +55,5 @@ adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/clou
 - `sprite.batch/decode/color/frame/failed`：批量下载与解码计数、解码器、crop、平面 row/pixel stride、色彩标准/范围、输出大小与回退错误。native=true 仅证明当前转换使用原生路径，不证明画面质量已验收。
 
 本轮之前的日志已证明 Android ASS 解析抛出 PatternSyntaxException，而字幕添加成功；修复版不再使用该正则。旧雪碧图缓存版本已升级，修复版会重新生成。
+
+搜索/恢复播放专项日志：search.begin 记录 queryKey/长度与代次，search.sources 对比 api/cached/merged 及 normalized 数量，search.result 记录最后发布数量；不记录查询原文。player.click/launch/load.options/font.gate/load.command/file.loaded/playback.restart 区分点击、准备、恢复起点与 mpv 加载。proxy.connect.begin/end、proxy.open、proxy.first.byte 记录连接、Range offset、打开/首字节总耗时及结果，并使用 pathKey 对齐同一视频。
