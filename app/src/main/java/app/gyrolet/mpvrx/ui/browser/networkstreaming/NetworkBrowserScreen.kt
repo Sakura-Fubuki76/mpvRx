@@ -180,7 +180,7 @@ data class NetworkBrowserScreen(
     val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var isSearching by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(searchQuery, connection) { viewModel.searchIndex(searchQuery) }
+    LaunchedEffect(searchQuery, connection?.id, connection?.protocol) { viewModel.searchIndex(searchQuery) }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(isSearching) {
       if (isSearching) focusRequester.requestFocus()
@@ -344,7 +344,7 @@ data class NetworkBrowserScreen(
             onInvertSelection = { selectionManager.invertSelection() },
             onDeselectAll = { selectionManager.clear() },
             additionalActions = {
-              if (canBookmarkCurrentFolder) {
+              if (!isCloudLibrary && canBookmarkCurrentFolder) {
                 IconButton(
                   onClick = {
                     bookmarkPreferences.toggle(

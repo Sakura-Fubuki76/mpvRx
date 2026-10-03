@@ -175,7 +175,7 @@ class NetworkBrowserViewModel(
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
               publish(fileList)
 
-              if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery)
+              if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery, forceRefresh = forceStorageScan)
             }
           }.onFailure { e ->
             _error.value = e.message ?: "Unknown error"
@@ -192,28 +192,41 @@ class NetworkBrowserViewModel(
 
   private var searchJob: Job? = null
   private var lastSearchQuery = ""
+  private var searchGeneration = 0L
   private val _searchResults = MutableStateFlow<List<NetworkFile>?>(null)
   val searchResults: StateFlow<List<NetworkFile>?> = _searchResults.asStateFlow()
-  fun searchIndex(query: String) {
+  fun searchIndex(query: String, forceRefresh: Boolean = false) {
+    val changed = lastSearchQuery != query
+    if (!forceRefresh && !changed && searchJob?.isActive == true) return
     lastSearchQuery = query
+    val generation = ++searchGeneration
     searchJob?.cancel()
-    _searchResults.value = null
+    // Background directory/connection updates must not discard an already visible search.
+    if (changed || query.isBlank()) _searchResults.value = null
     val connection = _connection.value ?: return
     if (connection.protocol !in setOf(NetworkProtocol.OPENLIST, NetworkProtocol.WEBDAV) || query.isBlank()) return
     searchJob = viewModelScope.launch {
       kotlinx.coroutines.delay(350)
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("search.begin", connectionId, currentPath, "generation=$generation refresh=$forceRefresh")
       repository.searchFiles(connection, currentPath, query).onSuccess { indexed ->
+        if (generation != searchGeneration) return@onSuccess
         val results = cloudMetadata.registerIndexedFiles(connectionId, indexed)
         scheduleThumbnails(connection, results)
         kotlinx.coroutines.coroutineScope {
 
-          cloudMetadata.observeVideos(connectionId, results).collect { _searchResults.value = it }
+          cloudMetadata.observeVideos(connectionId, results).collect {
+            if (generation == searchGeneration) {
+              _searchResults.value = it
+              app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("search.result", connectionId, currentPath, "generation=$generation count=${it.size}")
+            }
+          }
         }
-      }.onFailure { _error.value = it.message }
+      }.onFailure { if (generation == searchGeneration) _error.value = it.message }
     }
   }
 
   fun pauseBackgroundWork() {
+    ++searchGeneration
     ++loadGeneration
     directoryJob?.cancel()
     thumbnailBatch?.cancel()
