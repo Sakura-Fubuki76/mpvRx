@@ -101,95 +101,40 @@ object SortUtils {
     return orderedFolders + orderedVideos
   }
 
+  /** Yume's digit/non-digit chunk ordering; never converts numeric chunks to Int. */
   class NaturalOrderComparator(
     private val ignoreCase: Boolean,
     private val shouldSkip: (Char) -> Boolean,
   ) : Comparator<String> {
     companion object {
-      val DEFAULT =
-        NaturalOrderComparator(
-          ignoreCase = true,
-          shouldSkip = { it.isWhitespace() },
-        )
+      val DEFAULT = NaturalOrderComparator(ignoreCase = true, shouldSkip = { false })
     }
 
-    override fun compare(
-      a: String,
-      b: String,
-    ): Int {
-      var ia = 0
-      var ib = 0
-
-      while (true) {
-        // Skip ignored characters
-        while (ia < a.length && shouldSkip(a[ia])) ia++
-        while (ib < b.length && shouldSkip(b[ib])) ib++
-
-        // One or both strings ended => shorter string is smaller
-        if (ia >= a.length || ib >= b.length) {
-          return when {
-            ia >= a.length && ib >= b.length -> 0
-            ia >= a.length -> -1
-            else -> 1
-          }
-        }
-
-        val numA = parseNumber(a, ia)
-        val numB = parseNumber(b, ib)
-
-        when {
-          numA != null && numB != null -> {
-            // Both numeric
-            val cmp = numA.value.compareTo(numB.value)
-            if (cmp != 0) return cmp
-            // Numbers equal => advance past them and continue
-            ia = numA.exclusiveEndIndex
-            ib = numB.exclusiveEndIndex
-          }
-          else -> {
-            // Compare single character
-            val ca = if (ignoreCase) a[ia].lowercaseChar() else a[ia]
-            val cb = if (ignoreCase) b[ib].lowercaseChar() else b[ib]
-            val cmp = ca.compareTo(cb)
-            if (cmp != 0) return cmp
-            ia++
-            ib++
-          }
-        }
+    override fun compare(a: String, b: String): Int {
+      fun normalized(value: String) = value.filterNot(shouldSkip).let {
+        if (ignoreCase) it.lowercase(Locale.ROOT) else it
       }
-    }
-
-    private data class ParsedNumber(
-      val value: Int,
-      val exclusiveEndIndex: Int,
-    )
-
-    private fun parseNumber(
-      s: String,
-      start: Int,
-    ): ParsedNumber? {
-      var i = start
-
-      var hasDigit = false
-
-      while (i < s.length) {
-        val c = s[i]
-        if (c.isDigit()) {
-          hasDigit = true
-          i++
-        } else {
-          break
+      val first = normalized(a)
+      val second = normalized(b)
+      var i = 0
+      var j = 0
+      while (i < first.length && j < second.length) {
+        val firstStart = i
+        val secondStart = j
+        val firstDigit = first[i].isDigit()
+        val secondDigit = second[j].isDigit()
+        while (i < first.length && first[i].isDigit() == firstDigit) i++
+        while (j < second.length && second[j].isDigit() == secondDigit) j++
+        val firstChunk = first.substring(firstStart, i)
+        val secondChunk = second.substring(secondStart, j)
+        if (firstDigit && secondDigit) {
+          val length = firstChunk.length.compareTo(secondChunk.length)
+          if (length != 0) return length
         }
+        val result = firstChunk.compareTo(secondChunk)
+        if (result != 0) return result
       }
-
-      if (!hasDigit) return null
-
-      val numStr = s.substring(start, i)
-      return try {
-        ParsedNumber(numStr.toInt(), i)
-      } catch (_: Exception) {
-        null
-      }
+      return first.length.compareTo(second.length)
     }
   }
 
@@ -211,7 +156,7 @@ object SortUtils {
     getPath: (T) -> String,
   ): Int {
     val groupCompare =
-      folderSortGroupKey(getName(first), getPath(first)).compareTo(folderSortGroupKey(getName(second), getPath(second)))
+      NaturalOrderComparator.DEFAULT.compare(folderSortGroupKey(getName(first), getPath(first)), folderSortGroupKey(getName(second), getPath(second)))
     if (groupCompare != 0) {
       return groupCompare
     }
