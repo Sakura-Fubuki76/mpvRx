@@ -59,3 +59,16 @@ target_compile_definitions(qjs_runtime PRIVATE _GNU_SOURCE QUICKJS_NG_BUILD)
 target_compile_options(qjs_runtime PRIVATE -funsigned-char)
 target_link_libraries(qjs_runtime dl m)
 mpvrx_optimize_native_target(qjs_runtime)
+
+# SIMD YUV conversion/scaling and sprite compositing migrated from yume-lib.
+set(LIBYUV_DISABLE_JPEG ON CACHE BOOL "" FORCE)
+# NDK r27 Clang 18 accepts the SME probe but lacks __arm_new/ZA inline assembly.
+if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19)
+    set(CAN_COMPILE_SME FALSE CACHE BOOL "" FORCE)
+endif()
+add_subdirectory(third_party/libyuv EXCLUDE_FROM_ALL)
+add_library(mpvrx_yuv SHARED yuv/yuv_to_bitmap.cpp)
+target_include_directories(mpvrx_yuv PRIVATE third_party/libyuv/include)
+target_link_libraries(mpvrx_yuv PRIVATE yuv jnigraphics log)
+target_compile_features(mpvrx_yuv PRIVATE cxx_std_17)
+mpvrx_optimize_native_target(mpvrx_yuv)

@@ -91,3 +91,6 @@
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
 }
+
+# JNI symbol names used by the migrated yume-lib bridge.
+-keep class app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge { *; }

@@ -76,10 +76,6 @@ class CloudKeyframeExtractor(
     if (!isMostlySolidThumbnail(primary.bitmap)) return primary
 
     val retry = extractAt(streamUrl, stableKey, ext, solidFallbackPercent) ?: return primary
-    if (isMostlySolidThumbnail(retry.bitmap)) {
-      retry.bitmap.recycle()
-      return primary
-    }
     primary.bitmap.recycle()
     return retry
   }

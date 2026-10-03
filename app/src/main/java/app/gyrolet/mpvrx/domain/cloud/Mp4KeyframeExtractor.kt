@@ -603,6 +603,7 @@ class Mp4KeyframeExtractor(
     val moovInfo: MoovInfo?,
     val durationMs: Long?,
     val videoTrackNumber: Long = 0,
+    val assFontNames: Set<String>? = null,
   )
 
   private fun findAtom(
@@ -1395,7 +1396,7 @@ class Mp4KeyframeExtractor(
       if (outputImage != null) {
         log { "DECODE: Image path (YUV planes) -> libyuv" }
         outputImage.use { img ->
-          toBitmap(img, outputFormat ?: codec.outputFormat, codecName)
+          toBitmap(img, outputFormat ?: codec.outputFormat, codecName, fallbackWidth, fallbackHeight)
         }
       } else {
         log { "DECODE: ByteBuffer path -> libyuv" }
@@ -1535,16 +1536,43 @@ class Mp4KeyframeExtractor(
     image: Image,
     outputFormat: MediaFormat,
     codecName: String,
+    displayWidth: Int,
+    displayHeight: Int,
   ): Bitmap? {
     if (image.planes.size < 3) {
       log { "YUV image: unsupported format=${image.format} planes=${image.planes.size}" }
       return null
     }
 
-    val crop = image.cropRect ?: Rect(0, 0, image.width, image.height)
+    val crop = Rect(image.cropRect)
+    val visibleWidth = outputFormat.getIntegerOrDefault("crop-right", displayWidth - 1) + 1
+    val visibleHeight = outputFormat.getIntegerOrDefault("crop-bottom", displayHeight - 1) + 1
+    if (!crop.intersect(outputFormat.getIntegerOrDefault("crop-left", 0),
+        outputFormat.getIntegerOrDefault("crop-top", 0),
+        minOf(image.width, visibleWidth), minOf(image.height, visibleHeight))) return null
+    image.cropRect = crop
     val width = crop.width() and 1.inv()
     val height = crop.height() and 1.inv()
     if (width <= 0 || height <= 0) return null
+
+    if (YuvToBitmapBridge.available) {
+      val dimensions = YuvBitmapConverter.thumbnailDimensions(width, height)
+      if (dimensions != null) {
+        val (outWidth, outHeight) = dimensions
+        val scaled = runCatching {
+          YuvToBitmapBridge.scaleTwoPassFromImage(image,
+            midWidth = outWidth * 2, midHeight = outHeight * 2,
+            dstWidth = outWidth, dstHeight = outHeight)
+        }.getOrNull()
+        if (scaled != null) {
+          YuvToBitmapBridge.imageToBitmap(scaled.y, scaled.strideY, 1,
+            scaled.u, scaled.strideU, 1, scaled.v, scaled.strideV, 1,
+            0, 0, scaled.width, scaled.height,
+            outputFormat.getIntegerOrDefault(MediaFormat.KEY_COLOR_STANDARD, 1),
+            outputFormat.getIntegerOrDefault(MediaFormat.KEY_COLOR_RANGE, 2), false)?.let { return it }
+        }
+      }
+    }
 
     val planeY = image.planes[0]
     val planeU = image.planes[1]
@@ -1595,8 +1623,8 @@ class Mp4KeyframeExtractor(
     val height = outputFormat.getIntegerOrDefault(MediaFormat.KEY_HEIGHT, fallbackHeight)
     val cropLeft = outputFormat.getIntegerOrDefault("crop-left", 0)
     val cropTop = outputFormat.getIntegerOrDefault("crop-top", 0)
-    val cropRight = outputFormat.getIntegerOrDefault("crop-right", width - 1)
-    val cropBottom = outputFormat.getIntegerOrDefault("crop-bottom", height - 1)
+    val cropRight = outputFormat.getIntegerOrDefault("crop-right", minOf(width, fallbackWidth) - 1)
+    val cropBottom = outputFormat.getIntegerOrDefault("crop-bottom", minOf(height, fallbackHeight) - 1)
     val outputWidth = (cropRight - cropLeft + 1).coerceAtLeast(1)
     val outputHeight = (cropBottom - cropTop + 1).coerceAtLeast(1)
     val stride = outputFormat.getIntegerOrDefault("stride", width).coerceAtLeast(width)
@@ -1606,6 +1634,19 @@ class Mp4KeyframeExtractor(
     val colorRange = outputFormat.getIntegerOrDefault(MediaFormat.KEY_COLOR_RANGE, 2)
     val forceNV21 = codecName.startsWith("OMX.qcom.", ignoreCase = true)
 
+    if (YuvToBitmapBridge.available && colorFormat in setOf(19, 21, 39)) {
+      val native = YuvToBitmapBridge.bufferToBitmap(outputBuffer, info.offset, colorFormat,
+        stride, sliceHeight, cropLeft, cropTop, outputWidth, outputHeight,
+        colorStandard, colorRange, forceNV21)
+      if (native != null) {
+        val dimensions = YuvBitmapConverter.thumbnailDimensions(outputWidth, outputHeight)
+        if (dimensions != null && (native.width != dimensions.first || native.height != dimensions.second)) {
+          val resized = YuvToBitmapBridge.argbScale(native, dimensions.first, dimensions.second, FilterMode.BOX)
+          if (resized != null) { native.recycle(); return resized }
+        }
+        return native
+      }
+    }
     return try {
       YuvBitmapConverter.bufferToBitmap(
         yuvBuffer = outputBuffer,

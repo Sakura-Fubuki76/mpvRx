@@ -1317,14 +1317,20 @@ class ThumbnailRepository(
   }
 
   private suspend fun getOpenListApiThumbnail(connection: NetworkConnection, path: String, width: Int, height: Int): Bitmap? {
-    if (connection.protocol != app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST) return null
+    if (connection.protocol !in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST,
+        app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV)) return null
     val bytes = networkRepository.getThumbnailBytes(connection, path).getOrNull() ?: return null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     if (bounds.outWidth !in 1..8192 || bounds.outHeight !in 1..8192 || bounds.outWidth.toLong() * bounds.outHeight > 32_000_000) return null
-    val options = BitmapFactory.Options()
+    val options = BitmapFactory.Options().apply { inSampleSize = 1 }
     while (bounds.outWidth / options.inSampleSize > maxOf(width, 512) * 2 || bounds.outHeight / options.inSampleSize > maxOf(height, 512) * 2) options.inSampleSize *= 2
-    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+    if (browserPreferences.thumbnailMode.get() == ThumbnailMode.Smart && isMostlySolidThumbnail(bitmap)) {
+      bitmap.recycle()
+      return null
+    }
+    return bitmap
   }
 
   private suspend fun getNonHttpNetworkThumbnail(
@@ -1566,7 +1572,7 @@ class ThumbnailRepository(
   }
 
   private fun networkThumbnailDiskKey(identity: String): String =
-    "video-thumb-v3|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}|${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}"
+    "video-thumb-v4-yuv|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}|${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}"
 
   private fun hasRecentNetworkThumbnailFailure(identity: String): Boolean {
     val failedAt = networkThumbnailFailedAt[identity] ?: return false

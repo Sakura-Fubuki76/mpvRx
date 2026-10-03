@@ -34,7 +34,10 @@ internal fun Bitmap.scaleToThumbnailMax(maxSize: Int = MAX_THUMBNAIL_SIZE): Bitm
   val scale = maxSize.toFloat() / maxOf(width, height)
   val scaledWidth = (width * scale).toInt().coerceAtLeast(1)
   val scaledHeight = (height * scale).toInt().coerceAtLeast(1)
-  val scaled = Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
+  val scaled = if (config == Bitmap.Config.ARGB_8888 && app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge.available)
+    app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge.argbScale(this, scaledWidth, scaledHeight, 3)
+      ?: Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
+  else Bitmap.createScaledBitmap(this, scaledWidth, scaledHeight, true)
   if (scaled !== this && !isRecycled) recycle()
   return scaled
 }
@@ -43,6 +46,10 @@ internal fun isMostlySolidThumbnail(
   bitmap: Bitmap,
   threshold: Float = 0.7f,
 ): Boolean {
+  if (bitmap.config == Bitmap.Config.ARGB_8888 && app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge.available) {
+    runCatching { app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge.argbIsMostlySolidColor(bitmap, threshold, 30) }
+      .getOrNull()?.let { return it }
+  }
   val width = bitmap.width
   val height = bitmap.height
   if (width <= 0 || height <= 0) return false

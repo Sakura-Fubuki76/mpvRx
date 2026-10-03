@@ -54,7 +54,7 @@ class CloudSpriteRepository(
       val entry = source?.let { dao.getItem(it.connectionId, it.relativePath) }
       val path = source?.relativePath ?: item.originalUri
       val localFile = if (source == null && !path.contains("://")) File(path) else if (path.startsWith("file://")) File(android.net.Uri.parse(path).path.orEmpty()) else null
-      val identity = cloudMediaKey(connection, path, entry?.size ?: localFile?.length() ?: -1, entry?.lastModified ?: localFile?.lastModified() ?: 0)
+      val identity = "sprite-yuv-v2|" + cloudMediaKey(connection, path, entry?.size ?: localFile?.length() ?: -1, entry?.lastModified ?: localFile?.lastModified() ?: 0)
       val key = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it) }
       val imageFile = File(directory, "$key.webp")
       val metaFile = File(directory, "$key.json")
@@ -107,13 +107,24 @@ class CloudSpriteRepository(
             val index = writtenTimes.size
             val left = (index % 10) * 160
             val top = (index / 10) * 90
-            val scale = minOf(160f / bitmap.width, 90f / bitmap.height)
-            val width = (bitmap.width * scale).toInt().coerceAtLeast(1)
-            val height = (bitmap.height * scale).toInt().coerceAtLeast(1)
-            val x = left + (160 - width) / 2
-            val y = top + (90 - height) / 2
-            canvas.drawBitmap(bitmap, null, Rect(x, y, x + width, y + height), paint)
+            val cell = if (YuvToBitmapBridge.available && bitmap.config == Bitmap.Config.ARGB_8888)
+              YuvToBitmapBridge.argbScale(bitmap, 160, 90, FilterMode.BOX)
+            else null
+            try {
+              if (cell == null || !YuvToBitmapBridge.compositeToSheet(cell, canvasBitmap,
+                  index % 10, index / 10, 160, 90, 10)) {
+                canvas.drawBitmap(bitmap, null, Rect(left, top, left + 160, top + 90), paint)
+              }
+            } finally { cell?.recycle() }
             writtenTimes += time
+            // Publish immutable snapshots early; a 100-frame remote sheet can take minutes.
+            if (writtenTimes.size == 1 || writtenTimes.size % 10 == 0) {
+              _current.value = CloudSpriteSheet(item.stableId,
+                canvasBitmap.copy(Bitmap.Config.ARGB_8888, false),
+                SpriteSheetMetadata(timesMs = writtenTimes.toList(), durationMs = durationMs))
+              CloudTrace.event("sprite.progress", source?.connectionId ?: 0,
+                detail = "frames=${writtenTimes.size} native=${YuvToBitmapBridge.available}")
+            }
           } finally { frame?.recycle() }
         }
         if (writtenTimes.isEmpty()) return@withLock
