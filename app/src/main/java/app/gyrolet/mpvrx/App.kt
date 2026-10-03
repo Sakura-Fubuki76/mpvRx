@@ -102,6 +102,7 @@ class App :
 
   override fun onCreate() {
     super.onCreate()
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.initialize(this)
 
     val processName =
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

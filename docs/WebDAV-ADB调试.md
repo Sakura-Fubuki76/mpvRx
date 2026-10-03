@@ -34,3 +34,11 @@ adb -s f1ead01e logcat -v threadtime -s CloudTrace:D > webdav-trace.log
 完整枚举后的任务有 30 分钟冷却，避免每次切换目录都重新扫描。未完整扫描的目录不能作为隐藏空目录的依据。目录遍历有 5000 目录、64 层防循环限制。
 
 `pathKey` 是诊断用短哈希，方便关联同一文件的事件，不是缓存文件名。CloudTrace 只在 Debug 构建输出。CloudBatch 的旧异常堆栈应仅在本机分析。
+
+若设备过滤 Debug 级别，本诊断事件使用 Info 级别，并同时写入测试版私有文件（2 MiB 自动轮转），可直接读取：
+
+```powershell
+adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/cloud-debug.log
+```
+
+安装日志版后需由测试者启动应用以初始化文件；文件包含进程启动至后台扫描的全部 CloudTrace 事件。应用不运行时不会产生新日志。
