@@ -364,35 +364,6 @@ object DecoderPreferencesScreen : Screen {
                 },
               )
 
-              val chainMode by preferences.anime4kMode.collectAsState()
-              val chainQuality by preferences.anime4kQuality.collectAsState()
-              val chainDarken by preferences.anime4kDarken.collectAsState()
-              val chainThin by preferences.anime4kThin.collectAsState()
-              val chainDeblur by preferences.anime4kDeblur.collectAsState()
-              var shaderChain by remember { mutableStateOf("") }
-              LaunchedEffect(chainMode, chainQuality, chainDarken, chainThin, chainDeblur) {
-                shaderChain = withContext(Dispatchers.IO) {
-                  val manager = Anime4KManager(context.applicationContext)
-                  if (!manager.initialize()) return@withContext ""
-                  manager.setPostFilters(chainDarken, chainThin, chainDeblur)
-                  val mode = runCatching { Anime4KManager.Mode.valueOf(chainMode) }.getOrDefault(Anime4KManager.Mode.OFF)
-                  manager.getShaderPaths(mode, chainQuality).joinToString("\n")
-                }
-              }
-              Preference(
-                title = { Text(stringResource(R.string.pref_anime4k_chain_editor)) },
-                summary = {
-                  Column {
-                    Text(stringResource(R.string.pref_anime4k_chain_editor_summary))
-                    if (shaderChain.isNotBlank()) androidx.compose.foundation.text.selection.SelectionContainer {
-                      Text(shaderChain, style = MaterialTheme.typography.bodySmall)
-                    }
-                  }
-                },
-                onClick = { backstack.navigateTo(ConfigEditorScreen(ConfigEditorScreen.ConfigType.MPV_CONF)) },
-              )
-              PreferenceDivider()
-
               if (enableAnime4K && !shadersConfigOwned) {
                 val rotationState by animateFloatAsState(
                   targetValue = if (anime4kExpanded) 180f else 0f,
