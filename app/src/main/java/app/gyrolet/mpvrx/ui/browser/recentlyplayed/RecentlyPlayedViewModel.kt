@@ -153,7 +153,8 @@ class RecentlyPlayedViewModel(
           filePath.startsWith("http://", ignoreCase = true) ||
             filePath.startsWith("https://", ignoreCase = true) ||
             filePath.startsWith("rtmp://", ignoreCase = true) ||
-            filePath.startsWith("rtsp://", ignoreCase = true)
+            filePath.startsWith("rtsp://", ignoreCase = true) ||
+            app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(filePath) != null
 
         // Skip any kind of streaming playlist entries
         if (isStreamingPlaylist(filePath)) {
@@ -284,7 +285,7 @@ class RecentlyPlayedViewModel(
   /**
    * Creates a Video object from a network URL
    */
-  private fun createNetworkVideoFromUrl(
+  private suspend fun createNetworkVideoFromUrl(
     url: String,
     parsedVideoTitle: String?,
     entity: RecentlyPlayedEntity?,
@@ -303,14 +304,17 @@ class RecentlyPlayedViewModel(
         ?: "Stream"
     val displayName = resolvedTitle
 
-    // Use metadata from entity if available
-    val duration = entity?.duration ?: 0L
-    val size = entity?.fileSize ?: 0L
-    val width = entity?.width ?: 0
-    val height = entity?.height ?: 0
-
-    // Current timestamp for dates (network streams don't have file dates)
-    val dateModified = System.currentTimeMillis() / 1000
+    val reference = app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(url)
+    val cloudDao = if (reference != null) org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.database.dao.CloudMetadataDao>(app.gyrolet.mpvrx.database.dao.CloudMetadataDao::class.java) else null
+    val directoryItem = reference?.let { cloudDao?.getItem(it.connectionId, it.path.value) }
+    val cloudVideo = reference?.let { cloudDao?.getVideo(it.connectionId, it.path.value) }?.takeIf {
+      directoryItem != null && it.size == directoryItem.size && it.lastModified == directoryItem.lastModified
+    }
+    val duration = entity?.duration?.takeIf { it > 0 } ?: cloudVideo?.durationMs ?: 0L
+    val size = directoryItem?.size ?: entity?.fileSize ?: 0L
+    val width = entity?.width?.takeIf { it > 0 } ?: cloudVideo?.width ?: 0
+    val height = entity?.height?.takeIf { it > 0 } ?: cloudVideo?.height ?: 0
+    val dateModified = directoryItem?.lastModified?.div(1000) ?: (System.currentTimeMillis() / 1000)
     val dateAdded = dateModified
 
     // Use host as bucket ID (grouping by domain)

@@ -87,7 +87,7 @@ fun NetworkFolderCard(
         videoCount = if (file.folderScanComplete) file.videoCount ?: 0 else 0,
         totalSize = if (file.folderScanComplete) file.size else 0,
         totalDuration = if (file.folderScanComplete) file.durationMs else 0,
-        lastModified = file.lastModified,
+        lastModified = file.lastModified / 1000,
       ),
       onClick = onClick, modifier = modifier, onLongClick = onLongClick,
       isSelected = isSelected, onThumbClick = onClick, isGridMode = isGridMode,

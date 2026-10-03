@@ -4765,7 +4765,7 @@ class PlayerActivity :
           if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
           runCatching {
             RecentlyPlayedOps.updateVideoMetadata(
-              filePath,
+              canonicalRecentPath(uri, filePath),
               betterFilename,
               updatedDuration,
               updatedFileSize,
@@ -5208,6 +5208,18 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
    *
    * Handles various URI schemes and infers launch source.
    */
+  private fun canonicalRecentPath(uri: Uri, fallback: String): String {
+    NetworkPlaybackUri.parse(uri.toString())?.let { return uri.toString() }
+    val state = PlaybackSession.state.value
+    val item = state.currentItem?.takeIf { it.originalUri == uri.toString() || it.playableUri == uri.toString() }
+      ?: PlaybackSession.queue.value.items.firstOrNull { it.originalUri == uri.toString() || it.playableUri == uri.toString() }
+    item?.networkSource?.let { return NetworkPlaybackUri.create(it.connectionId, it.relativePath) }
+    val connection = intent.getLongExtra("network_connection_id", -1L)
+    val path = intent.getStringExtra("network_file_path")
+    if (connection > 0 && path != null && uri == extractUriFromIntent(intent)) return NetworkPlaybackUri.create(connection, path)
+    return fallback
+  }
+
   private suspend fun saveRecentlyPlayed() {
     runCatching {
       val uri = extractUriFromIntent(intent)
@@ -5325,7 +5337,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         }
 
       RecentlyPlayedOps.addRecentlyPlayed(
-        filePath = filePath,
+        filePath = canonicalRecentPath(uri, filePath),
         fileName = resolvedFileName,
         videoTitle = videoTitle,
         duration = duration,
@@ -7532,9 +7544,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       lifecycleScope.launch {
         try {
           delay(150)
-          val generatedThumbnail =
+          var generatedThumbnail: android.graphics.Bitmap? =
             withContext(Dispatchers.IO) {
-              app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
+              currentQueueItem?.networkSource?.let { source ->
+                org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
+                  .getThumbnailForNetworkSource(source.connectionId, source.relativePath, 480, 300, generate = false, respectDisplayPreference = false)
+              } ?: app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
                 this@PlayerActivity,
                 currentQueueItem?.artworkUri,
               ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() ?: runCatching {
@@ -7569,10 +7584,18 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
               }.getOrNull()
             }
 
+          if (generatedThumbnail == null) currentQueueItem?.networkSource?.let { source ->
+            generatedThumbnail = withContext(Dispatchers.IO) {
+              kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
+                  .getThumbnailForNetworkSource(source.connectionId, source.relativePath, 480, 300, respectDisplayPreference = false)
+              }
+            }
+          }
           if (!ownsPlaybackSession() || !mpvInitialized || player.isExiting || isFinishing) return@launch
           if (thumbnailKey != buildBackgroundThumbnailKey()) return@launch
 
-          lastBackgroundThumbnailKey = thumbnailKey
+          if (generatedThumbnail != null) lastBackgroundThumbnailKey = thumbnailKey
           lastBackgroundThumbnail = generatedThumbnail
           mediaPlaybackService?.setMediaInfo(
             title = title,
@@ -7581,6 +7604,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
             uri = currentDurableMediaUri(),
             identifier = notificationIdentifier,
           )
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+          throw cancelled
+        } catch (error: Exception) {
+          Log.w(TAG, "Could not load notification thumbnail", error)
         } finally {
           if (pendingBackgroundThumbnailKey == thumbnailKey) pendingBackgroundThumbnailKey = null
         }
@@ -7753,7 +7780,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       }
 
       RecentlyPlayedOps.addRecentlyPlayed(
-        filePath = filePath,
+        filePath = canonicalRecentPath(uri, filePath),
         fileName = resolvedName,
         videoTitle = videoTitle,
         duration = duration,

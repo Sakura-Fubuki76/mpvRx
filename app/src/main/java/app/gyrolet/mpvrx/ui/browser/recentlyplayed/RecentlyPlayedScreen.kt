@@ -855,7 +855,7 @@ private fun RecentItemsContent(
                   video = item.video,
                   isWatched = swipePlaybackInfo[item.video.path]?.isWatched == true,
                   isOldAndUnplayed = swipePlaybackInfo[item.video.path]?.isOldAndUnplayed == true,
-                  progressPercentage = null,
+                  progressPercentage = swipePlaybackInfo[item.video.path]?.progressPercentage,
                   isSelected = selectionManager.isSelected(item),
                   onClick = {
                     if (selectionManager.isInSelectionMode) {
@@ -982,7 +982,7 @@ private fun RecentItemsContent(
               is RecentlyPlayedItem.VideoItem -> {
                 VideoCard(
                   video = item.video,
-                  progressPercentage = null,
+                  progressPercentage = swipePlaybackInfo[item.video.path]?.progressPercentage,
                   isSelected = selectionManager.isSelected(item),
                   onClick = {
                     if (selectionManager.isInSelectionMode) {

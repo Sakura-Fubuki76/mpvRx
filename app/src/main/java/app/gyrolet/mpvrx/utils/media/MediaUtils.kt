@@ -394,7 +394,9 @@ object MediaUtils {
   }
 
   private fun playbackIdentity(video: Video): String =
-    if (video.uri.scheme.equals("archive", ignoreCase = true)) {
+    app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(video.path)?.let {
+      PlaybackIdentity.forNetwork(it.connectionId, it.path.value)
+    } ?: if (video.uri.scheme.equals("archive", ignoreCase = true)) {
       PlaybackIdentity.forUri(video.uri.toString())
     } else {
       video.path.takeIf(String::isNotBlank)?.let(PlaybackIdentity::forLocalPath)

@@ -248,6 +248,7 @@ class MediaPlaybackService :
   private var mediaArtist = ""
   private var mediaUri: String? = null
   private var activeArtworkUri: String? = null
+  private var cloudArtworkJob: kotlinx.coroutines.Job? = null
   private var paused = false
   private var playbackSpeed = 1.0f
   private var activeQueueItemId: Long = MediaSessionCompat.QueueItem.UNKNOWN_ID.toLong()
@@ -895,13 +896,23 @@ class MediaPlaybackService :
   }
 
   private fun loadSessionArtwork(item: PlaybackItem) {
-    val artworkUri = item.artworkUri?.takeIf { it.isNotBlank() } ?: return
+    cloudArtworkJob?.cancel()
+    val artworkUri = item.artworkUri?.takeIf { it.isNotBlank() }
+    if (artworkUri == null && item.networkSource == null) return
     val expectedIdentifier = item.stableId
-    serviceScope.launch {
+    cloudArtworkJob = serviceScope.launch {
       val loaded =
-        withContext(Dispatchers.IO) {
-          EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, artworkUri)
-        } ?: return@launch
+        try { withContext(Dispatchers.IO) {
+          artworkUri?.let { EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, it) }
+            ?: item.networkSource?.let { source ->
+              kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
+                  .getThumbnailForNetworkSource(source.connectionId, source.relativePath, 480, 300, respectDisplayPreference = false)
+              }
+            }
+        } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Log.w(TAG, "Could not load cloud notification artwork", error); null }
+          ?: return@launch
       if (mediaIdentifier != expectedIdentifier) {
         return@launch
       }

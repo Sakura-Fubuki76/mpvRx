@@ -52,13 +52,15 @@ data class VideoWithPlaybackInfo(
   val isWatched: Boolean = false, // true once the configured watched threshold is reached
 )
 
-internal fun videoPlaybackIdentifiers(video: Video): Set<String> =
-  linkedSetOf(
-    PlaybackIdentity.forLocalPath(video.path),
-    PlaybackIdentity.forUri(video.uri.toString()),
-    PlaybackIdentity.forUri(video.path),
-    PlaybackIdentity.forUri("file://${video.path}"),
-  )
+internal fun videoPlaybackIdentifiers(video: Video): Set<String> = buildSet {
+  app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(video.path)?.let {
+    add(PlaybackIdentity.forNetwork(it.connectionId, it.path.value))
+  }
+  add(PlaybackIdentity.forLocalPath(video.path))
+  add(PlaybackIdentity.forUri(video.uri.toString()))
+  add(PlaybackIdentity.forUri(video.path))
+  add(PlaybackIdentity.forUri("file://${video.path}"))
+}
 
 internal fun buildVideoWithPlaybackInfo(
   video: Video,
