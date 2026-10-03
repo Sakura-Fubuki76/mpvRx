@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.withLock
 internal class MetadataWorkQueue(
     concurrency: Int,
     private val workerScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val foregroundWorkers: Int = 0,
 ) {
     private data class Task(
         val key: String,
@@ -28,16 +29,17 @@ internal class MetadataWorkQueue(
     private val queueLock = Mutex()
     private val foreground = ArrayDeque<Task>()
     private val background = ArrayDeque<Task>()
-    private val wakeups = Channel<Unit>(capacity = concurrency)
+    private val wakeups = List(concurrency) { Channel<Unit>(Channel.CONFLATED) }
     private val fileLocks = Array(64) { Mutex() }
 
     init {
-        repeat(concurrency) {
+        require(concurrency > 0 && foregroundWorkers in 0 until concurrency)
+        repeat(concurrency) { worker ->
             workerScope.launch {
-                for (ignored in wakeups) {
+                for (ignored in wakeups[worker]) {
                     while (true) {
                         val task = queueLock.withLock {
-                            foreground.pollFirst() ?: background.pollFirst()
+                            foreground.pollFirst() ?: if (worker >= foregroundWorkers) background.pollFirst() else null
                         } ?: break
                         if (!task.result.isActive || task.owner?.isActive == false) continue
                         val lock = fileLocks[(task.key.hashCode() and Int.MAX_VALUE) % fileLocks.size]
@@ -73,7 +75,7 @@ internal class MetadataWorkQueue(
                         MetadataRequestPriority.BACKGROUND -> background.addLast(task)
                     }
                 }
-                wakeups.trySend(Unit)
+                wakeups.forEach { it.trySend(Unit) }
             }
         }
         return results.awaitAll().any { it }

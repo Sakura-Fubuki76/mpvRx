@@ -45,7 +45,7 @@ class CloudMetadataRepository(
 ) {
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
-  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(2)
+  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(2, foregroundWorkers = 1)
   private val locks = Array(64) { Mutex() }
 
   private val storageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
@@ -69,13 +69,33 @@ class CloudMetadataRepository(
     val job = storageScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
       try {
         android.util.Log.d("CloudBatch", "storage start connection=${connection.id}")
-        // Enumerate first so empty-folder filtering does not wait for video decoding.
-        val enumerationComplete = scanFolders(connection, listOf("/"), network)
-        val files = cachedFilesBelow(connection.id, "/")
-        CloudTrace.event("storage.enumerated", connection.id, detail = "files=${files.size} complete=$enumerationComplete")
-        cacheMissingMetadata(connection, files, app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails)
+        val discovered = hashSetOf<String>()
+        var fileCount = 0
+        val enumerationComplete = app.gyrolet.mpvrx.domain.cloud.streamStorageMetadata<NetworkFile>(
+          enumerate = { submit ->
+            fun video(file: NetworkFile) = !file.isDirectory && (file.mimeType?.startsWith("video/") == true ||
+              app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(file.name) in FileTypeUtils.VIDEO_EXTENSIONS)
+            fun revision(file: NetworkFile) = "${file.path}|${file.size}|${file.lastModified}"
+            val warm = cachedFilesBelow(connection.id, "/").filter(::video)
+            warm.forEach { discovered.add(revision(it)) }
+            submit(warm)
+            CloudTrace.event("storage.warm", connection.id, detail = "cachedVideos=${warm.size}")
+            val complete = scanFolders(connection, listOf("/"), network) { listed ->
+              val videos = listed.filter { video(it) && discovered.add(revision(it)) }
+              submit(videos)
+            }
+            val files = cachedFilesBelow(connection.id, "/")
+            fileCount = files.size
+            // Retain offline cached work for directories whose refreshed listing failed.
+            submit(files.filter { video(it) && discovered.add(revision(it)) })
+            CloudTrace.event("storage.enumerated", connection.id, detail = "files=$fileCount complete=$complete streaming=true")
+            complete
+          },
+          process = { batch -> cacheMissingMetadata(connection, batch,
+            app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails) },
+        )
         if (enumerationComplete) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
-        android.util.Log.d("CloudBatch", "storage complete connection=${connection.id} files=${files.size} enumerationComplete=$enumerationComplete")
+        android.util.Log.d("CloudBatch", "storage complete connection=${connection.id} files=$fileCount enumerationComplete=$enumerationComplete")
       } catch (cancelled: CancellationException) {
         CloudTrace.event("storage.cancelled", connection.id)
         throw cancelled
@@ -157,7 +177,8 @@ class CloudMetadataRepository(
     enrichVideos(connectionId, resolved)
   }
 
-  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository): Boolean {
+  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository,
+    onListed: suspend (List<NetworkFile>) -> Unit = {}): Boolean {
     val scanner = app.gyrolet.mpvrx.domain.cloud.CloudFolderScanner(connection.id, { path ->
       val current = network.getConnectionById(connection.id)
       if (current == null || current.isDeleted || current.copy(lastConnected = 0, name = "", autoConnect = false) !=
@@ -167,7 +188,7 @@ class CloudMetadataRepository(
         CloudTrace.event("directory.result", connection.id, path,
           "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0} error=${result.exceptionOrNull()?.javaClass?.simpleName ?: "none"}")
         currentCoroutineContext().ensureActive()
-        result.getOrNull()?.let { saveDirectory(connection.id, path, it) }
+        result.getOrNull()?.let { saveDirectory(connection.id, path, it); onListed(it) }
       }
     }, {
       dao.putScannedFolder(it)

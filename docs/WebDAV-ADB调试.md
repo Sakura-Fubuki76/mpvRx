@@ -23,7 +23,7 @@ adb -s f1ead01e logcat -v threadtime -s CloudTrace:D > webdav-trace.log
 | directory.begin / result | 每个目录的 pathKey、条目数和失败类型，不能只看到当前目录 |
 | alist.list / dav.list.fallback | API 目录成功还是回退普通 WebDAV |
 | folder.summary | complete=true 且 videos=0 才能判定空目录 |
-| storage.enumerated | 根目录枚举得到的全部文件数及是否完整 |
+| storage.enumerated | 根目录枚举得到的全部文件数及是否完整；streaming=true 时后台 batch.begin 应先于枚举结束出现 |
 | batch.begin / metadata.result / batch.end | 前台与后台任务数量，以及真实 durationReady / thumbnailReady / ready 数量，processed 不代表成功 |
 | metadata.reject | 缺少当前目录行或文件版本不匹配导致的结果丢弃 |
 | view.snapshot | 页面实际收到的有效时长数、空目录数和 hideEmpty 开关 |

@@ -92,4 +92,24 @@ class MetadataWorkQueueTest {
         currentPage.await()
         assertEquals(listOf("running", "visible", "old-1", "old-2"), order)
     }
+    @Test
+    fun reservedWorkerStartsForegroundWhileBackgroundIsBlocked() = runTest {
+        val queue = MetadataWorkQueue(2, backgroundScope, foregroundWorkers = 1)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val background = async {
+            queue.process(listOf("background", "waiting"), { it }, MetadataRequestPriority.BACKGROUND) {
+                started.complete(Unit)
+                release.await()
+                true
+            }
+        }
+        started.await()
+        assertTrue(withTimeout(2000) {
+            queue.process(listOf("foreground"), { it }, MetadataRequestPriority.FOREGROUND) { true }
+        })
+        assertTrue(!background.isCompleted)
+        release.complete(Unit)
+        background.await()
+    }
 }
