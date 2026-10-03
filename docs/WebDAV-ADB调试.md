@@ -57,3 +57,17 @@ adb -s f1ead01e exec-out run-as app.gyrolet.mpvrx.cloudtest.debug cat files/clou
 本轮之前的日志已证明 Android ASS 解析抛出 PatternSyntaxException，而字幕添加成功；修复版不再使用该正则。旧雪碧图缓存版本已升级，修复版会重新生成。
 
 搜索/恢复播放专项日志：search.begin 记录 queryKey/长度与代次，search.sources 对比 api/cached/merged 及 normalized 数量，search.result 记录最后发布数量；不记录查询原文。player.click/launch/load.options/font.gate/load.command/file.loaded/playback.restart 区分点击、准备、恢复起点与 mpv 加载。proxy.connect.begin/end、proxy.open、proxy.first.byte 记录连接、Range offset、打开/首字节总耗时及结果，并使用 pathKey 对齐同一视频。
+
+## 2026-10-04 两次播放对比
+
+用户确认搜索结果不再消失。私有日志中 connection=2 的两次播放：
+
+| 阶段 | 已播放（恢复 233 秒） | 未播放 |
+|---|---:|---:|
+| 点击→启动 Activity | 10ms | 4ms |
+| 前台字体准备 | 28ms | 12ms |
+| loadfile→file-loaded | 1087ms | 2190ms |
+| file-loaded→playback-restart | 5678ms | 396ms |
+| 点击→playback-restart | 7069ms | 2637ms |
+
+首个视频 pathKey=9c398da4，第二个 379c8ca8。首个视频恢复点 Range offset=125904669 的首字节仅 322ms，早于 playback-restart 约 5.4 秒；不能把整个额外等待归因于该次 Range 打开。外置字幕引用字体日志出现在恢复播放之前，但没有旧日志证明暂停门具体在哪一阶段阻塞。新增 player.restore.begin/database/applied/release、subtitle.restore.begin/name/fonts/command/end，用于区分数据库、名称解析、字体准备、sub-add 与暂停释放；不记录字幕 URI 或认证信息。playback-restart 是 mpv 事件，不能直接等同用户实际看到首帧的时间。

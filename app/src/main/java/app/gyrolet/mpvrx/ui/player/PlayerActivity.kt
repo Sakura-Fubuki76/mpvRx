@@ -4521,6 +4521,7 @@ class PlayerActivity :
           }
         }
       } finally {
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.restore.release", detail = "generation=$loadGeneration")
         PlaybackSession.completePositionRestore(loadGeneration)
         val restoredPosMs = readMpvIntSeconds("time-pos", viewModel.pos ?: 0).toLong() * 1000L
         if (restoredPosMs > 0) {
@@ -5052,8 +5053,11 @@ class PlayerActivity :
       return true
     }
 
+    val restoreStarted = System.nanoTime()
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.restore.begin", detail = "generation=$loadGeneration initialPositionApplied=$initialPositionApplied")
     return runCatching {
       val state = resolvePlaybackState(identifier, legacyIdentifier)
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.restore.database", detail = "elapsedMs=${(System.nanoTime() - restoreStarted) / 1000000} saved=${state != null} externalCount=${state?.externalSubtitles?.split("|")?.count { it.isNotBlank() } ?: 0}")
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
 
@@ -5074,6 +5078,7 @@ class PlayerActivity :
         }
       }
       applyPlaybackState(state, restoreAudioTrack = positionRestoreOverride == null)
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.restore.applied", detail = "elapsedMs=${(System.nanoTime() - restoreStarted) / 1000000}")
 
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching false
 
@@ -5110,7 +5115,10 @@ class PlayerActivity :
       Log.d(TAG, "Restoring ${externalSubUris.size} external subtitle(s)")
 
       for (subUri in externalSubUris) {
+        val subtitleStarted = System.nanoTime()
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.restore.begin", detail = "scheme=${Uri.parse(subUri).scheme} loopback=${Uri.parse(subUri).host in setOf("127.0.0.1", "localhost")}")
         viewModel.addSubtitleSuspend(Uri.parse(subUri), select = false, silent = true)
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.restore.end", detail = "elapsedMs=${(System.nanoTime() - subtitleStarted) / 1000000}")
       }
     }
 

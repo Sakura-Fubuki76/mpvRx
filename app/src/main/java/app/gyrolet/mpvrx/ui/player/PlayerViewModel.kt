@@ -3461,7 +3461,9 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       }
 
       runCatching {
+        val subtitleStarted = System.nanoTime()
         val fileName = getFileNameFromUri(uri) ?: "subtitle.srt"
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.restore.name", detail = "elapsedMs=${(System.nanoTime() - subtitleStarted) / 1000000}")
 
         if (!isValidSubtitleFile(fileName)) {
           return@withLock withContext(Dispatchers.Main) {
@@ -3487,6 +3489,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
 
         app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.prepareExternal(appContext, uriString,
           PlaybackSession.state.value.generation, fileName)
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.restore.fonts", detail = "elapsedMs=${(System.nanoTime() - subtitleStarted) / 1000000}")
         val mpvPath = uri.resolveUri(appContext) ?: uri.toString()
         val mode = if (select) "select" else "auto"
 
@@ -3510,7 +3513,9 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         mpvPathToUriMap[mpvPath] = uri.toString()
 
         withContext(Dispatchers.Main) {
+          val commandStarted = System.nanoTime()
           PlaybackSession.command("sub-add", mpvPath, mode, fileName)
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("subtitle.restore.command", detail = "elapsedMs=${(System.nanoTime() - commandStarted) / 1000000}")
         }
 
         // Track external subtitle URI for persistence
