@@ -145,7 +145,7 @@ class NetworkBrowserViewModel(
           if (generation != loadGeneration) return
           metadataObserver?.cancel()
           metadataProbe?.cancel()
-          val sorted = fileList.sortedForNetworkBrowser(NetworkSortType.Title, SortOrder.Ascending)
+          val sorted = cloudMetadata.enrichVideos(connectionId, fileList).sortedForNetworkBrowser(NetworkSortType.Title, SortOrder.Ascending)
           _files.value = sorted
           metadataObserver = viewModelScope.launch {
             kotlinx.coroutines.flow.combine(cloudMetadata.observeVideos(connectionId, sorted),

@@ -29,4 +29,23 @@ class CloudFolderScannerTest {
     val bounded = CloudFolderScanner(1, { Result.success(listOf(NetworkFile("sub", "/sub", 0, true))) }, {}, maxDirectories = 1)
     assertFalse(bounded.scan("/").scanComplete)
   }
+  @Test fun rescanningDoesNotPublishAnEmptyIntermediateSummary() = runBlocking {
+    val published = mutableListOf<CloudFolderMetadataEntity>()
+    val scanner = CloudFolderScanner(1, {
+      assertTrue(published.isEmpty())
+      Result.success(listOf(NetworkFile("movie.mp4", "/movie.mp4", 100, false, durationMs = 5000)))
+    }, { published.add(it) })
+    scanner.scan("/")
+    assertEquals(1, published.size)
+    assertEquals(1, published.single().videoCount)
+    assertEquals(5000L, published.single().totalDurationMs)
+  }
+
+  @Test fun failedRefreshDoesNotEraseAnExistingSummary() = runBlocking {
+    val published = mutableListOf<CloudFolderMetadataEntity>()
+    val scanner = CloudFolderScanner(1, { Result.failure(IllegalStateException("offline")) }, { published.add(it) })
+    assertFalse(scanner.scan("/").scanComplete)
+    assertTrue(published.isEmpty())
+  }
+
 }

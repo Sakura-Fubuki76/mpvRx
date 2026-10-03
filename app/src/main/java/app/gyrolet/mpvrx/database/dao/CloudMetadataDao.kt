@@ -50,6 +50,10 @@ abstract class CloudMetadataDao {
     duration: Long, width: Int, height: Int, updatedAt: Long) {
     val current = getItem(connectionId, path) ?: return
     if (current.size != size || current.lastModified != modified) return
+    val previous = getVideo(connectionId, path)
+    if (previous != null && previous.size == size && previous.lastModified == modified && previous.durationMs > 0 &&
+      (duration <= 0 || duration == previous.durationMs) && (width <= 0 || width == previous.width) &&
+      (height <= 0 || height == previous.height)) return
     mergeVideo(connectionId, path, size, modified, duration, width, height, updatedAt)
   }
 
@@ -96,6 +100,21 @@ abstract class CloudMetadataDao {
 
   @Query("SELECT * FROM cloud_folder_metadata WHERE connectionId = :connectionId")
   abstract fun observeFolders(connectionId: Long): Flow<List<CloudFolderMetadataEntity>>
+
+  @Query("SELECT * FROM cloud_folder_metadata WHERE connectionId = :connectionId AND path = :path")
+  abstract suspend fun getFolder(connectionId: Long, path: String): CloudFolderMetadataEntity?
+
+  @Transaction
+  open suspend fun putScannedFolder(folder: CloudFolderMetadataEntity) {
+    val previous = getFolder(folder.connectionId, folder.path)
+    val retained = if (!folder.scanComplete && previous != null) folder.copy(
+      videoCount = previous.videoCount, totalSize = previous.totalSize,
+      totalDurationMs = previous.totalDurationMs, folderCount = previous.folderCount,
+    ) else folder
+    putFolder(retained)
+    // List responses contain no durations. Publish the persisted sum in the same transaction.
+    refreshFolderDurations(folder.connectionId)
+  }
 
   @Query("""UPDATE cloud_folder_metadata SET totalDurationMs = COALESCE((
     SELECT SUM(v.durationMs) FROM cloud_video_metadata v WHERE v.connectionId = :connectionId

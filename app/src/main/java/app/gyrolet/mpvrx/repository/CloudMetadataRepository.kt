@@ -20,6 +20,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
@@ -77,12 +79,23 @@ class CloudMetadataRepository(
     }.map { byPath ->
       files.map { file ->
         val entry = byPath[NetworkPath.from(file.path).value]
-        if (entry != null && entry.matches(file)) file.copy(durationMs = entry.durationMs, width = entry.width.takeIf { it > 0 } ?: file.width, height = entry.height.takeIf { it > 0 } ?: file.height) else file
+        if (entry != null && entry.matches(file)) file.copy(durationMs = entry.durationMs.takeIf { it > 0 } ?: file.durationMs, width = entry.width.takeIf { it > 0 } ?: file.width, height = entry.height.takeIf { it > 0 } ?: file.height) else file
       }
+    }.distinctUntilChanged()
+  }
+
+  suspend fun enrichVideos(connectionId: Long, files: List<NetworkFile>): List<NetworkFile> {
+    val summaries = observeFolders(connectionId).first().associateBy { it.path }
+    return observeVideos(connectionId, files).first().map { file ->
+      val summary = summaries[file.path]
+      if (file.isDirectory && summary != null) file.copy(videoCount = summary.videoCount,
+        size = summary.totalSize, durationMs = summary.totalDurationMs,
+        folderScanComplete = summary.scanComplete && System.currentTimeMillis() - summary.updatedAt < 24 * 60 * 60 * 1000L)
+      else file
     }
   }
 
-  fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId)
+  fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId).distinctUntilChanged()
 
   suspend fun registerIndexedFiles(connectionId: Long, files: List<NetworkFile>) = withContext(Dispatchers.IO) {
     dao.insertItems(files.map { file ->
@@ -97,7 +110,7 @@ class CloudMetadataRepository(
       network.listFiles(connection, path).also { result ->
         result.getOrNull()?.let { saveDirectory(connection.id, path, it) }
       }
-    }, { dao.putFolder(it) })
+    }, { dao.putScannedFolder(it) })
     paths.forEach { scanner.scan(it) }
     dao.refreshFolderDurations(connection.id)
   }

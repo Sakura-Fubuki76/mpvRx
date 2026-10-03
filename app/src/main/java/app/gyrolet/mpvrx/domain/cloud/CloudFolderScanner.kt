@@ -21,7 +21,6 @@ class CloudFolderScanner(
     currentCoroutineContext().ensureActive()
     val path = NetworkPath.from(rawPath).value
     val empty = CloudFolderMetadataEntity(connectionId, path, 0, 0, 0, 0, false, System.currentTimeMillis())
-    save(empty)
     if (depth >= 64 || visited.size >= maxDirectories || !visited.add(path)) return empty
     val items = try { list(path).getOrThrow() } catch (cancelled: CancellationException) { throw cancelled }
       catch (_: Exception) { return empty }

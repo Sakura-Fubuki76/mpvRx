@@ -586,7 +586,7 @@ private fun NetworkBrowserContent(
     }
 
   when {
-    isLoading -> {
+    isLoading && files.isEmpty() -> {
       Box(
         modifier =
           modifier
@@ -601,7 +601,7 @@ private fun NetworkBrowserContent(
       }
     }
 
-    error != null -> {
+    error != null && files.isEmpty() -> {
       Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
