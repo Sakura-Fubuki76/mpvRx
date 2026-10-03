@@ -34,7 +34,15 @@ CloudSpriteRepository 已改为外围适配器，不再自写生成算法。旧�
 
 ## 计划中其他适配
 
-配置编辑器读取外部或内部已有 mpv.conf/input.conf；读取失败禁止保存，避免以空白误覆写。Anime4K 设置增加当前预设实际 shader 路径查看和现有 mpv.conf 编辑入口，沿用项目已有配置接管规则，不自动替换用户配置。
+配置编辑器读取外部或内部已有 mpv.conf/input.conf；读取失败禁止保存，避免以空白误覆写。此前新增的 Anime4K 着色器链设置入口已按用户要求删除，现有预设链保持不变；其他适配仍暂停。
+
+## 2026-10-04 剩余差异核对
+
+- WebDAV 播放优化尚不能认定完整一致。yume PlayerService.kt 的 ScrubbingAwareLoadControl 按实测带宽调整前后缓冲总容量，并在拖动进度时切换缓冲阈值。mpvRx MPVView.kt 目前设置 cache=auto、cache-pause-wait=2、demuxer-max-bytes=64MiB，尚无对应的带宽自适应和拖动状态缓冲切换实现。需要按 mpv 的缓存机制适配并验证，不能照抄 Media3 参数。
+- OpenList 已接入登录/鉴权刷新、分页列目录、搜索、fs/get 直链及请求头。与 yume OpenListApi 相比，listDirectory 的 refresh 参数尚未贯通：当前 fs/list 固定 refresh=false；界面刷新不能据此宣称会强制刷新服务端目录缓存。独立 probeImageDimensions 接口未原样迁入，现有封面下载解码不能称作该接口的完整迁移。目录密码当前固定为空，不支持密码保护目录。
+- 用户已确认本轮播放启动快且没有闪退。字体库移出 mpv 配置目录的默认 fonts 扫描位置是主要修复，另有自定义按钮脚本延后初始化；未做逐项隔离测试，不能把全部收益定量归因于字体。
+- 雪碧图完整生成后发布和 WebP+JSON 复用已实现，包括普通本地文件入口。实际 ASS 字体样式、雪碧图最终质量及跨重启复用、本地/云端/最近卡片进度持久显示仍需完整真机验收；content URI 等入口也不能以普通文件路径测试代替。
+- 弱网、长时间播放、连续前后 seek、直链/Token 过期与服务端重启恢复尚无完整回归验收证据。视频流字节磁盘缓存按用户要求排除，不列为未完成迁移。
 
 ## 验收
 
