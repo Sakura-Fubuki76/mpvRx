@@ -207,10 +207,15 @@ class NetworkBrowserViewModel(
     if (connection.protocol !in setOf(NetworkProtocol.OPENLIST, NetworkProtocol.WEBDAV) || query.isBlank()) return
     searchJob = viewModelScope.launch {
       kotlinx.coroutines.delay(350)
-      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("search.begin", connectionId, currentPath, "generation=$generation refresh=$forceRefresh")
-      repository.searchFiles(connection, currentPath, query).onSuccess { indexed ->
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("search.begin", connectionId, currentPath, "generation=$generation refresh=$forceRefresh queryKey=${query.hashCode().toUInt().toString(16)} length=${query.length}")
+      repository.searchFiles(connection, currentPath, query.trim()).onSuccess { indexed ->
         if (generation != searchGeneration) return@onSuccess
-        val results = cloudMetadata.registerIndexedFiles(connectionId, indexed)
+        val cached = (cloudMetadata.cachedFilesBelow(connectionId, currentPath) + _files.value)
+          .filter { it.name.contains(query.trim(), ignoreCase = true) }
+        val combined = app.gyrolet.mpvrx.domain.cloud.mergeCloudSearchResults(indexed, cached, query)
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("search.sources", connectionId, currentPath,
+          "generation=$generation api=${indexed.size} cached=${cached.size} merged=${combined.size} normalized=${indexed.count { app.gyrolet.mpvrx.domain.network.NetworkPath.from(it.path).value != it.path }}")
+        val results = cloudMetadata.registerIndexedFiles(connectionId, combined)
         scheduleThumbnails(connection, results)
         kotlinx.coroutines.coroutineScope {
 
@@ -241,6 +246,7 @@ class NetworkBrowserViewModel(
    * Play a video file
    */
   fun openMedia(file: NetworkFile) {
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.click", connectionId, file.path)
     viewModelScope.launch {
       try {
         val connection =
@@ -364,6 +370,7 @@ class NetworkBrowserViewModel(
     val fallbackMimeType = if (file.isPlayableNetworkAudio()) "audio/*" else "video/*"
     intent.setDataAndType(uri, file.mimeType ?: fallbackMimeType)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.launch", connectionId, file.path)
     application.startActivity(intent)
   }
 
