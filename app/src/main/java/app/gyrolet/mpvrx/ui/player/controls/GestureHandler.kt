@@ -1226,7 +1226,11 @@ fun GestureHandler(
             val (lowerBound, upperBound) = getSubtitleHitboxBounds(size.width.toFloat(), size.height.toFloat())
             val isSubtitleTouchY = (subtitleScreenY - startPosition.y) in lowerBound..upperBound
 
-            val isSubtitleTouch = swipeSubtitlesToSeekDialog && hasActiveSubtitle && isCenterTouchX && isSubtitleTouchY
+            val chapterIndex = PlaybackSession.getPropertyInt("chapter") ?: -1
+            val chapterTitle = PlaybackSession.getPropertyString("chapter-list/$chapterIndex/title").orEmpty()
+            val inIntroChapter = chapterTitle.contains("intro", true) || chapterTitle.contains("opening", true) || chapterTitle.equals("OP", true)
+            val hasVisibleSubtitle = !PlaybackSession.getPropertyString("sub-text").isNullOrBlank()
+            val isSubtitleTouch = swipeSubtitlesToSeekDialog && hasActiveSubtitle && hasVisibleSubtitle && !inIntroChapter && isCenterTouchX && isSubtitleTouchY
 
             var gestureType: String? = null
             var hasStartedSeeking = false
@@ -1259,6 +1263,7 @@ fun GestureHandler(
                       hasStartedSeeking = true
                       val isForward = if (isSwipeSubtitlesInverted) deltaX < 0 else deltaX > 0
                       val direction = if (isForward) "1" else "-1"
+                      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("gesture.subtitle.seek", detail = "direction=$direction chapter=${PlaybackSession.getPropertyInt("chapter")}")
                       PlaybackSession.command("sub-seek", direction)
                       viewModel.playerUpdate.update {
                         PlayerUpdates.ShowText(
@@ -1294,6 +1299,7 @@ fun GestureHandler(
                       !anyPanelShown
                     ) { // Only when no panels are shown
                       if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
+                        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("gesture.timeline.seek", detail = "chapter=${PlaybackSession.getPropertyInt("chapter")} subtitleVisible=$hasVisibleSubtitle")
                         gestureType = "horizontal_seek"
                         hasStartedSeeking = true
                         initialVideoPosition = position?.toFloat() ?: 0f
