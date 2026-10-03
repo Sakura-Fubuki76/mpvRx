@@ -553,17 +553,33 @@ class App :
 
   /** Starts saved-share auto-connect in process scope so Activity recreation cannot cancel it. */
   internal fun autoConnectNetworksOnce() {
-    if (!networkAutoConnectStarted.compareAndSet(false, true)) return
+    if (!networkAutoConnectStarted.compareAndSet(false, true)) {
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.skip", detail = "reason=already_started")
+      return
+    }
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.begin")
 
     applicationScope.launch {
       try {
         delay(500)
         val repository = getKoin().get<NetworkRepository>()
-        repository.getAutoConnectConnections().forEach { connection ->
+        val connections = repository.getAutoConnectConnections()
+        app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.saved", detail = "autoConnectCount=${connections.size}")
+        connections.forEach { connection ->
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.connect.begin", connection.id, detail = "protocol=${connection.protocol}")
           Log.d(TAG, "Auto-connecting to network share: ${connection.name}")
           repository
             .connect(connection)
+            .onSuccess {
+              app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.connect.success", connection.id)
+              val appearance = getKoin().get<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
+              val browser = getKoin().get<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
+              getKoin().get<app.gyrolet.mpvrx.repository.CloudMetadataRepository>().scanStorage(connection, repository,
+                appearance.showNetworkThumbnails.get() && browser.showVideoThumbnails.get(),
+                "${browser.advancedMp4Thumbnails.get()}|${browser.advancedMkvThumbnails.get()}")
+            }
             .onFailure { error ->
+              app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.connect.failure", connection.id, detail = "error=${error.javaClass.simpleName}")
               Log.e(TAG, "Auto-connect failed for ${connection.name}: ${error.message}")
             }
         }

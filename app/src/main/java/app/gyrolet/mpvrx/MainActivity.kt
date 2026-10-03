@@ -149,7 +149,6 @@ class MainActivity : AppCompatActivity() {
     setContent {
       // Set up theme and edge-to-edge display
       val dark by appearancePreferences.darkMode.collectAsState()
-      val networkStreamingEnabled by appearancePreferences.showNetworkTab.collectAsState()
       val sessionState by PlaybackSession.state.collectAsState()
       val enableVideoMiniPlayer by playerPreferences.enableVideoMiniPlayer.collectAsState()
       val autoPiPOnNavigation by playerPreferences.autoPiPOnNavigation.collectAsState()
@@ -192,18 +191,9 @@ class MainActivity : AppCompatActivity() {
         applyEdgeToEdge(isDarkMode)
       }
 
-      // Auto-connect to saved network connections.
-      // Gated behind both the user setting and a per-process flag so we only
-      // run SMB/FTP/WebDAV handshakes once per cold start, and only after the
-      // first frame has drawn (post-delay(500)). Previously this fired on every
-      // MainActivity recreation (config change, process restart, etc.) and
-      // re-handshaked every auto-connect entry, wasting battery and bandwidth
-      // even if the user never opened the Network tab.
-      // See issue 1.6 in the startup audit.
-      LaunchedEffect(networkStreamingEnabled) {
-        if (networkStreamingEnabled) {
-          (application as? App)?.autoConnectNetworksOnce()
-        }
+      // Saved autoConnect settings apply independently of tab visibility, once per cold process.
+      LaunchedEffect(Unit) {
+        (application as? App)?.autoConnectNetworksOnce()
       }
 
       if (isPipMode || isExpandingFromPip) {
