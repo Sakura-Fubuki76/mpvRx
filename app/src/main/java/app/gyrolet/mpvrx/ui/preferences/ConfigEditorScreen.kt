@@ -108,27 +108,29 @@ data class ConfigEditorScreen(
     var hasUnsavedChanges by remember { mutableStateOf(false) }
     val mpvConfStorageLocation by preferences.mpvConfStorageUri.collectAsState()
 
-    // Load from external storage if a folder is configured
-    LaunchedEffect(mpvConfStorageLocation) {
-      if (mpvConfStorageLocation.isBlank()) return@LaunchedEffect
-      withContext(Dispatchers.IO) {
-        runCatching {
-          val tree = DocumentFile.fromTreeUri(context, mpvConfStorageLocation.toUri())
-          val configFile = tree?.findFile(fileName)
-          if (configFile != null && configFile.exists()) {
-            val content =
-              context.contentResolver.openInputStream(configFile.uri)?.bufferedReader()?.use { reader ->
-                reader.readText()
-              }
-            if (content != null) {
-              withContext(Dispatchers.Main) { configText = content }
-            }
+    var configLoaded by remember { mutableStateOf(false) }
+    // Read the same stored config that the player consumes; preferences can be empty after import.
+    LaunchedEffect(mpvConfStorageLocation, fileName) {
+      configLoaded = false
+      try {
+        val content = withContext(Dispatchers.IO) {
+          val external = if (mpvConfStorageLocation.isNotBlank())
+            DocumentFile.fromTreeUri(context, mpvConfStorageLocation.toUri())?.findFile(fileName) else null
+          when {
+            external != null && external.exists() -> context.contentResolver.openInputStream(external.uri)?.bufferedReader()?.use { it.readText() }
+              ?: error("Unable to read $fileName")
+            File(context.filesDir, fileName).exists() -> File(context.filesDir, fileName).readText()
+            else -> initialValue
           }
         }
-      }
+        if (!hasUnsavedChanges) configText = content
+        configLoaded = true
+      } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+      catch (error: Exception) { Toast.makeText(context, "Unable to read $fileName", Toast.LENGTH_LONG).show() }
     }
 
     fun saveConfig() {
+      if (!configLoaded) return
       dismissKeyboard()
       val contentToSave = configText
       scope.launch(Dispatchers.IO) {

@@ -36,6 +36,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import app.gyrolet.mpvrx.ui.utils.navigateTo
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -65,6 +69,7 @@ import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
 import kotlinx.serialization.Serializable
+import me.zhanghai.compose.preference.Preference
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
@@ -358,6 +363,35 @@ object DecoderPreferencesScreen : Screen {
                   }
                 },
               )
+
+              val chainMode by preferences.anime4kMode.collectAsState()
+              val chainQuality by preferences.anime4kQuality.collectAsState()
+              val chainDarken by preferences.anime4kDarken.collectAsState()
+              val chainThin by preferences.anime4kThin.collectAsState()
+              val chainDeblur by preferences.anime4kDeblur.collectAsState()
+              var shaderChain by remember { mutableStateOf("") }
+              LaunchedEffect(chainMode, chainQuality, chainDarken, chainThin, chainDeblur) {
+                shaderChain = withContext(Dispatchers.IO) {
+                  val manager = Anime4KManager(context.applicationContext)
+                  if (!manager.initialize()) return@withContext ""
+                  manager.setPostFilters(chainDarken, chainThin, chainDeblur)
+                  val mode = runCatching { Anime4KManager.Mode.valueOf(chainMode) }.getOrDefault(Anime4KManager.Mode.OFF)
+                  manager.getShaderPaths(mode, chainQuality).joinToString("\n")
+                }
+              }
+              Preference(
+                title = { Text(stringResource(R.string.pref_anime4k_chain_editor)) },
+                summary = {
+                  Column {
+                    Text(stringResource(R.string.pref_anime4k_chain_editor_summary))
+                    if (shaderChain.isNotBlank()) androidx.compose.foundation.text.selection.SelectionContainer {
+                      Text(shaderChain, style = MaterialTheme.typography.bodySmall)
+                    }
+                  }
+                },
+                onClick = { backstack.navigateTo(ConfigEditorScreen(ConfigEditorScreen.ConfigType.MPV_CONF)) },
+              )
+              PreferenceDivider()
 
               if (enableAnime4K && !shadersConfigOwned) {
                 val rotationState by animateFloatAsState(
