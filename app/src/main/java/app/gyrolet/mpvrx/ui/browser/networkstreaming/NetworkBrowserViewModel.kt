@@ -40,6 +40,7 @@ import app.gyrolet.mpvrx.utils.media.M3UPlaylistItem
 import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -77,6 +78,8 @@ class NetworkBrowserViewModel(
   private var metadataObserver: Job? = null
   private var metadataProbe: Job? = null
   private var folderScan: Job? = null
+  private var thumbnailBatch: Job? = null
+  private val appearance: app.gyrolet.mpvrx.preferences.AppearancePreferences by inject()
   private var loadGeneration = 0L
   private val playlistRepository: PlaylistRepository by inject()
   private val browserPreferences: BrowserPreferences by inject()
@@ -100,11 +103,33 @@ class NetworkBrowserViewModel(
   /**
    * Load files in the current directory
    */
+  private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>, treeReady: kotlinx.coroutines.Deferred<Unit>? = null) {
+    thumbnailBatch?.cancel()
+    thumbnailBatch = viewModelScope.launch {
+      kotlinx.coroutines.flow.combine(appearance.showNetworkThumbnails.changes(), browserPreferences.showVideoThumbnails.changes(),
+        browserPreferences.advancedMp4Thumbnails.changes(), browserPreferences.advancedMkvThumbnails.changes()) { network, video, _, _ -> network && video }
+        .collectLatest { enabled ->
+          Log.d("CloudBatch", "directory connection=${connection.id} files=${files.size} enabled=$enabled")
+          cloudMetadata.cacheMissingMetadata(connection, files,
+            app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND, enabled)
+          if (treeReady != null) {
+            treeReady.await()
+            val directPaths = files.map { it.path }.toSet()
+            val tree = cloudMetadata.cachedFilesBelow(connection.id, currentPath).filter { it.path !in directPaths }
+            cloudMetadata.cacheMissingMetadata(connection, tree,
+              app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, enabled)
+          }
+        }
+    }
+  }
+
   fun loadFiles() {
+    thumbnailBatch?.cancel()
     folderScan?.cancel()
     directoryJob?.cancel()
     metadataObserver?.cancel()
     metadataProbe?.cancel()
+    val treeReady = kotlinx.coroutines.CompletableDeferred<Unit>()
     val generation = ++loadGeneration
     directoryJob = viewModelScope.launch {
       _isLoading.value = true
@@ -120,7 +145,7 @@ class NetworkBrowserViewModel(
           if (generation != loadGeneration) return
           metadataObserver?.cancel()
           metadataProbe?.cancel()
-          val sorted = fileList.sortedWith(compareBy<NetworkFile> { !it.isDirectory }.thenBy { it.name.lowercase() })
+          val sorted = fileList.sortedForNetworkBrowser(NetworkSortType.Title, SortOrder.Ascending)
           _files.value = sorted
           metadataObserver = viewModelScope.launch {
             kotlinx.coroutines.flow.combine(cloudMetadata.observeVideos(connectionId, sorted),
@@ -137,7 +162,7 @@ class NetworkBrowserViewModel(
               if (generation == loadGeneration) _files.value = enriched
             }
           }
-          metadataProbe = viewModelScope.launch { cloudMetadata.probeMissing(connection, sorted) }
+          scheduleThumbnails(connection, sorted, treeReady)
         }
 
         cloudMetadata.cachedDirectory(connectionId, currentPath)?.let { publish(it) }
@@ -149,7 +174,17 @@ class NetworkBrowserViewModel(
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
               publish(fileList)
               folderScan?.cancel()
-              folderScan = viewModelScope.launch { cloudMetadata.scanFolders(connection, listOf(currentPath), repository) }
+              folderScan = viewModelScope.launch {
+                try {
+                  cloudMetadata.scanFolders(connection, listOf(currentPath), repository)
+                } catch (cancelled: CancellationException) {
+                  throw cancelled
+                } catch (error: Exception) {
+                  Log.w("CloudBatch", "Directory scan failed; using cached tree", error)
+                } finally {
+                  treeReady.complete(Unit)
+                }
+              }
               if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery)
             }
           }.onFailure { e ->
@@ -160,6 +195,7 @@ class NetworkBrowserViewModel(
       } catch (e: Exception) {
         _error.value = e.message ?: "Unknown error"
       } finally {
+        if (folderScan?.isActive != true) treeReady.complete(Unit)
         if (generation == loadGeneration) _isLoading.value = false
       }
     }
@@ -179,8 +215,9 @@ class NetworkBrowserViewModel(
       kotlinx.coroutines.delay(350)
       repository.searchFiles(connection, currentPath, query).onSuccess { results ->
         cloudMetadata.registerIndexedFiles(connectionId, results)
+        scheduleThumbnails(connection, results)
         kotlinx.coroutines.coroutineScope {
-          launch { cloudMetadata.probeMissing(connection, results) }
+
           cloudMetadata.observeVideos(connectionId, results).collect { _searchResults.value = it }
         }
       }.onFailure { _error.value = it.message }
@@ -190,6 +227,7 @@ class NetworkBrowserViewModel(
   fun pauseBackgroundWork() {
     ++loadGeneration
     directoryJob?.cancel()
+    thumbnailBatch?.cancel()
     metadataObserver?.cancel()
     metadataProbe?.cancel()
     folderScan?.cancel()
@@ -459,15 +497,17 @@ internal fun List<NetworkFile>.sortedForNetworkBrowser(
   val images = filter { it.isNetworkImageFile() }
   val media = filter { !it.isDirectory && !it.isNetworkImageFile() }
 
+  val titleComparator = Comparator<NetworkFile> { a, b ->
+    val title = app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT.compare(a.name, b.name)
+    if (title != 0) title else a.path.compareTo(b.path)
+  }
+  val comparator = when (sortType) {
+    NetworkSortType.Title -> titleComparator
+    NetworkSortType.Date -> compareBy<NetworkFile> { it.lastModified }.then(titleComparator)
+    NetworkSortType.Size -> compareBy<NetworkFile> { it.size }.then(titleComparator)
+  }
   fun List<NetworkFile>.sortedGroup(): List<NetworkFile> =
-    when (sortType) {
-      NetworkSortType.Title ->
-        if (sortOrder.isAscending) sortedBy { it.name.lowercase() } else sortedByDescending { it.name.lowercase() }
-      NetworkSortType.Date ->
-        if (sortOrder.isAscending) sortedBy(NetworkFile::lastModified) else sortedByDescending(NetworkFile::lastModified)
-      NetworkSortType.Size ->
-        if (sortOrder.isAscending) sortedBy(NetworkFile::size) else sortedByDescending(NetworkFile::size)
-    }
+    sortedWith(if (sortOrder.isAscending) comparator else comparator.reversed())
 
   return directories.sortedGroup() + media.sortedGroup() + images.sortedGroup()
 }

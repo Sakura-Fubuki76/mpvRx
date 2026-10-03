@@ -19,6 +19,9 @@ abstract class CloudMetadataDao {
   @Query("SELECT * FROM cloud_video_metadata WHERE connectionId = :connectionId AND path IN (:paths)")
   abstract fun observeVideos(connectionId: Long, paths: List<String>): Flow<List<CloudVideoMetadataEntity>>
 
+  @Query("SELECT * FROM cloud_video_metadata WHERE connectionId = :connectionId AND path IN (:paths)")
+  abstract suspend fun getVideos(connectionId: Long, paths: List<String>): List<CloudVideoMetadataEntity>
+
   // Merge is atomic, and a new file version resets fields from the old file.
   @Query("""INSERT OR REPLACE INTO cloud_video_metadata(connectionId, path, size, lastModified, durationMs, width, height, updatedAt)
     VALUES (:connectionId, :path, :size, :lastModified,
@@ -36,6 +39,11 @@ abstract class CloudMetadataDao {
 
   @Query("SELECT * FROM cloud_directory_items WHERE connectionId = :connectionId AND path = :path LIMIT 1")
   abstract suspend fun getItem(connectionId: Long, path: String): CloudDirectoryItemEntity?
+
+  @Query("""SELECT * FROM cloud_directory_items WHERE connectionId = :connectionId AND isDirectory = 0
+    AND (:path = '/' OR substr(path, 1, length(:path) + 1) = :path || '/')
+    ORDER BY CASE WHEN parentPath = :path THEN 0 ELSE 1 END, path LIMIT 10000""")
+  abstract suspend fun getFilesBelow(connectionId: Long, path: String): List<CloudDirectoryItemEntity>
 
   @Transaction
   open suspend fun mergeCurrentVideo(connectionId: Long, path: String, size: Long, modified: Long,

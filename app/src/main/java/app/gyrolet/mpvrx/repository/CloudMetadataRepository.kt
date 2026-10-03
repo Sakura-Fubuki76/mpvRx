@@ -41,6 +41,7 @@ class CloudMetadataRepository(
 ) {
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
+  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(2)
   private val locks = Array(64) { Mutex() }
 
   suspend fun cachedDirectory(connectionId: Long, rawPath: String): List<NetworkFile>? = withContext(Dispatchers.IO) {
@@ -62,6 +63,12 @@ class CloudMetadataRepository(
     )
   }
 
+  suspend fun cachedFilesBelow(connectionId: Long, path: String): List<NetworkFile> = withContext(Dispatchers.IO) {
+    dao.getFilesBelow(connectionId, NetworkPath.from(path).value).map {
+      NetworkFile(it.name, it.path, it.size, it.isDirectory, it.lastModified, it.mimeType)
+    }
+  }
+
   fun observeVideos(connectionId: Long, files: List<NetworkFile>): Flow<List<NetworkFile>> {
     if (files.isEmpty()) return flowOf(emptyList())
     val paths = files.map { NetworkPath.from(it.path).value }.distinct()
@@ -70,7 +77,7 @@ class CloudMetadataRepository(
     }.map { byPath ->
       files.map { file ->
         val entry = byPath[NetworkPath.from(file.path).value]
-        if (entry != null && entry.matches(file)) file.copy(durationMs = entry.durationMs) else file
+        if (entry != null && entry.matches(file)) file.copy(durationMs = entry.durationMs, width = entry.width.takeIf { it > 0 } ?: file.width, height = entry.height.takeIf { it > 0 } ?: file.height) else file
       }
     }
   }
@@ -95,6 +102,34 @@ class CloudMetadataRepository(
     dao.refreshFolderDurations(connection.id)
   }
 
+  /** yume's complete-directory entry point: preload, skip completed rows, then submit all pending items. */
+  internal suspend fun cacheMissingMetadata(connection: NetworkConnection, files: List<NetworkFile>,
+    priority: app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority, includeThumbnails: Boolean) = withContext(Dispatchers.IO) {
+    val videos = files.filter { !it.isDirectory && (it.mimeType?.startsWith("video/") == true ||
+      it.name.substringAfterLast('.', "").lowercase() in FileTypeUtils.VIDEO_EXTENSIONS) }.distinctBy { it.path }
+    val cached = videos.map { NetworkPath.from(it.path).value }.chunked(400).flatMap { dao.getVideos(connection.id, it) }.associateBy { it.path }
+    val thumbnails = org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
+    val pending = videos.filter { file ->
+      val entry = cached[NetworkPath.from(file.path).value]
+      entry == null || !entry.matches(file) || entry.durationMs <= 0 || (includeThumbnails && !thumbnails.isNetworkThumbnailCached(connection, file))
+    }
+    val done = java.util.concurrent.atomic.AtomicInteger()
+    android.util.Log.d("CloudBatch", "yume batch connection=${connection.id} priority=$priority total=${videos.size} needed=${pending.size}")
+    metadataQueue.process(pending, key = { "${connection.id}|${it.path}" }, priority = priority) { file ->
+      try {
+        probe(connection, file)
+        if (includeThumbnails) thumbnails.getThumbnailForNetworkPath(file.path, 480, 300, connection, file.size, file.mimeType, file.lastModified,
+          backgroundWork = priority == app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND)
+        true
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (error: Exception) { android.util.Log.w("CloudBatch", "Metadata item failed", error); false }
+      finally {
+        val count = done.incrementAndGet()
+        if (count % 10 == 0 || count == pending.size) android.util.Log.d("CloudBatch", "yume progress connection=${connection.id} priority=$priority completed=$count/${pending.size}")
+      }
+    }
+  }
+
   suspend fun probeMissing(connection: NetworkConnection, files: List<NetworkFile>) = coroutineScope {
     files.filter { !it.isDirectory && (it.mimeType?.startsWith("video/") == true ||
       it.name.substringAfterLast('.', "").lowercase() in FileTypeUtils.VIDEO_EXTENSIONS) }
@@ -108,7 +143,10 @@ class CloudMetadataRepository(
     val lock = locks[((connection.id.hashCode() * 31 + path.hashCode()) and Int.MAX_VALUE) % locks.size]
     lock.withLock {
       val cached = dao.getVideo(connection.id, path)
-      if (cached != null && cached.matches(file) && cached.durationMs > 0) return
+      if (cached != null && cached.matches(file) && cached.durationMs > 0) {
+        if (file.width > 0 || file.height > 0) publish(connection.id, path, file.size, file.lastModified, 0, file.width, file.height, System.currentTimeMillis())
+        return
+      }
       // Retry incomplete rows after a bounded cooldown, including across process restarts.
       if (cached != null && cached.matches(file) && System.currentTimeMillis() - cached.updatedAt < 30_000) return
       if (cached != null && !cached.matches(file)) {
@@ -127,7 +165,7 @@ class CloudMetadataRepository(
         var height = 0
         if (duration > 0) {
           currentCoroutineContext().ensureActive()
-          publish(connection.id, path, file.size, file.lastModified, duration, 0, 0, System.currentTimeMillis())
+          publish(connection.id, path, file.size, file.lastModified, duration, file.width, file.height, System.currentTimeMillis())
         } else {
           withTimeoutOrNull(10_000) {
             runInterruptible(Dispatchers.IO) {
