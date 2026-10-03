@@ -37,8 +37,9 @@ import app.gyrolet.mpvrx.presentation.crash.CrashReportStore
 import app.gyrolet.mpvrx.domain.network.NetworkImageRepository
 import app.gyrolet.mpvrx.repository.NetworkRepository
 import app.gyrolet.mpvrx.ui.player.MediaPlayerWidget
-import app.gyrolet.mpvrx.ui.player.PlaybackPhase
+import app.gyrolet.mpvrx.ui.player.PlaybackCorePrewarmer
 import app.gyrolet.mpvrx.ui.player.PlaybackPerformanceTrace
+import app.gyrolet.mpvrx.ui.player.PlaybackPhase
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.theme.AppTheme
@@ -433,16 +434,20 @@ class App :
   }
 
   /**
-   * Pays the two process-constant startup costs that used to land on the first video open, off the
-   * main thread and in the same application scope as the idle core reaper.
+   * Pays the process-constant startup costs that used to land on the first video open, off the main
+   * thread and in the same application scope as the idle core reaper.
    *
-   * - `PlaybackSession.prewarmNativeCore` loads the ~30-40MB libmpv shared library and creates the
-   *   native core before `MPVView.initializeSession` needs them.
+   * - [PlaybackCorePrewarmer] prepares the MPV config/scripts/fonts and then runs the whole
+   *   `MPVLib.init()` — shared-library load, mpv.conf parse, Lua/JS script loading and shader
+   *   compilation — from a never-attached MPVView. This is the largest single cost on the open
+   *   path, and it used to run on the main thread inside `PlayerActivity.setupMPV()`, in series
+   *   with window creation.
    * - `hardwareDecoderCodecIds()` fills [VideoCodecSupportInspector]'s hardware-decoder MIME-type
    *   cache, which `MPVView.initOptions` otherwise populates mid-open.
    *
-   * Both are pure process/device constants and neither touches the core's option state, so a player
-   * open still sees exactly the same values it computed before.
+   * A failure here is deliberately neither fatal nor surfaced: [PlaybackCorePrewarmer] leaves the
+   * core uninitialized and the open path initializes it exactly as it did before, including the
+   * renderer-fallback retry that has no equivalent at prewarm time.
    */
   private fun prewarmPlaybackStartup() {
     applicationScope.launch {
@@ -450,6 +455,7 @@ class App :
         .onFailure { error -> Log.e(TAG, "Failed to prewarm the libmpv core on launch", error) }
       runCatching { VideoCodecSupportInspector.hardwareDecoderCodecIds() }
         .onFailure { error -> Log.e(TAG, "Failed to prewarm the hardware decoder capabilities", error) }
+      PlaybackCorePrewarmer.start(this@App, applicationScope)
     }
   }
 
@@ -458,6 +464,11 @@ class App :
    * allocation forever after playback has genuinely ended. collectLatest makes this self-cancelling:
    * any new load, surface attachment, background session, or other state change aborts the grace
    * timer before destruction can run.
+   *
+   * The reaper deliberately ignores a core that has not played anything yet. Reaping exists to
+   * release native decoder/renderer allocation that playback accumulated; a core that
+   * [PlaybackCorePrewarmer] initialized at launch holds none. Destroying it would hand the next open
+   * the entire cold-init cost the prewarm just paid, for no memory saved.
    */
   private fun startIdleMpvCoreReaper() {
     applicationScope.launch {
@@ -466,7 +477,8 @@ class App :
           state.phase == PlaybackPhase.IDLE &&
             state.currentItem == null &&
             !state.surfaceAttached &&
-            PlaybackSession.isInitialized
+            PlaybackSession.isInitialized &&
+            PlaybackSession.hasEverLoadedMedia
         if (!isFullyIdle) return@collectLatest
 
         delay(IDLE_MPV_CORE_GRACE_MS)
@@ -476,7 +488,8 @@ class App :
           latest.phase == PlaybackPhase.IDLE &&
             latest.currentItem == null &&
             !latest.surfaceAttached &&
-            PlaybackSession.isInitialized
+            PlaybackSession.isInitialized &&
+            PlaybackSession.hasEverLoadedMedia
         if (stillFullyIdle) {
           Log.d(TAG, "Destroying libmpv after idle grace period")
           PlaybackSession.destroy()

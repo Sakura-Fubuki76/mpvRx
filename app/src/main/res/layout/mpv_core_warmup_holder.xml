@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Never inflated. PlaybackCorePrewarmer only parses this to obtain an AttributeSet with the same
+  shape MPVView receives in player_layout.xml, because BaseMPVView resolves its styled attributes
+  through it. The MPVView it is then used to construct is never attached to a window.
+-->
+<app.gyrolet.mpvrx.ui.player.MPVView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />

@@ -242,6 +242,18 @@ object PlaybackSession : MPVLib.EventObserver {
     get() = initialized
 
   /**
+   * Whether this process has ever asked libmpv to open a file.
+   *
+   * Distinct from [isInitialized]: a core brought up by `PlaybackCorePrewarmer` at app launch is
+   * initialized but has played nothing, so it holds no decoder or renderer allocation. The idle
+   * reaper uses this to leave such a core alone — destroying it would hand the next open the whole
+   * cold init cost the prewarm just paid, in exchange for no memory.
+   */
+  @Volatile
+  var hasEverLoadedMedia: Boolean = false
+    private set
+
+  /**
    * True only inside the `MPVLib.create()`..`MPVLib.init()` window of a core being created.
    * [nativeCoreReady] is the single source of that window: it is cleared at the top of every core
    * (re)build and in [destroyLocked], and only set once `MPVLib.init()` has returned. Init-time
@@ -1004,6 +1016,7 @@ object PlaybackSession : MPVLib.EventObserver {
         }.joinToString(",")
       PlaybackPerformanceTrace.mark("LOADFILE_SENT", "generation=$generation")
       MPVLib.command("loadfile", playableUri, "replace", "-1", loadOptions)
+      hasEverLoadedMedia = true
       propBoolean.emit("pause", holdForPositionRestore || desiredPaused)
       generation
     }
