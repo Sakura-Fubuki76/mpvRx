@@ -15,6 +15,7 @@ import android.net.Uri
 import android.util.Base64
 import android.util.Xml
 import androidx.documentfile.provider.DocumentFile
+import androidx.room.withTransaction
 import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.database.MpvRxDatabase
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
@@ -392,6 +393,7 @@ class SettingsManager(
     val editor = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context).edit()
     val parents = ArrayDeque<String>()
     val networkConnections = mutableListOf<NetworkConnection>()
+    var importedCloudSelection: String? = null
 
     while (eventType != XmlPullParser.END_DOCUMENT) {
       currentCoroutineContext().ensureActive()
@@ -412,6 +414,7 @@ class SettingsManager(
               ) {
                 try {
                   readPreference(parser, editor)
+                  if (key == "cloud_storage_selection") importedCloudSelection = readStringValue(parser)
                   stats.imported++
                 } catch (cancelled: CancellationException) {
                   throw cancelled
@@ -440,14 +443,28 @@ class SettingsManager(
 
     currentCoroutineContext().ensureActive()
     check(stats.failed == 0) { stats.errors.joinToString("\n") }
-    check(editor.commit()) { "Failed to save imported preferences" }
-
     // Insert all database data
     try {
       if (networkConnections.isNotEmpty()) {
-        database.networkConnectionDao().insertAll(networkConnections)
+        val ids = mutableMapOf<Long, Long>()
+        database.withTransaction {
+          val dao = database.networkConnectionDao()
+          val existing = dao.getAllConnectionsIncludingDeleted().toMutableList()
+          networkConnections.forEach { imported ->
+            val restored = restoredSettingsConnection(imported, existing)
+            val id = if (existing.any { it.id == restored.id }) {
+              dao.update(restored)
+              restored.id
+            } else dao.insert(restored)
+            if (imported.id > 0) ids[imported.id] = id
+            existing.removeAll { it.id == id }
+            existing.add(restored.copy(id = id))
+          }
+        }
+        importedCloudSelection?.let { editor.putString("cloud_storage_selection", remapCloudStorageSelection(it, ids)) }
         stats.imported += networkConnections.size
       }
+      check(editor.commit()) { "Failed to save imported preferences" }
     } catch (cancelled: CancellationException) {
       throw cancelled
     } catch (e: Exception) {
@@ -466,11 +483,7 @@ class SettingsManager(
 
     when (type) {
       TYPE_STRING -> {
-        val value = when (encoding) {
-          null -> valueStr
-          ENCODING_BASE64 -> String(Base64.decode(valueStr, Base64.DEFAULT), Charsets.UTF_8)
-          else -> error("Unsupported string encoding: $encoding")
-        }
+        val value = readStringValue(parser)
         val restored = if (key == AppearancePreferences.CUSTOM_WALLPAPER_URI_KEY && value.isNotBlank()) {
           saveWallpaperCopy(context, value)
         } else value
@@ -499,9 +512,18 @@ class SettingsManager(
     }
   }
 
+  private fun readStringValue(parser: XmlPullParser): String {
+    val value = requireNotNull(parser.getAttributeValue(null, ATTR_VALUE))
+    return when (val encoding = parser.getAttributeValue(null, ATTR_ENCODING)) {
+      null -> value
+      ENCODING_BASE64 -> String(Base64.decode(value, Base64.DEFAULT), Charsets.UTF_8)
+      else -> error("Unsupported string encoding: $encoding")
+    }
+  }
+
   private fun readNetworkConnection(parser: XmlPullParser): NetworkConnection =
     NetworkConnection(
-      id = 0, // Will be auto-generated
+      id = parser.getAttributeValue(null, "id")?.toLongOrNull()?.takeIf { it > 0 } ?: 0,
       name = parser.getAttributeValue(null, "name") ?: "",
       protocol =
         NetworkProtocol.valueOf(
@@ -517,7 +539,7 @@ class SettingsManager(
       isAnonymous = parser.getAttributeValue(null, "isAnonymous")?.toBooleanStrict() ?: false,
       lastConnected = parser.getAttributeValue(null, "lastConnected")?.toLong() ?: 0L,
       // Avoid repeated authentication attempts before credentials have been re-entered.
-      autoConnect = false,
+      autoConnect = parser.getAttributeValue(null, "autoConnect")?.toBooleanStrict() ?: false,
       useHttps = parser.getAttributeValue(null, "useHttps")?.toBooleanStrict() ?: false,
     )
 
