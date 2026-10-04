@@ -19,6 +19,28 @@ class FontNameReaderTest {
       assertEquals(setOf("动画字幕字体"), FontNameReader.names(font))
     } finally { font.delete() }
   }
+  @Test fun readsEveryCollectionFaceAndExcludesPostscriptNamesFromFamilies() {
+    val font = File.createTempFile("font-collection", ".ttc")
+    try {
+      val data = ByteBuffer.allocate(256)
+      data.putInt(0x74746366).putInt(0x00010000).putInt(2).putInt(20).putInt(48)
+      for ((offset, nameOffset) in listOf(20 to 76, 48 to 156)) {
+        data.position(offset)
+        data.putInt(0x00010000).putShort(1).putShort(0).putShort(0).putShort(0)
+        data.putInt(0x6e616d65).putInt(0).putInt(nameOffset).putInt(80)
+        data.position(nameOffset)
+        val family = (if (offset == 20) "Family A" else "Family B").toByteArray(Charsets.UTF_16BE)
+        val postscript = "Postscript".toByteArray(Charsets.UTF_16BE)
+        data.putShort(0).putShort(2).putShort(30)
+        data.putShort(3).putShort(1).putShort(0).putShort(1).putShort(family.size.toShort()).putShort(0)
+        data.putShort(3).putShort(1).putShort(0).putShort(6).putShort(postscript.size.toShort()).putShort(family.size.toShort())
+        data.put(family).put(postscript)
+      }
+      font.writeBytes(data.array())
+      assertEquals(setOf("Family A", "Family B"), FontNameReader.familyNames(font))
+      assertTrue(FontNameReader.names(font).contains("Postscript"))
+    } finally { font.delete() }
+  }
   @Test fun rejectsTruncatedAndOutOfBoundsFontTables() {
     val font = File.createTempFile("font-broken", ".ttc")
     try {

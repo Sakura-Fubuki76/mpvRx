@@ -2673,4 +2673,5 @@
     <string name="cloud_select_storages_hint">请在设置 → 文件夹中选择 WebDAV 存储</string>
     <string name="pref_anime4k_chain_editor">Anime4K 着色器链 / mpv.conf</string>
     <string name="pref_anime4k_chain_editor_summary">下方显示当前预设的着色器链。点击编辑现有 mpv.conf，可使用自定义 glsl-shaders 和参数；配置文件接管的选项优先于预设。</string>
+  <string name="subtitle_font_inventory">%1$d 个字体文件 · %2$d 个字体家族</string>
 </resources>

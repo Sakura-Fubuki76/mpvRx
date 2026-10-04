@@ -270,6 +270,7 @@ object SubtitlesPreferencesScreen : Screen {
         val selectedSubtitleApiKeyPreferences =
           subtitleApiKeyPreferences.filter { it.sourceKey in subtitleHubSources }
         val requestedSearchTarget by SettingsSearchNavigation.target.collectFlowAsState()
+        var fontFileCount by remember { mutableStateOf(0) }
         var customFonts by remember { mutableStateOf<List<String>>(emptyList()) }
         var downloadedGoogleFonts by remember { mutableStateOf<List<String>>(emptyList()) }
 
@@ -278,12 +279,17 @@ object SubtitlesPreferencesScreen : Screen {
             withContext(Dispatchers.IO) {
               googleFontsRepository.installedFonts(appFontFamily).map { it.family }
             }
+          fontFileCount = withContext(Dispatchers.IO) {
+            app.gyrolet.mpvrx.domain.fonts.fontBankFiles(java.io.File(context.filesDir, "font-bank")).size
+          }
           customFonts =
             loadCustomFontEntries(context)
               .filterNot { googleFontsRepository.isManagedMpvFont(it.file) }
               .map { it.familyName }
               .distinct()
               .filter { it != DEFAULT_SUBTITLE_FONT_FAMILY && it != LEGACY_DEFAULT_SUBTITLE_FONT_FAMILY }
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("fonts.inventory", detail =
+            "files=$fontFileCount customFamilies=${customFonts.size} googleFamilies=${downloadedGoogleFonts.size}")
         }
 
         val availableFonts =
@@ -529,7 +535,7 @@ object SubtitlesPreferencesScreen : Screen {
                       if (availableFonts.isEmpty()) {
                         stringResource(R.string.pref_subtitles_font_no_custom)
                       } else {
-                        stringResource(R.string.fonts_loaded, availableFonts.size)
+                        stringResource(R.string.subtitle_font_inventory, fontFileCount, availableFonts.size)
                       },
                       color = MaterialTheme.colorScheme.outline,
                       style = MaterialTheme.typography.bodySmall,

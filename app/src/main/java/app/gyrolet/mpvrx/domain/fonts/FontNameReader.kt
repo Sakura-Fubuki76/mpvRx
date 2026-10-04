@@ -5,7 +5,11 @@ import java.io.RandomAccessFile
 
 /** Read only bounded SFNT name tables, never the multi-megabyte glyph data. */
 internal object FontNameReader {
-  fun names(file: File): Set<String> = runCatching {
+  fun names(file: File): Set<String> = readNames(file, setOf(1, 4, 6, 16))
+
+  fun familyNames(file: File): Set<String> = readNames(file, setOf(1, 16))
+
+  private fun readNames(file: File, nameIds: Set<Int>): Set<String> = runCatching {
     RandomAccessFile(file, "r").use { input ->
       val names = linkedSetOf<String>()
       if (input.length() < 12) return@use names
@@ -46,7 +50,7 @@ internal object FontNameReader {
           val length = input.readUnsignedShort()
           val stringOffset = input.readUnsignedShort()
           val position = nameOffset + storage + stringOffset
-          if (nameId in setOf(1, 4, 6, 16) && length in 1..4096 &&
+          if (nameId in nameIds && length in 1..4096 &&
               position >= nameOffset && position + length <= nameOffset + nameLength) {
             val bytes = ByteArray(length)
             input.seek(position)

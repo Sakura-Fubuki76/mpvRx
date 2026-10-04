@@ -73,19 +73,15 @@ suspend fun loadCustomFontEntries(context: Context): List<CustomFontEntry> =
     val seenFamilies = mutableSetOf<String>()
 
     for (fontFile in fontFiles) {
-      val familyName =
-        runCatching {
-          fontFile.inputStream().use { input ->
-            TTFFile
-              .open(input)
-              .families
-              .values
-              .firstOrNull()
-          }
-        }.getOrNull()
-
-      if (!familyName.isNullOrBlank() && seenFamilies.add(familyName)) {
-        entries += CustomFontEntry(familyName, fontFile)
+      val families = app.gyrolet.mpvrx.domain.fonts.FontNameReader.familyNames(fontFile)
+        .ifEmpty {
+          runCatching { fontFile.inputStream().use { TTFFile.open(it).families.values.toSet() } }
+            .getOrDefault(emptySet())
+        }
+      for (familyName in families) {
+        if (familyName.isNotBlank() && seenFamilies.add(familyName)) {
+          entries += CustomFontEntry(familyName, fontFile)
+        }
       }
     }
 
