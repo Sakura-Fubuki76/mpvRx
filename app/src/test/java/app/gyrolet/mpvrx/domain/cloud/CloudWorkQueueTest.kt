@@ -5,6 +5,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudWorkQueueTest {
+  @Test fun backgroundResumesAfterPlaybackWithoutAnotherRequest() = runBlocking {
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val allowed = java.util.concurrent.atomic.AtomicBoolean(false)
+    try {
+      val queue = CloudWorkQueue(2, scope, backgroundAllowed = { allowed.get() })
+      val background = async { queue.run("background", true) { "done" } }
+      delay(150)
+      assertFalse(background.isCompleted)
+      assertEquals("visible", withTimeout(2000) { queue.run("visible", false) { "visible" } })
+      allowed.set(true)
+      assertEquals("done", withTimeout(2000) { background.await() })
+    } finally { scope.cancel() }
+  }
   @Test fun visibleWorkOvertakesQueuedDirectoryWork() = runBlocking {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     try {

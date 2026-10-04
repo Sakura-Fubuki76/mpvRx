@@ -8,20 +8,25 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /** Directory batches are independent of composition; visible requests overtake queued tree work. */
-internal class CloudWorkQueue(concurrency: Int = 1, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)) {
+internal class CloudWorkQueue(concurrency: Int = 1, scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO), private val backgroundAllowed: () -> Boolean = { true }) {
   private class Task(val key: String, val owner: Job?, val active: () -> Boolean, val execute: suspend () -> Unit, val cancel: () -> Unit)
   private val lock = Mutex()
   private val foreground = ArrayDeque<Task>()
   private val background = ArrayDeque<Task>()
-  private val wakeups = Channel<Unit>(concurrency)
+  private val wakeups = List(concurrency) { Channel<Unit>(Channel.CONFLATED) }
 
   init {
     require(concurrency > 0)
-    repeat(concurrency) {
+    repeat(concurrency) { worker ->
       scope.launch {
-        for (ignored in wakeups) {
+        for (ignored in wakeups[worker]) {
           while (true) {
-            val task = lock.withLock { foreground.pollFirst() ?: background.pollFirst() } ?: break
+            val task = lock.withLock { foreground.pollFirst() ?: if (backgroundAllowed()) background.pollFirst() else null }
+            if (task == null) {
+              val waiting = lock.withLock { background.isNotEmpty() }
+              if (waiting) { delay(100); continue }
+              break
+            }
             if (!task.active() || task.owner?.isActive == false) { task.cancel(); continue }
             val running = CoroutineScope(coroutineContext + (task.owner ?: SupervisorJob())).launch { task.execute() }
             running.join()
@@ -51,7 +56,7 @@ internal class CloudWorkQueue(concurrency: Int = 1, scope: CoroutineScope = Coro
       catch (error: Exception) { result.completeExceptionally(error) }
     }, { result.cancel() })
     lock.withLock { if (backgroundWork) background.addLast(task) else foreground.addLast(task) }
-    wakeups.trySend(Unit)
+    wakeups.forEach { it.trySend(Unit) }
     try { return result.await() }
     finally {
       handle?.dispose()

@@ -129,4 +129,39 @@ class MetadataWorkQueueTest {
         release.complete(Unit)
         background.await()
     }
+    @Test fun backgroundAlternatesStoragesAndPromotedFileRunsFirst() = runTest {
+        val queue = MetadataWorkQueue(1, backgroundScope)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val order = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val first = async {
+            queue.process(listOf("1|running", "1|a", "1|visible"), { it }, MetadataRequestPriority.BACKGROUND) {
+                if (it == "1|running") { started.complete(Unit); release.await() }
+                order.add(it); true
+            }
+        }
+        started.await()
+        val second = async {
+            queue.process(listOf("2|b", "2|c", "3|d"), { it }, MetadataRequestPriority.BACKGROUND) { order.add(it); true }
+        }
+        runCurrent()
+        queue.promote(setOf("1|visible"))
+        release.complete(Unit)
+        first.await(); second.await()
+        assertEquals(listOf("1|running", "1|visible", "2|b", "3|d", "1|a", "2|c"), order)
+    }
+
+    @Test fun playbackGateDefersBackgroundButAllowsForegroundAndResumes() = runTest {
+        val allowed = java.util.concurrent.atomic.AtomicBoolean(false)
+        val queue = MetadataWorkQueue(2, backgroundScope, backgroundAllowed = { allowed.get() })
+        val started = java.util.concurrent.atomic.AtomicBoolean(false)
+        val background = async {
+            queue.process(listOf("1|background"), { it }, MetadataRequestPriority.BACKGROUND) { started.set(true); true }
+        }
+        runCurrent()
+        assertTrue(!started.get())
+        assertTrue(queue.process(listOf("visible"), { it }, MetadataRequestPriority.FOREGROUND) { true })
+        allowed.set(true)
+        assertTrue(background.await())
+    }
 }

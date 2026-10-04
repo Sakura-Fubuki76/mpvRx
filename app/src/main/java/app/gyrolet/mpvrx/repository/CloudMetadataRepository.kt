@@ -46,7 +46,7 @@ class CloudMetadataRepository(
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
   private val mediaConcurrency = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency()
-  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(mediaConcurrency, foregroundWorkers = if (mediaConcurrency > 1) 1 else 0)
+  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(mediaConcurrency, foregroundWorkers = if (mediaConcurrency > 1) 1 else 0, backgroundAllowed = { app.gyrolet.mpvrx.domain.cloud.cloudBackgroundAllowed() })
   private val locks = Array(64) { Mutex() }
 
   private val storageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
@@ -100,10 +100,10 @@ class CloudMetadataRepository(
           process = { batch -> processBatch(batch) },
           consumers = mediaConcurrency,
         )
-        // Retry missing rows without re-enumerating the tree. Probe cooldown is 30 seconds.
+        // Retry missing rows after the initial pass, with increasing delay; never re-enumerate.
         var retry = 0
         while (!metadataComplete.get() && retry < 2) {
-          kotlinx.coroutines.delay(30_000)
+          kotlinx.coroutines.delay(30_000L shl retry)
           retry++
           metadataComplete.set(true)
           CloudTrace.event("storage.metadata.retry", connection.id, detail = "attempt=$retry")
@@ -233,6 +233,9 @@ class CloudMetadataRepository(
     val ready = java.util.concurrent.atomic.AtomicInteger()
     CloudTrace.event("batch.begin", connection.id, detail = "priority=$priority videos=${videos.size} pending=${pending.size} thumbnails=$includeThumbnails")
     android.util.Log.d("CloudBatch", "yume batch connection=${connection.id} priority=$priority total=${videos.size} needed=${pending.size}")
+    if (priority == app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND) {
+      metadataQueue.promote(pending.map { "${connection.id}|${it.path}" }.toSet())
+    }
     metadataQueue.process(pending, key = { "${connection.id}|${it.path}" }, priority = priority) { file ->
       try {
         probe(connection, file)

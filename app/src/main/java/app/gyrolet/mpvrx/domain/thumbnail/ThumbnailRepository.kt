@@ -77,6 +77,7 @@ private const val FOLDER_PLAYBACK_WAIT_BUDGET_MS = 2_000L
 
 class ThumbnailRepository(
   private val context: Context,
+  cloudConcurrency: Int = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency(),
 ) {
   private val appearancePreferences by lazy {
     KoinJavaComponent.get<app.gyrolet.mpvrx.preferences.AppearancePreferences>(
@@ -116,9 +117,9 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  private val networkGenerationParallelism = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency()
+  private val networkGenerationParallelism = cloudConcurrency
   private val networkGenerationSemaphore = Semaphore(networkGenerationParallelism)
-  private val cloudWorkQueue = app.gyrolet.mpvrx.domain.cloud.CloudWorkQueue(networkGenerationParallelism)
+  private val cloudWorkQueue = app.gyrolet.mpvrx.domain.cloud.CloudWorkQueue(networkGenerationParallelism, backgroundAllowed = { app.gyrolet.mpvrx.domain.cloud.cloudBackgroundAllowed() })
   private val maxFolderBatchSize = 48
 
   // Phases where libmpv holds the current file open or is about to open one. A folder prefetch
