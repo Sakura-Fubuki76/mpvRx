@@ -157,7 +157,9 @@ internal fun AnimeLibraryContent(
         item {
           Column {
             if (subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainer)) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit)
+              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopCenter)
+              Box(Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter).background(
+                Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
             }
             Column(Modifier.padding(24.dp)) {
               Text(title, style = MaterialTheme.typography.headlineMedium)
