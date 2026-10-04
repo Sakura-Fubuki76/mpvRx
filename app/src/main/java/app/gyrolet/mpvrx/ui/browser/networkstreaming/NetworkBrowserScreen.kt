@@ -112,6 +112,7 @@ data class NetworkBrowserScreen(
   val connectionName: String,
   val currentPath: String = "/",
   val showAnimeLibrary: Boolean = true,
+  val sessionId: String = java.util.UUID.randomUUID().toString(),
   /**
    * When set, the browser runs as a picker for that playlist: selecting files is enabled and
    * confirming writes them via `PlaylistRepository`. Null means the normal browse/play mode.
@@ -150,7 +151,7 @@ data class NetworkBrowserScreen(
 
     val viewModel: NetworkBrowserViewModel =
       viewModel(
-        key = "NetworkBrowser_${connectionId}_$currentPath",
+        key = "NetworkBrowser_${connectionId}_${currentPath}_$sessionId",
         factory =
           NetworkBrowserViewModel.factory(
             context.applicationContext as android.app.Application,

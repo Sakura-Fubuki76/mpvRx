@@ -51,6 +51,10 @@ data class AnimeDetailsScreen(
     val repository = koinInject<AnimeRepository>()
     val catalog by remember(connectionId) { repository.observe(connectionId) }
       .collectAsState()
+    val subjectId = catalog.folders[groupKey]?.subjectId
+    LaunchedEffect(subjectId) {
+      subjectId?.let { kotlinx.coroutines.delay(500); repository.scheduleCredits(it) }
+    }
     val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
     var editMatch by remember { mutableStateOf(false) }
     val useCoverColors by koinInject<AppearancePreferences>().animeCoverColors.collectAsState()

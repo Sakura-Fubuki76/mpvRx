@@ -46,35 +46,32 @@ internal fun AnimeLibraryContent(
 ) {
   val cloud = koinInject<CloudMetadataRepository>()
   val anime = koinInject<AnimeRepository>()
-  val allFiles by remember(connection.id, currentPath) { cloud.observeLibrary(connection.id, currentPath, videosOnly = true) }.collectAsState()
+  val snapshot by remember(connection.id, currentPath) {
+    anime.observeLibrary(connection.id, currentPath, cloud.observeLibrary(connection.id, currentPath, videosOnly = true))
+  }.collectAsState()
+  val allFiles = snapshot.files
+  val libraryGroups = snapshot.groups
   val catalog by remember(connection.id) { anime.observe(connection.id) }.collectAsState()
   val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
-  val identities = remember(connection.id, allFiles) { allFiles.filterNot { it.isDirectory }.map {
-    app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, it.path)
-  } }
+  val identities = remember(snapshot.playbackIdentities, detailKey) {
+    if (detailKey == null) snapshot.playbackIdentities.values.toList()
+    else libraryGroups[detailKey]?.files.orEmpty().mapNotNull { snapshot.playbackIdentities[it.path] }
+  }
   val playback by remember(identities) {
     if (identities.isEmpty()) kotlinx.coroutines.flow.flowOf(emptyMap<String, app.gyrolet.mpvrx.database.entities.PlaybackStateEntity>())
     else kotlinx.coroutines.flow.combine(identities.chunked(400).map { playbackDao.observeVideoStates(it) }) { rows ->
       rows.flatMap { it }.associateBy { it.mediaTitle }
     }
   }.collectAsState(emptyMap())
-  val structureKey = remember(allFiles) { allFiles.map { Triple(it.path, it.name, it.isDirectory) } }
-  val structure = remember(structureKey) { animeVideoGroups(allFiles).map { group -> group.copy(files = group.files.sortedWith(
-    compareBy<NetworkFile> { animeSectionPath(group.directory, it) }
-      .thenBy { parseAnimeFilename(it.name).episode ?: Double.MAX_VALUE }.thenBy { it.name })) } }
-  val libraryGroups = remember(allFiles, structure) {
-    val latest = allFiles.associateBy { it.path }
-    structure.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }
-  }
   val recent by koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().recentlyPlayedDao().observeRecentlyPlayed(1000).collectAsState(emptyList())
   val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
-  LaunchedEffect(connection.id, groups.keys, allFiles.map { it.path to it.lastModified }) {
+  LaunchedEffect(connection.id, snapshot.playbackIdentities) {
     kotlinx.coroutines.delay(750)
     if (detailKey == null) anime.schedule(connection.id, allFiles)
   }
 
   val visible = remember(groups, catalog, searchQuery) {
-    groups.entries.filter { (path, files) ->
+    if (detailKey != null) emptyList() else groups.entries.filter { (path, files) ->
       searchQuery.isBlank() || path.contains(searchQuery, true) || files.any { it.name.contains(searchQuery, true) } ||
         catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
     }.sortedBy { (path, _) -> catalog.subjects[catalog.folders[path]?.subjectId]?.title ?: path }
@@ -213,6 +210,9 @@ internal fun AnimeLibraryContent(
               titleOverride = episode?.title?.takeIf { it.isNotBlank() }?.let { "$episodeLabel · $it" },
               onClick = { onPlay(file, sectionFiles) })
           }
+        }
+        if (subject != null && (subject.cast.isNotEmpty() || subject.staff.isNotEmpty())) {
+          item(key = "credits") { AnimeCreditsContent(subject) }
         }
 
       }
