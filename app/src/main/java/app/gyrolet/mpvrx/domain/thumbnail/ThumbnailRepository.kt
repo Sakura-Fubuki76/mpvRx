@@ -116,8 +116,9 @@ class ThumbnailRepository(
   private val maxConcurrentFolders = 3
   private val localGenerationParallelism = resolveLocalGenerationParallelism()
   private val localGenerationSemaphore = Semaphore(localGenerationParallelism)
-  private val networkGenerationSemaphore = Semaphore(1)
-  private val cloudWorkQueue = app.gyrolet.mpvrx.domain.cloud.CloudWorkQueue()
+  private val networkGenerationParallelism = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency()
+  private val networkGenerationSemaphore = Semaphore(networkGenerationParallelism)
+  private val cloudWorkQueue = app.gyrolet.mpvrx.domain.cloud.CloudWorkQueue(networkGenerationParallelism)
   private val maxFolderBatchSize = 48
 
   // Phases where libmpv holds the current file open or is about to open one. A folder prefetch

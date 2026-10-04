@@ -45,7 +45,8 @@ class CloudMetadataRepository(
 ) {
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
-  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(3, foregroundWorkers = 1)
+  private val mediaConcurrency = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency()
+  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(mediaConcurrency, foregroundWorkers = if (mediaConcurrency > 1) 1 else 0)
   private val locks = Array(64) { Mutex() }
 
   private val storageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
@@ -97,7 +98,7 @@ class CloudMetadataRepository(
             complete
           },
           process = { batch -> processBatch(batch) },
-          consumers = 2,
+          consumers = mediaConcurrency,
         )
         // Retry missing rows without re-enumerating the tree. Probe cooldown is 30 seconds.
         var retry = 0
@@ -108,7 +109,7 @@ class CloudMetadataRepository(
           CloudTrace.event("storage.metadata.retry", connection.id, detail = "attempt=$retry")
           app.gyrolet.mpvrx.domain.cloud.streamStorageMetadata<NetworkFile>(
             enumerate = { submit -> submit(cachedFilesBelow(connection.id, "/")); true },
-            process = { batch -> processBatch(batch) }, consumers = 2,
+            process = { batch -> processBatch(batch) }, consumers = mediaConcurrency,
           )
         }
         CloudTrace.event("storage.finished", connection.id, detail = "directoriesComplete=$enumerationComplete metadataComplete=${metadataComplete.get()} files=$fileCount retries=$retry")
