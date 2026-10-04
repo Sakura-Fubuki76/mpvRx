@@ -630,23 +630,16 @@ private fun SeekbarContent(
       Modifier
     }
 
-  var previewAnchorSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
   val previewDensity = androidx.compose.ui.platform.LocalDensity.current
   Box(
-    modifier = modifier.then(seekKeyModifier).then(Modifier.onSizeChanged { previewAnchorSize = it }),
+    modifier = modifier.then(seekKeyModifier),
     contentAlignment = Alignment.Center,
   ) {
     if (isVisuallyInteracting && !showWavyVisualizer) {
-      val sheet by org.koin.compose.koinInject<app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository>().current.collectAsState()
-      val previewWidth = with(previewDensity) { (sheet?.metadata?.cellWidth ?: 160).dp.roundToPx() }
-      val previewHeight = with(previewDensity) { ((sheet?.metadata?.cellHeight ?: 90) + 26).dp.roundToPx() }
       val gap = with(previewDensity) { 8.dp.roundToPx() }
       val fraction = if (safeDuration > 0) safeThumbPosition / safeDuration else 0f
-      val x = (previewAnchorSize.width * fraction - previewWidth / 2f).roundToInt()
-        .coerceIn(0, (previewAnchorSize.width - previewWidth).coerceAtLeast(0))
       androidx.compose.ui.window.Popup(
-        alignment = Alignment.TopStart,
-        offset = androidx.compose.ui.unit.IntOffset(x, previewAnchorSize.height / 2 - previewHeight - gap),
+        popupPositionProvider = remember(gap, fraction) { SeekPreviewPositionProvider(gap, fraction) },
         properties = androidx.compose.ui.window.PopupProperties(focusable = false),
       ) { CloudSeekPreview(safeThumbPosition) }
     }
