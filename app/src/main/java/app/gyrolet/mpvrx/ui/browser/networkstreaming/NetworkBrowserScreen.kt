@@ -163,8 +163,7 @@ data class NetworkBrowserScreen(
       onDispose { viewModel.pauseBackgroundWork() }
     }
     val indexResults by viewModel.searchResults.collectAsState()
-    val hideEmptyFolders by browserPreferences.hideEmptyCloudFolders.collectAsState()
-    val files = (indexResults ?: directoryFiles).filterNot { hideEmptyFolders && it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
+    val files = (indexResults ?: directoryFiles).filterNot { it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
     val connection by viewModel.connection.collectAsState()
     val libraryFolderLayout by browserPreferences.folderViewFolderLayoutMode.collectAsState()
     val libraryVideoLayout by browserPreferences.folderViewVideoLayoutMode.collectAsState()

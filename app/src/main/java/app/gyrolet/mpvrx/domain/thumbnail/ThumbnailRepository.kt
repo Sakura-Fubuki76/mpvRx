@@ -1428,8 +1428,6 @@ class ThumbnailRepository(
   ): Bitmap? {
     val extension = app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(path)
     if (!cloudKeyframes.supports(extension)) return null
-    if (extension in setOf("mp4", "mov", "m4v") && !browserPreferences.advancedMp4Thumbnails.get()) return null
-    if (extension in setOf("mkv", "webm") && !browserPreferences.advancedMkvThumbnails.get()) return null
 
     val (targetPercent, solidFallback) = keyframeTargets(strategy)
     return try {
@@ -1515,7 +1513,7 @@ class ThumbnailRepository(
     identity: String,
     widthPx: Int,
     heightPx: Int,
-  ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}|${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}"
+  ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}|true|true"
 
   /**
    * Builds the same key as [networkThumbnailKey] but records it against [identity] so
@@ -1532,7 +1530,7 @@ class ThumbnailRepository(
   }
 
   private fun networkThumbnailDiskKey(identity: String): String =
-    "video-thumb-v4-yuv|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}|${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}"
+    "video-thumb-v4-yuv|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}|true|true"
 
   private fun hasRecentNetworkThumbnailFailure(identity: String): Boolean {
     val failedAt = networkThumbnailFailedAt[identity] ?: return false

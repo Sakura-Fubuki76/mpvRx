@@ -1847,12 +1847,6 @@ object SearchablePreferences {
       ),
       SearchablePreference(titleRes = R.string.cloud_add_server, keywords = listOf("webdav openlist cloud 云端 服务器 添加"),
         category = "Media Servers", screen = MediaServersPreferencesScreen, anchorItemIndex = 0),
-      SearchablePreference(titleRes = R.string.cloud_advanced_mp4, keywords = listOf("mp4 thumbnail 索引 缩略图 下载"),
-        category = "Media Servers", screen = MediaServersPreferencesScreen, anchorItemIndex = 0),
-      SearchablePreference(titleRes = R.string.cloud_advanced_mkv, keywords = listOf("mkv thumbnail 索引 缩略图 下载"),
-        category = "Media Servers", screen = MediaServersPreferencesScreen, anchorItemIndex = 0),
-      SearchablePreference(titleRes = R.string.cloud_sprite_previews, keywords = listOf("sprite seek preview 雪碧图 预览"),
-        category = "Media Servers", screen = MediaServersPreferencesScreen, anchorItemIndex = 0),
       SearchablePreference(titleRes = R.string.cloud_library_mode, keywords = listOf("webdav openlist local cloud 本地 云端 多选 存储 切换"),
         category = "Appearance", screen = AppearancePreferencesScreen),
       SearchablePreference(

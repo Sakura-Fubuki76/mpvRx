@@ -12,18 +12,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.network.NetworkProtocol
-import app.gyrolet.mpvrx.preferences.BrowserPreferences
-import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.browser.dialogs.ConnectionEditorSheet
 import app.gyrolet.mpvrx.ui.browser.networkstreaming.NetworkBrowserScreen
 import app.gyrolet.mpvrx.ui.browser.networkstreaming.NetworkStreamingViewModel
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import me.zhanghai.compose.preference.Preference
-import org.koin.compose.koinInject
 
 @Composable
 internal fun CloudServersPreferences() {
@@ -31,11 +27,6 @@ internal fun CloudServersPreferences() {
   val stack = LocalBackStack.current
   val model: NetworkStreamingViewModel = viewModel(factory = NetworkStreamingViewModel.factory(context.applicationContext as Application))
   val connections by model.connections.collectAsState()
-  val preferences = koinInject<BrowserPreferences>()
-  val hideEmpty by preferences.hideEmptyCloudFolders.collectAsState()
-  val mp4 by preferences.advancedMp4Thumbnails.collectAsState()
-  val mkv by preferences.advancedMkvThumbnails.collectAsState()
-  val sprites by preferences.cloudSpritePreviews.collectAsState()
   var editor by remember { mutableStateOf<NetworkConnection?>(null) }
   var deleting by remember { mutableStateOf<NetworkConnection?>(null) }
   Column {
@@ -66,15 +57,6 @@ internal fun CloudServersPreferences() {
         icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
         onClick = { editor = NetworkConnection(name = "", protocol = NetworkProtocol.WEBDAV, host = "", port = 80) },
       )
-      PreferenceDivider()
-      SwitchPreference(value = hideEmpty, onValueChange = preferences.hideEmptyCloudFolders::set,
-        title = { Text(stringResource(R.string.cloud_hide_empty_folders)) })
-      SwitchPreference(value = mp4, onValueChange = preferences.advancedMp4Thumbnails::set,
-        title = { Text(stringResource(R.string.cloud_advanced_mp4)) })
-      SwitchPreference(value = mkv, onValueChange = preferences.advancedMkvThumbnails::set,
-        title = { Text(stringResource(R.string.cloud_advanced_mkv)) })
-      SwitchPreference(value = sprites, onValueChange = preferences.cloudSpritePreviews::set,
-        title = { Text(stringResource(R.string.cloud_sprite_previews)) })
     }
   }
   editor?.let { server ->

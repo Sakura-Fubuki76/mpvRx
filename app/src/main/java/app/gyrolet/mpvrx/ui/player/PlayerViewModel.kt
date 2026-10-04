@@ -2275,12 +2275,11 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   init {
     viewModelScope.launch {
       val sprites: app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository = getKoin().get()
-      val cloudPreferences: app.gyrolet.mpvrx.preferences.BrowserPreferences = getKoin().get()
-      combine(PlaybackSession.state, preciseDuration, cloudPreferences.cloudSpritePreviews.changes()) { state, duration, enabled ->
-        Triple(state.currentItem, (duration * 1000).toLong(), enabled)
-      }.distinctUntilChanged().collectLatest { (item, duration, enabled) ->
+      combine(PlaybackSession.state, preciseDuration) { state, duration ->
+        state.currentItem to (duration * 1000).toLong()
+      }.distinctUntilChanged().collectLatest { (item, duration) ->
         sprites.reset()
-        if (item != null && enabled && duration > 0 && item.audiobook == null && item.mimeType?.startsWith("audio/") != true) {
+        if (item != null && duration > 0 && item.audiobook == null && item.mimeType?.startsWith("audio/") != true) {
           try { sprites.prepare(item, duration) }
           catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
           catch (error: Exception) { android.util.Log.w("CloudSprites", "Preview preparation failed", error) }

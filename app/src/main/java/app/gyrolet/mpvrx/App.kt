@@ -634,7 +634,7 @@ class App :
               val browser = getKoin().get<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
               getKoin().get<app.gyrolet.mpvrx.repository.CloudMetadataRepository>().scanStorage(connection, repository,
                 appearance.showNetworkThumbnails.get() && browser.showVideoThumbnails.get(),
-                "${browser.advancedMp4Thumbnails.get()}|${browser.advancedMkvThumbnails.get()}")
+                "true|true")
             }
             .onFailure { error ->
               app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("startup.connect.failure", connection.id, detail = "error=${error.javaClass.simpleName}")

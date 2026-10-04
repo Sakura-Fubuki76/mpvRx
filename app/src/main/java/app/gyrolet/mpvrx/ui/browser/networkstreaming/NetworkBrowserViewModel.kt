@@ -106,12 +106,11 @@ class NetworkBrowserViewModel(
   private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>) {
     thumbnailBatch?.cancel()
     thumbnailBatch = viewModelScope.launch {
-      kotlinx.coroutines.flow.combine(appearance.showNetworkThumbnails.changes(), browserPreferences.showVideoThumbnails.changes(),
-        browserPreferences.advancedMp4Thumbnails.changes(), browserPreferences.advancedMkvThumbnails.changes()) { network, video, _, _ -> network && video }
+      kotlinx.coroutines.flow.combine(appearance.showNetworkThumbnails.changes(), browserPreferences.showVideoThumbnails.changes()) { network, video -> network && video }
         .collectLatest { enabled ->
           Log.d("CloudBatch", "directory connection=${connection.id} files=${files.size} enabled=$enabled")
           cloudMetadata.scanStorage(connection, repository, enabled,
-            "${browserPreferences.advancedMp4Thumbnails.get()}|${browserPreferences.advancedMkvThumbnails.get()}")
+            "true|true")
           cloudMetadata.cacheMissingMetadata(connection, files,
             app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND, enabled)
 
@@ -158,7 +157,7 @@ class NetworkBrowserViewModel(
             }.collect { enriched ->
               if (generation == loadGeneration && _files.value != enriched) {
                 app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("view.snapshot", connectionId, currentPath,
-                  "files=${enriched.size} durationKnown=${enriched.count { !it.isDirectory && it.durationMs > 0 }} emptyFolders=${enriched.count { it.isDirectory && it.folderScanComplete && it.videoCount == 0 }} hideEmpty=${browserPreferences.hideEmptyCloudFolders.get()}")
+                  "files=${enriched.size} durationKnown=${enriched.count { !it.isDirectory && it.durationMs > 0 }} emptyFolders=${enriched.count { it.isDirectory && it.folderScanComplete && it.videoCount == 0 }} hideEmpty=true")
                 _files.value = enriched
               }
             }
