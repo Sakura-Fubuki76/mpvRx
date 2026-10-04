@@ -45,7 +45,9 @@ class CloudMetadataRepository(
   private val dao: CloudMetadataDao,
   httpClient: OkHttpClient,
   private val keyframes: app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor,
+  context: android.content.Context,
 ) {
+  private val indexVersions = context.getSharedPreferences("cloud_index_versions", android.content.Context.MODE_PRIVATE)
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
   private val mediaConcurrency = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency()
@@ -62,13 +64,16 @@ class CloudMetadataRepository(
     strategy: String = "", force: Boolean = false) {
     if (connection.protocol !in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) return
     val revision = "${connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode()}|$includeThumbnails|$strategy"
+    val indexKey = "completeTree.v2.${connection.id}"
+    val indexIdentity = listOf(connection.protocol, connection.host, connection.port, connection.useHttps, connection.path, connection.username).hashCode().toString()
+    val revalidateTree = indexVersions.getString(indexKey, null) != indexIdentity
     val previous = storageScans[connection.id]
     if (!force && previous?.revision == revision && (previous.job.isActive ||
       previous.completedAt > 0 && System.currentTimeMillis() - previous.completedAt < 30 * 60_000)) {
       CloudTrace.event("storage.skip", connection.id, detail = "reason=${if (previous.job.isActive) "running" else "fresh_complete"}")
       return
     }
-    CloudTrace.event("storage.schedule", connection.id, detail = "thumbnails=$includeThumbnails force=$force replacing=${previous != null}")
+    CloudTrace.event("storage.schedule", connection.id, detail = "thumbnails=$includeThumbnails force=$force treeUpgrade=$revalidateTree replacing=${previous != null}")
     previous?.job?.cancel()
     val job = storageScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
       try {
@@ -88,22 +93,25 @@ class CloudMetadataRepository(
             val persisted = cachedFilesBelow(connection.id, "/")
             val warm = persisted.filter(::video)
             warm.forEach { discovered.add(revision(it)) }
-            submit(warm)
+            // Repair legacy 'complete' trees before a large warm metadata queue can delay indexing.
+            // Cached rows remain available to the UI throughout this one-time validation.
+            if (!revalidateTree) submit(warm)
             CloudTrace.event("storage.warm", connection.id, detail = "cachedVideos=${warm.size}")
             val rootIndex = dao.getFolder(connection.id, "/")
-            if (!force && rootIndex?.scanComplete == true && app.gyrolet.mpvrx.domain.cloud.isCloudDirectoryFresh(rootIndex.updatedAt)) {
+            if (!force && !revalidateTree && rootIndex?.scanComplete == true && app.gyrolet.mpvrx.domain.cloud.isCloudDirectoryFresh(rootIndex.updatedAt)) {
               fileCount = persisted.size
               CloudTrace.event("storage.index.skip", connection.id, detail = "reason=fresh_persistent_tree videos=${warm.size}")
               return@enumerate true
             }
-            val complete = scanFolders(connection, listOf("/"), network, forceRefresh = force) { listed ->
+            val complete = scanFolders(connection, listOf("/"), network, forceRefresh = force || revalidateTree) { listed ->
               val videos = listed.filter { video(it) && discovered.add(revision(it)) }
               submit(videos)
             }
             val files = cachedFilesBelow(connection.id, "/")
             fileCount = files.size
+            if (complete) indexVersions.edit().putString(indexKey, indexIdentity).apply()
             // Retain offline cached work for directories whose refreshed listing failed.
-            submit(files.filter { video(it) && discovered.add(revision(it)) })
+            submit(files.filter { video(it) && (revalidateTree || discovered.add(revision(it))) })
             CloudTrace.event("storage.enumerated", connection.id, detail = "files=$fileCount complete=$complete streaming=true")
             complete
           },
