@@ -345,6 +345,10 @@ class PlayerViewModel : ViewModel(),
   private val realtimeSubtitleUpdateMutex = Mutex()
 
   private var playlistMetadataJob: Job? = null
+  private var playlistCloudMetadataJob: Job? = null
+  private var playlistRefreshJob: Job? = null
+  private val cloudMetadataDao: app.gyrolet.mpvrx.database.dao.CloudMetadataDao by inject()
+  private val browserPreferences: app.gyrolet.mpvrx.preferences.BrowserPreferences by inject()
   private var controlsVisibleForPolling = false
   private var seekBarVisibleForPolling = false
   private val skippedSegments = mutableSetOf<SkipSegment>()
@@ -2586,6 +2590,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
           refreshPlaylistItems(forceMetadata = true)
         } else {
           playlistMetadataJob?.cancel()
+          playlistCloudMetadataJob?.cancel()
         }
         if (_isAmbientEnabled.value && _ambientStyle.value == AmbientStyle.Glow) {
           scheduleAmbientUpdate(100)
@@ -6478,8 +6483,12 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   private suspend fun getNetworkVideoMetadata(
     connectionId: Long,
     path: String,
-  ): Pair<String, String> =
-    withTimeoutOrNull(PLAYLIST_NETWORK_METADATA_TIMEOUT_MS) {
+  ): Pair<String, String> {
+    val cached = cloudMetadataDao.getVideo(connectionId, app.gyrolet.mpvrx.domain.network.NetworkPath.from(path).value)
+    if (cached != null && cached.durationMs > 0 && cached.width > 0 && cached.height > 0) {
+      return formatDuration(cached.durationMs) to "${cached.width}x${cached.height}"
+    }
+    return withTimeoutOrNull(PLAYLIST_NETWORK_METADATA_TIMEOUT_MS) {
       runInterruptible(Dispatchers.IO) {
         val proxy = NetworkStreamingProxy.getInstance()
         val streamId = "playlist_metadata_${connectionId}_${path.hashCode()}_${System.nanoTime()}"
@@ -6509,6 +6518,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         }
       }
     } ?: ("" to "")
+  }
 
   private fun android.media.MediaMetadataRetriever.playlistMetadata(): Pair<String, String> {
     val durationStr =
@@ -6696,8 +6706,10 @@ val isBrightnessSliderShown = MutableStateFlow(false)
    * Called when a new video starts playing to update the playlist UI.
    */
   fun refreshPlaylistItems(forceMetadata: Boolean = sheetShown.value == Sheets.Playlist) {
-    viewModelScope.launch(Dispatchers.IO) {
-      val updatedItems = getPlaylistData()
+    playlistRefreshJob?.cancel()
+    playlistRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+      val updatedItems = getPlaylistData()?.let { hydrateCloudPlaylist(it) }
+      currentCoroutineContext().ensureActive()
       if (updatedItems != null) {
         // Clear cache if playlist size changed
         if (_playlistItems.value.size != updatedItems.size) {
@@ -6705,10 +6717,76 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         }
 
         _playlistItems.value = updatedItems
+        observeCloudPlaylist(updatedItems, forceMetadata && sheetShown.value == Sheets.Playlist)
 
-        if (forceMetadata && PlaybackSession.state.value.currentItem?.audiobook == null) {
+        if (forceMetadata && sheetShown.value == Sheets.Playlist && PlaybackSession.state.value.currentItem?.audiobook == null) {
           // Load metadata only when the playlist sheet is actually in use.
           loadPlaylistMetadataAsync(updatedItems)
+        }
+      }
+    }
+  }
+
+  private fun cloudPlaylistGroups(items: List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>) =
+    items.filter { it.networkConnectionId != null && it.networkPath.isNotBlank() }
+      .groupBy { it.networkConnectionId!! }.flatMap { (id, rows) ->
+        rows.map { app.gyrolet.mpvrx.domain.network.NetworkPath.from(it.networkPath).value }
+          .distinct().chunked(400).map { id to it }
+      }
+
+  private fun mergeCloudPlaylist(
+    items: List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>,
+    connectionId: Long,
+    paths: Set<String>,
+    metadata: List<app.gyrolet.mpvrx.database.entities.CloudVideoMetadataEntity>,
+    states: List<app.gyrolet.mpvrx.database.entities.PlaybackStateEntity>,
+  ): List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem> {
+    val byPath = metadata.associateBy { it.path }
+    val byIdentity = states.associateBy { it.mediaTitle }
+    return items.map { item ->
+      val path = app.gyrolet.mpvrx.domain.network.NetworkPath.from(item.networkPath).value
+      if (item.networkConnectionId != connectionId || path !in paths) return@map item
+      val cached = byPath[path]
+      val state = byIdentity[PlaybackIdentity.forNetwork(connectionId, path)]
+      val totalMs = cached?.durationMs?.takeIf { it > 0 }
+        ?: state?.let { (it.lastPosition.toLong() + it.timeRemaining).coerceAtLeast(0) * 1000 }
+        ?: 0L
+      val progress = if (item.isPlaying) item.progressPercent else
+        if (totalMs > 0) ((state?.lastPosition ?: 0) * 100000f / totalMs).coerceIn(0f, 100f) else 0f
+      val threshold = browserPreferences.watchedThreshold.get()
+      item.copy(
+        duration = if (totalMs > 0) formatDuration(totalMs) else item.duration,
+        resolution = if (cached != null && cached.width > 0 && cached.height > 0)
+          "${cached.width}x${cached.height}" else item.resolution,
+        progressPercent = progress,
+        isWatched = state?.hasBeenWatched == true || (threshold > 0 && progress >= threshold),
+      )
+    }
+  }
+
+  private suspend fun hydrateCloudPlaylist(
+    items: List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>,
+  ): List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem> {
+    var result = items
+    for ((id, paths) in cloudPlaylistGroups(items)) {
+      result = mergeCloudPlaylist(result, id, paths.toSet(), cloudMetadataDao.getVideos(id, paths),
+        playbackStateDao.getVideoStates(paths.map { PlaybackIdentity.forNetwork(id, it) }))
+    }
+    return result
+  }
+
+  private fun observeCloudPlaylist(
+    items: List<app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem>, enabled: Boolean,
+  ) {
+    playlistCloudMetadataJob?.cancel()
+    if (!enabled) return
+    playlistCloudMetadataJob = viewModelScope.launch(Dispatchers.IO) {
+      for ((id, paths) in cloudPlaylistGroups(items)) launch {
+        combine(cloudMetadataDao.observeVideos(id, paths),
+          playbackStateDao.observeVideoStates(paths.map { PlaybackIdentity.forNetwork(id, it) })) { metadata, states ->
+          metadata to states
+        }.collect { (metadata, states) ->
+          _playlistItems.update { current -> mergeCloudPlaylist(current, id, paths.toSet(), metadata, states) }
         }
       }
     }
@@ -6798,8 +6876,8 @@ val isBrightnessSliderShown = MutableStateFlow(false)
 
           // Apply all batched updates at once (single playlist update)
           if (updates.isNotEmpty()) {
-            _playlistItems.value =
-              _playlistItems.value.map { currentItem ->
+            _playlistItems.update { current ->
+              current.map { currentItem ->
                 val cacheKey = currentItem.uri.toString()
                 val (durationStr, resolutionStr) = updates[cacheKey] ?: return@map currentItem
                 currentItem.copy(
@@ -6807,6 +6885,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
                   resolution = resolutionStr.ifBlank { currentItem.resolution },
                 )
               }
+            }
           }
         }
       }

@@ -82,6 +82,8 @@ fun NetworkVideoCard(
   val thumbnailRepository = koinInject<ThumbnailRepository>()
 
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
+  val newLabelDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
+  val watchedThreshold by browserPreferences.watchedThreshold.collectAsState()
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showDuration by browserPreferences.showDurationField.collectAsState()
@@ -200,9 +202,11 @@ fun NetworkVideoCard(
       bucketDisplayName = connection.name, width = file.width, height = file.height, fps = 0f,
       resolution = app.gyrolet.mpvrx.utils.storage.VideoScanUtils.formatResolution(file.width, file.height),
     )
+    val playbackInfo = app.gyrolet.mpvrx.ui.browser.videolist.buildVideoWithPlaybackInfo(
+      video, playback, System.currentTimeMillis(), newLabelDays, watchedThreshold)
     VideoCard(video = video, onClick = onClick, modifier = modifier, onLongClick = onLongClick,
       isSelected = isSelected, onThumbClick = onThumbnailClick, isGridMode = isGridMode,
-      progressPercentage = progress, isWatched = playback?.hasBeenWatched == true, playbackIdentity = playbackKey,
+      progressPercentage = progress, isWatched = playbackInfo.isWatched, isOldAndUnplayed = playbackInfo.isOldAndUnplayed, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig().copy(showThumbnails = displayThumb),
       showSubtitleIndicator = false)

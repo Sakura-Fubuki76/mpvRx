@@ -28,6 +28,12 @@ interface PlaybackStateDao {
   @Query("SELECT * FROM PlaybackStateEntity WHERE mediaTitle IN (:identifiers) ORDER BY CASE WHEN mediaTitle = :preferred THEN 0 ELSE 1 END LIMIT 1")
   fun observeVideoIdentifiers(identifiers: List<String>, preferred: String): kotlinx.coroutines.flow.Flow<PlaybackStateEntity?>
 
+  @Query("SELECT * FROM PlaybackStateEntity WHERE mediaTitle IN (:identifiers)")
+  suspend fun getVideoStates(identifiers: List<String>): List<PlaybackStateEntity>
+
+  @Query("SELECT * FROM PlaybackStateEntity WHERE mediaTitle IN (:identifiers)")
+  fun observeVideoStates(identifiers: List<String>): kotlinx.coroutines.flow.Flow<List<PlaybackStateEntity>>
+
   @Query("DELETE FROM PlaybackStateEntity")
   suspend fun clearAllPlaybackStates()
 
