@@ -75,6 +75,7 @@ suspend fun loadCustomFontEntries(context: Context): List<CustomFontEntry> =
     for (fontFile in fontFiles) {
       val families = app.gyrolet.mpvrx.domain.fonts.FontNameReader.familyNames(fontFile)
         .ifEmpty {
+          if (fontFile.extension.lowercase() !in setOf("woff", "woff2")) return@ifEmpty emptySet()
           runCatching { fontFile.inputStream().use { TTFFile.open(it).families.values.toSet() } }
             .getOrDefault(emptySet())
         }

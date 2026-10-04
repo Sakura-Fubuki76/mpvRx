@@ -2,14 +2,17 @@ package app.gyrolet.mpvrx.domain.fonts
 
 import java.io.File
 import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 
 /** Read only bounded SFNT name tables, never the multi-megabyte glyph data. */
 internal object FontNameReader {
   fun names(file: File): Set<String> = readNames(file, setOf(1, 4, 6, 16))
 
-  fun familyNames(file: File): Set<String> = readNames(file, setOf(1, 16))
+  fun familyNames(file: File): Set<String> = readNames(file, setOf(1, 16), preferUnicode = true)
 
-  private fun readNames(file: File, nameIds: Set<Int>): Set<String> = runCatching {
+  private fun readNames(file: File, nameIds: Set<Int>, preferUnicode: Boolean = false): Set<String> = runCatching {
     RandomAccessFile(file, "r").use { input ->
       val names = linkedSetOf<String>()
       if (input.length() < 12) return@use names
@@ -41,10 +44,12 @@ internal object FontNameReader {
         val records = input.readUnsignedShort()
         val storage = input.readUnsignedShort()
         if (records > 4096 || 6L + records * 12L > nameLength) continue
+        val unicodeNames = linkedSetOf<String>()
+        val legacyNames = linkedSetOf<String>()
         repeat(records) {
           input.seek(nameOffset + 6 + it * 12L)
           val platform = input.readUnsignedShort()
-          input.readUnsignedShort()
+          val encoding = input.readUnsignedShort()
           input.readUnsignedShort()
           val nameId = input.readUnsignedShort()
           val length = input.readUnsignedShort()
@@ -55,13 +60,51 @@ internal object FontNameReader {
             val bytes = ByteArray(length)
             input.seek(position)
             input.readFully(bytes)
-            val name = String(bytes, if (platform == 0 || platform == 3) Charsets.UTF_16BE else Charsets.ISO_8859_1)
-              .trim().removePrefix("@")
-            if (name.isNotBlank()) names.add(name)
+            val name = decodeName(bytes, platform, encoding)
+            if (name != null) {
+              val unicode = platform == 0 || (platform == 3 && encoding !in 3..5)
+              (if (unicode) unicodeNames else legacyNames).add(name)
+            }
           }
         }
+        // Legacy aliases are often mislabeled by old fonts. Prefer authoritative Unicode names
+        // separately for each TTC face, so a collection member is never lost to another member.
+        names.addAll(unicodeNames)
+        if (!preferUnicode || unicodeNames.isEmpty()) names.addAll(legacyNames)
       }
       names
     }
   }.getOrDefault(emptySet())
+
+  private fun decodeName(bytes: ByteArray, platform: Int, encoding: Int): String? {
+    val charsetName = when (platform) {
+      0 -> "UTF-16BE"
+      3 -> when (encoding) {
+        3 -> "GBK"
+        4 -> "Big5"
+        5 -> "MS949"
+        0, 1, 2, 6, 10 -> "UTF-16BE"
+        else -> return null
+      }
+      1 -> when (encoding) {
+        0 -> "x-MacRoman"
+        1 -> "Shift_JIS"
+        2 -> "Big5"
+        3 -> "EUC-KR"
+        25 -> "GB2312"
+        else -> return null
+      }
+      else -> return null
+    }
+    return runCatching {
+      val name = Charset.forName(charsetName).newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes)).toString().trim().removePrefix("@")
+      name.takeIf { it.isNotBlank() && it.codePoints().noneMatch { code ->
+        Character.isISOControl(code) || code == 0xfffd || code and 0xffff >= 0xfffe ||
+          Character.getType(code) == Character.PRIVATE_USE.toInt() || Character.getType(code) == Character.UNASSIGNED.toInt()
+      } }
+    }.getOrNull()
+  }
+
 }

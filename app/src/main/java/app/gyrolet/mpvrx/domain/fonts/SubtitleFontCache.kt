@@ -30,7 +30,7 @@ object SubtitleFontCache {
   private val json = Json { ignoreUnknownKeys = true }
   @Serializable private data class SourceFont(val uri: String, val name: String, val size: Long, val modified: Long)
   @Serializable private data class Sources(val roots: List<String>, val checkedAt: Long, val files: List<SourceFont>, val traversalVersion: Int = 0)
-  @Serializable private data class Entry(val name: String, val size: Long, val modified: Long, val families: Set<String>)
+  @Serializable private data class Entry(val name: String, val size: Long, val modified: Long, val families: Set<String>, val decodingVersion: Int = 0)
 
   fun directory(context: Context, mediaId: String): File {
     val key = MessageDigest.getInstance("SHA-256").digest(mediaId.toByteArray())
@@ -49,7 +49,7 @@ object SubtitleFontCache {
       }
       val bank = File(context.filesDir, "font-bank")
       val manifest = File(context.filesDir, "font-names.json")
-      val old = runCatching { json.decodeFromString<List<Entry>>(manifest.readText()) }.getOrDefault(emptyList()).associateBy { it.name }
+      val old = runCatching { json.decodeFromString<List<Entry>>(manifest.readText()) }.getOrDefault(emptyList()).filter { it.decodingVersion == 2 }.associateBy { it.name }
       bank.mkdirs()
       val requestedNames = families.filter { it.isNotBlank() && it.lowercase(Locale.ROOT) !in setOf("sans-serif", "serif", "monospace") }
       val bankFiles = fontBankFiles(bank)
@@ -59,7 +59,7 @@ object SubtitleFontCache {
       if (missing.isNotEmpty()) importRequestedFonts(context, bank, missing, allowSourceScan)
       val entries = fontBankFiles(bank).map { file ->
         old[file.relativeTo(bank).invariantSeparatorsPath]?.takeIf { it.size == file.length() && it.modified == file.lastModified() }
-          ?: Entry(file.relativeTo(bank).invariantSeparatorsPath, file.length(), file.lastModified(), FontNameReader.names(file))
+          ?: Entry(file.relativeTo(bank).invariantSeparatorsPath, file.length(), file.lastModified(), FontNameReader.names(file), decodingVersion = 2)
       }
       if (entries != old.values.toList()) {
         val pending = File(context.filesDir, "font-names.json.tmp")
