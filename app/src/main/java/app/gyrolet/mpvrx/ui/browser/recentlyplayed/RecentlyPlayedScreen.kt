@@ -9,6 +9,8 @@
 
 package app.gyrolet.mpvrx.ui.browser.recentlyplayed
 
+import kotlin.math.roundToInt
+
 import android.content.Intent
 import android.widget.Toast
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
@@ -826,6 +828,9 @@ private fun RecentItemsContent(
           if (manualGridColumnsEnabled) videoGridColumnsPref else 0,
           isTelevision,
         )
+        val gridThumbnailWidthPx = with(density) {
+          (((maxWidth - (16 + 2 * (columns - 1)).dp) / columns - 8.dp).coerceAtLeast(1.dp)).roundToPx()
+        }
         LazyVerticalGrid(
           columns = GridCells.Fixed(columns),
           state = gridState,
@@ -879,6 +884,8 @@ private fun RecentItemsContent(
                     },
                   isGridMode = true,
                   gridColumns = columns,
+                  thumbnailWidthPx = gridThumbnailWidthPx,
+                  thumbnailHeightPx = (gridThumbnailWidthPx / (16f / 10f)).roundToInt(),
                   showSubtitleIndicator = showSubtitleIndicator,
                   uiConfig = videoCardUiConfig,
                 )

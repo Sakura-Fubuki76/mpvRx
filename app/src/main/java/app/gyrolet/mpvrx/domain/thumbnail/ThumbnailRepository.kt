@@ -205,7 +205,7 @@ class ThumbnailRepository(
             return@async cached
           }
 
-          val bitmap =
+          val generated =
             when {
               isHttpUrl(video.path) ->
                 networkGenerationSemaphore.withPermit {
@@ -214,15 +214,17 @@ class ThumbnailRepository(
               isNetworkUrl(video.path) -> null
               else ->
                 localGenerationSemaphore.withPermit {
-                  generateLocalThumbnail(video, widthPx, heightPx)
+                  generateLocalThumbnail(video)
                 }
             } ?: return@async null
 
           currentCoroutineContext().ensureActive()
+          // Keep the full extraction resolution on disk; card-sized copies belong in memory.
+          writeBitmapToDisk(diskCacheKey(video), generated, isNetworkUrl(video.path))
+          val bitmap = scaleBitmap(generated, widthPx, heightPx)
           synchronized(memoryCache) {
             memoryCache.put(key, bitmap)
           }
-          writeBitmapToDisk(diskCacheKey(video), bitmap, isNetworkUrl(video.path))
           _thumbnailReadyKeys.tryEmit(key)
           bitmap
         }
@@ -475,7 +477,7 @@ class ThumbnailRepository(
   // Keep extraction-quality changes from reusing smaller legacy images that were
   // cached without their requested dimensions in the key.
   fun diskCacheKey(video: Video): String =
-    "video-thumb-v2|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+    "video-thumb-v3-master|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey()}"
 
   private fun canonicalLocalPath(video: Video): String {
     val raw = video.path.ifBlank { video.uri.toString() }
@@ -611,12 +613,10 @@ class ThumbnailRepository(
 
   private suspend fun generateLocalThumbnail(
     video: Video,
-    widthPx: Int,
-    heightPx: Int,
   ): Bitmap? {
     if (ZipArchiveMedia.isPlaybackUri(video.uri.toString())) return null
     val mode = browserPreferences.thumbnailMode.get()
-    val dimension = maxOf(widthPx, heightPx, MAX_THUMBNAIL_SIZE).coerceAtMost(thumbnailMaxSize())
+    val dimension = thumbnailMaxSize()
 
     if (video.isAudio || mode == ThumbnailMode.Smart || mode == ThumbnailMode.EmbeddedThumbnail) {
       // Opening a MediaMetadataRetriever here means a second demuxer on the very file the native
@@ -624,16 +624,16 @@ class ThumbnailRepository(
       // probe when a sidecar image is provably there. Audio and EmbeddedThumbnail keep it: there
       // is no native frame to fall back to.
       if (mode != ThumbnailMode.Smart || EmbeddedArtworkCandidates.hasSidecarArtwork(canonicalLocalPath(video))) {
-        generateEmbeddedArtwork(video)?.let { return scaleBitmap(it, widthPx, heightPx) }
+        generateEmbeddedArtwork(video)?.let { return it }
       }
       if (video.isAudio) return null
     }
 
     generateWithFastThumbnails(video, mode, dimension)?.let {
-      return scaleBitmap(it, widthPx, heightPx)
+      return it
     }
 
-    return extractLocalVideoFrame(video, widthPx, heightPx)
+    return extractLocalVideoFrame(video, dimension, dimension)
   }
 
   private fun generateEmbeddedArtwork(video: Video): Bitmap? =
@@ -865,7 +865,13 @@ class ThumbnailRepository(
     val scaledHeight = max(1, (bitmap.height * scale).roundToInt())
     val scaled =
       try {
-        Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        if (scale < 1f && bitmap.config == Bitmap.Config.ARGB_8888 && app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge.available) {
+          app.gyrolet.mpvrx.domain.cloud.YuvToBitmapBridge.argbScale(
+            bitmap, scaledWidth, scaledHeight, app.gyrolet.mpvrx.domain.cloud.FilterMode.BOX,
+          ) ?: Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        } else {
+          Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
+        }
       } catch (_: IllegalArgumentException) {
         // Bitmap was recycled between the check and the scale call
         return bitmap
