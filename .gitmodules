@@ -1,3 +1,6 @@
 [submodule "app/src/main/cpp/third_party/libyuv"]
 	path = app/src/main/cpp/third_party/libyuv
 	url = https://chromium.googlesource.com/libyuv/libyuv
+[submodule "third_party/anitomy"]
+	path = third_party/anitomy
+	url = https://github.com/TraceLTRC/kotlin-anitomy.git

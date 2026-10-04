@@ -41,6 +41,7 @@ class NetworkRepository(
   private val dao: NetworkConnectionDao,
   private val credentialCipher: NetworkCredentialCipher,
   private val clientFactory: (NetworkConnection) -> NetworkClient = NetworkClientFactory::createClient,
+  private val animeDao: app.gyrolet.mpvrx.database.dao.AnimeDao? = null,
   private val cloudMetadataDao: app.gyrolet.mpvrx.database.dao.CloudMetadataDao? = null,
 ) {
   private val activeClients = ConcurrentHashMap<Long, NetworkClient>()
@@ -152,6 +153,8 @@ class NetworkRepository(
       }
       if (reconnectRequired) {
         org.koin.java.KoinJavaComponent.getOrNull<CloudMetadataRepository>(CloudMetadataRepository::class.java)?.cancelStorage(connection.id)
+        org.koin.java.KoinJavaComponent.getOrNull<AnimeRepository>(AnimeRepository::class.java)?.stop(connection.id)
+        animeDao?.clearConnection(connection.id)
         cloudMetadataDao?.invalidateConnection(connection.id)
         val oldClient = activeClients.remove(connection.id)
         val closeError = oldClient?.let { closeClient(it) }

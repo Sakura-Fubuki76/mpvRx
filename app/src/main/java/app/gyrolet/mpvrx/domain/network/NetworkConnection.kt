@@ -40,6 +40,8 @@ data class NetworkConnection(
    */
   @ColumnInfo(defaultValue = "0")
   val isDeleted: Boolean = false,
+  @ColumnInfo(defaultValue = "0")
+  val isAnime: Boolean = false,
 ) {
   override fun toString(): String =
     "NetworkConnection(id=$id, name=$name, protocol=$protocol, credentials=<redacted>)"

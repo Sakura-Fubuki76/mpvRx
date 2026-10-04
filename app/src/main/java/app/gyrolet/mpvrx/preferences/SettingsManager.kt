@@ -269,7 +269,12 @@ class SettingsManager(
     val networkConnections = database.networkConnectionDao().getAllConnectionsList()
     serializer.startTag(null, TAG_NETWORK_CONNECTIONS)
     networkConnections.forEach { connection ->
-      writeNetworkConnection(serializer, connection)
+      val matches = JSONArray()
+      database.animeDao().getManualFolders(connection.id).forEach { mapping ->
+        matches.put(org.json.JSONObject().put("path", mapping.path).put("subjectId", mapping.subjectId)
+          .put("query", mapping.query).put("offset", mapping.episodeOffset))
+      }
+      writeNetworkConnection(serializer, connection, matches.toString())
       exportedCount++
       exportedKeys.add("network:${connection.name}")
     }
@@ -359,6 +364,7 @@ class SettingsManager(
   private fun writeNetworkConnection(
     serializer: XmlSerializer,
     connection: NetworkConnection,
+    animeMatches: String,
   ) {
     serializer.startTag(null, TAG_NETWORK_CONNECTION)
     serializer.attribute(null, "id", connection.id.toString())
@@ -374,6 +380,8 @@ class SettingsManager(
     serializer.attribute(null, "isAnonymous", connection.isAnonymous.toString())
     serializer.attribute(null, "lastConnected", connection.lastConnected.toString())
     serializer.attribute(null, "autoConnect", connection.autoConnect.toString())
+    serializer.attribute(null, "animeMatches", Base64.encodeToString(animeMatches.toByteArray(Charsets.UTF_8), Base64.NO_WRAP))
+    serializer.attribute(null, "isAnime", connection.isAnime.toString())
     serializer.attribute(null, "useHttps", connection.useHttps.toString())
     serializer.endTag(null, TAG_NETWORK_CONNECTION)
   }
@@ -393,6 +401,7 @@ class SettingsManager(
     val editor = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context).edit()
     val parents = ArrayDeque<String>()
     val networkConnections = mutableListOf<NetworkConnection>()
+    val animeMatches = mutableMapOf<Long, JSONArray>()
     var importedCloudSelection: String? = null
 
     while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -427,7 +436,11 @@ class SettingsManager(
             TAG_NETWORK_CONNECTION -> {
               if (parents.size == 4 && parents[1] == TAG_DATABASE && parents[2] == TAG_NETWORK_CONNECTIONS) {
                 try {
-                  networkConnections.add(readNetworkConnection(parser))
+                  val connection = readNetworkConnection(parser)
+                  networkConnections.add(connection)
+                  parser.getAttributeValue(null, "animeMatches")?.let { encoded ->
+                    animeMatches[connection.id] = JSONArray(String(Base64.decode(encoded, Base64.DEFAULT), Charsets.UTF_8))
+                  }
                 } catch (e: Exception) {
                   stats.failed++
                   stats.errors.add("Failed to import network connection: ${e.message}")
@@ -457,6 +470,16 @@ class SettingsManager(
               restored.id
             } else dao.insert(restored)
             if (imported.id > 0) ids[imported.id] = id
+            animeMatches[imported.id]?.let { matches ->
+              for (index in 0 until matches.length()) {
+                val mapping = matches.getJSONObject(index)
+                val subjectId = mapping.optLong("subjectId")
+                if ((subjectId > 0 || mapping.optString("query").startsWith("#group:")) && mapping.optString("path").isNotBlank()) database.animeDao().putFolder(
+                  app.gyrolet.mpvrx.database.entities.AnimeFolderEntity(id,
+                    app.gyrolet.mpvrx.domain.network.NetworkPath.from(mapping.getString("path")).value,
+                    mapping.optString("query"), subjectId.takeIf { it > 0 }, true, mapping.optInt("offset"), 0))
+              }
+            }
             existing.removeAll { it.id == id }
             existing.add(restored.copy(id = id))
           }
@@ -540,6 +563,7 @@ class SettingsManager(
       lastConnected = parser.getAttributeValue(null, "lastConnected")?.toLong() ?: 0L,
       // Avoid repeated authentication attempts before credentials have been re-entered.
       autoConnect = parser.getAttributeValue(null, "autoConnect")?.toBooleanStrict() ?: false,
+      isAnime = parser.getAttributeValue(null, "isAnime")?.toBooleanStrict() ?: false,
       useHttps = parser.getAttributeValue(null, "useHttps")?.toBooleanStrict() ?: false,
     )
 

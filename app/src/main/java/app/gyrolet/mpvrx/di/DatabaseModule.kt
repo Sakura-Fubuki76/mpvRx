@@ -1013,6 +1013,14 @@ val MIGRATION_31_32 =
     }
   }
 
+val MIGRATION_32_33 = object : Migration(32, 33) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE network_connections ADD COLUMN isAnime INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("CREATE TABLE anime_subjects (id INTEGER NOT NULL, payload TEXT NOT NULL, fetchedAt INTEGER NOT NULL, PRIMARY KEY(id))")
+    db.execSQL("CREATE TABLE anime_folders (connectionId INTEGER NOT NULL, path TEXT NOT NULL, query TEXT NOT NULL, subjectId INTEGER, manual INTEGER NOT NULL, episodeOffset INTEGER NOT NULL, attemptedAt INTEGER NOT NULL, PRIMARY KEY(connectionId, path))")
+  }
+}
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -1060,6 +1068,7 @@ val DatabaseModule =
           MIGRATION_29_30,
           MIGRATION_30_31,
           MIGRATION_31_32,
+          MIGRATION_32_33,
         ).build()
     }
 
@@ -1071,6 +1080,8 @@ val DatabaseModule =
 
     single { ThumbnailRepository(androidContext()) }
     single { get<MpvRxDatabase>().cloudMetadataDao() }
+    single { get<MpvRxDatabase>().animeDao() }
+    single { app.gyrolet.mpvrx.repository.AnimeRepository(get(), get(), androidContext()) }
     single { app.gyrolet.mpvrx.repository.CloudMetadataRepository(get(), get(), get()) }
     single { app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor(get()) }
     single { app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository(androidContext(), get(), get(), get()) }
@@ -1121,6 +1132,7 @@ val DatabaseModule =
         dao = get(),
         credentialCipher = get(),
         cloudMetadataDao = get(),
+        animeDao = get(),
       )
     }
 

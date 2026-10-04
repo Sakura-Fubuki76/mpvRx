@@ -56,6 +56,8 @@ import app.gyrolet.mpvrx.domain.network.NetworkConnection
     RecentlyPlayedEntity::class,
     VideoMetadataEntity::class,
     NetworkConnection::class,
+    app.gyrolet.mpvrx.database.entities.AnimeSubjectEntity::class,
+    app.gyrolet.mpvrx.database.entities.AnimeFolderEntity::class,
     PlaylistEntity::class,
     PlaylistItemEntity::class,
     DirectoryScanEntity::class,
@@ -76,11 +78,13 @@ import app.gyrolet.mpvrx.domain.network.NetworkConnection
     app.gyrolet.mpvrx.database.entities.CloudDirectoryStateEntity::class,
     app.gyrolet.mpvrx.database.entities.CloudFolderMetadataEntity::class,
   ],
-  version = 32,
+  version = 33,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)
 abstract class MpvRxDatabase : RoomDatabase() {
+  abstract fun animeDao(): app.gyrolet.mpvrx.database.dao.AnimeDao
+
   abstract fun cloudMetadataDao(): app.gyrolet.mpvrx.database.dao.CloudMetadataDao
 
   abstract fun videoDataDao(): PlaybackStateDao

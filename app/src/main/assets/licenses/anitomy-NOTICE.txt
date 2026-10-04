@@ -1,0 +1,4 @@
+AnitomyK: https://github.com/TraceLTRC/kotlin-anitomy
+Original Anitomy: https://github.com/erengy/anitomy
+Source included unmodified as the pinned third_party/anitomy Git submodule.
+License: Mozilla Public License 2.0.

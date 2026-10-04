@@ -37,6 +37,7 @@ plugins {
 }
 
 android {
+  sourceSets.getByName("main").java.srcDir(rootProject.file("third_party/anitomy/src/main/kotlin"))
   namespace = "app.gyrolet.mpvrx"
   compileSdk = 37
   ndkVersion = "27.3.13750724"
