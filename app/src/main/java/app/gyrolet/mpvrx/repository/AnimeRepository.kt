@@ -35,7 +35,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
   private val catalogs = java.util.concurrent.ConcurrentHashMap<Long, StateFlow<AnimeCatalog>>()
   fun observe(id: Long): StateFlow<AnimeCatalog> = catalogs.getOrPut(id) {
     combine(dao.observeFolders(id), dao.observeSubjects()) { folders, subjects ->
-    AnimeCatalog(folders.associateBy { it.path }, subjects.mapNotNull { row ->
+    AnimeCatalog(folders.filter { it.manual || it.query.startsWith("directory-v3 | ") }.associateBy { it.path }, subjects.mapNotNull { row ->
       runCatching { row.id to json.decodeFromString<AnimeSubject>(row.payload) }.getOrNull()
     }.toMap())
   }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeCatalog(emptyMap(), emptyMap()))
@@ -57,7 +57,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
       groups.forEach { group ->
         ensureActive()
         val path = group.key
-        val query = "native-v2 | " + group.queries.joinToString(" | ")
+        val query = "directory-v3 | " + group.queries.joinToString(" | ")
         val previous = dao.getFolder(id, path)
         if (previous?.manual == true) {
           previous.subjectId?.let { runCatching { subject(it, forceRefresh = force) } }
@@ -66,7 +66,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
         if (!force && previous != null && previous.query == query && System.currentTimeMillis() - previous.attemptedAt < 24 * 60 * 60_000L) return@forEach
         try {
           val index = aliasIndex()
-          val aliasId = group.queries.firstNotNullOfOrNull { index[animeNameKey(it)]?.singleOrNull() }
+          val aliasId = index[animeNameKey(group.query)]?.singleOrNull()
           var match = aliasId?.let { subject(it, forceRefresh = force) }
           if (match == null) {
             try {
@@ -80,6 +80,8 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
           }
           if (match == null) {
             for (name in group.queries.take(4)) {
+              match = index[animeNameKey(name)]?.singleOrNull()?.let { subject(it, forceRefresh = force) }
+              if (match != null) break
               match = matchAnimeSubject(name, search(name))
               if (match != null) break
             }
@@ -91,7 +93,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
           CloudTrace.event("anime.match", id, path, "matched=${match != null}")
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
-          associations.withLock { dao.bindAutomatically(AnimeFolderEntity(id, path, query, previous?.subjectId, false, previous?.episodeOffset ?: 0, System.currentTimeMillis())) }
+          associations.withLock { dao.bindAutomatically(AnimeFolderEntity(id, path, query, previous?.takeIf { it.query == query }?.subjectId, false, previous?.episodeOffset ?: 0, System.currentTimeMillis())) }
           CloudTrace.event("anime.failed", id, path, "error=${error.javaClass.simpleName}")
         }
       }

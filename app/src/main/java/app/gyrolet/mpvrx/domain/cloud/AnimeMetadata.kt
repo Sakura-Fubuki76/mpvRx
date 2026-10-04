@@ -38,6 +38,7 @@ private fun parseAnimeFilenameUncached(raw: String): AnimeFilename {
   val episodeMatch = Regex("(?i)S\\d{1,2}E(\\d{1,3}(?:\\.\\d+)?)").find(name)
     ?: Regex("(?i)(?:^|[\\s_\\-\\[\\(])(?:EP?|SP|OVA|OAD|NCOP|NCED|OP|ED)[ ._-]*(\\d{1,3}(?:\\.\\d+)?)").find(name)
     ?: Regex("第\\s*(\\d{1,3}(?:\\.\\d+)?)\\s*[话話集]").find(name)
+    ?: Regex("\\[(\\d{1,3}(?:\\.\\d+)?)(?:v\\d+)?\\]", RegexOption.IGNORE_CASE).find(name)
     ?: Regex("(?:[ -]+|\\[)(\\d{1,3}(?:\\.\\d+)?)(?:v\\d+)?(?=[\\s\\[\\]_()-]|$)").find(name)
   val episode = episodeMatch?.groupValues?.get(1)?.toDoubleOrNull()
   if (episodeMatch != null) {
@@ -59,7 +60,7 @@ private fun parseAnimeFilenameUncached(raw: String): AnimeFilename {
     else -> 1
   }
   return AnimeFilename(if (explicitSeasonOrChinese) name else originalTitle.ifBlank { name },
-    originalEpisode ?: episode, special, type)
+    episode ?: originalEpisode, special, type)
 }
 
 fun animeNameKey(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFKC)
@@ -118,31 +119,36 @@ fun animeVideoGroups(files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>):
   }
   val releaseTag = Regex("(?i)Ma\\d+p_|Hi\\d+p_|\\d{3,4}[pi]|\\d{3,4}x\\d{3,4}")
   val parentPaths = videos.filterNot(::isAnimeExtraVideo).map { it.path.substringBeforeLast('/') }.toSet()
-  return videos.groupBy { file ->
+  val grouped = videos.groupBy { file ->
     val parent = file.path.substringBeforeLast('/').ifBlank { "/" }
     val segments = parent.split('/').filter { it.isNotBlank() }
     val extra = segments.indexOfFirst { it.lowercase(java.util.Locale.ROOT) in extraDirectoryNames ||
       Regex("(?i)^Menu(?: \\(.*\\))?$").matches(it) }
     val release = segments.take(if (extra >= 0) extra else segments.size).indexOfLast { releaseTag.containsMatchIn(it) }
+    val enclosing = (1..segments.size).map { "/" + segments.take(it).joinToString("/") }
+      .firstOrNull { it in parentPaths && !Regex("(?i)^(anime|movies?|videos?|BD|BDMV|动画|电影)$").matches(animeDirectoryTitle(it.substringAfterLast('/'))) }
     when {
+      enclosing != null -> enclosing
       release >= 0 -> "/" + segments.take(release + 1).joinToString("/")
       extra > 0 -> "/" + segments.take(extra).joinToString("/")
       else -> (1..segments.size).map { "/" + segments.take(it).joinToString("/") }
         .lastOrNull { it in parentPaths } ?: parent
     }
-  }.flatMap { (directory, rows) ->
+  }
+  return grouped.map { (directory, rows) ->
     val folderTitle = animeDirectoryTitle(directory.substringAfterLast('/'))
     val normal = rows.filter { animeSectionPath(directory, it).isEmpty() && !parseAnimeFilename(it.name).special }.ifEmpty { rows }
     val titles = normal.groupBy { parseAnimeFilename(it.name).title }
     val generic = directory == "/" || Regex("(?i)^(anime|movies?|videos?|BD|BDMV|动画|电影|\\d{4})$").matches(folderTitle)
     val seasonFolder = Regex("(?i)^S([1-9])$").matchEntire(folderTitle)
     val title = if (seasonFolder != null) animeDirectoryTitle(directory.substringBeforeLast('/').substringAfterLast('/')) + " Season " + seasonFolder.groupValues[1]
-      else folderTitle.ifBlank { titles.keys.firstOrNull().orEmpty() }
+      else if (generic) titles.keys.singleOrNull().orEmpty() else folderTitle
     val ancestors = directory.split('/').filter { it.isNotBlank() }.dropLast(1).asReversed().map(::animeDirectoryTitle)
     val season = animeSeason(title)
-    val queries = (listOf(title) + titles.keys + ancestors).filter { it.isNotBlank() && (season == null || animeSeason(it) == season) }.distinct()
-    if (generic && titles.size > 1) titles.map { (name, members) ->
-      AnimeVideoGroup("$directory/#anime=${animeNameKey(name)}", directory, name, members, listOf(name))
-    } else listOf(AnimeVideoGroup(directory, directory, title, rows, queries))
+    val safeAncestors = ancestors.filter { ancestor ->
+      grouped.keys.count { candidate -> candidate.split('/').dropLast(1).any { animeDirectoryTitle(it) == ancestor } } == 1
+    }
+    val queries = (listOf(title) + safeAncestors).filter { it.isNotBlank() && (season == null || animeSeason(it) == season) }.distinct()
+    AnimeVideoGroup(directory, directory, title.ifBlank { folderTitle }, rows, queries)
   }
 }
