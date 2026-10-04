@@ -47,11 +47,15 @@ internal fun AnimeLibraryContent(
   val cloud = koinInject<CloudMetadataRepository>()
   val anime = koinInject<AnimeRepository>()
   val snapshot by remember(connection.id, currentPath) {
-    anime.observeLibrary(connection.id, currentPath, cloud.observeLibrary(connection.id, currentPath, videosOnly = true))
+    anime.observeLibrary(connection.id, currentPath, cloud.observeLibraryData(connection.id, currentPath, videosOnly = true))
   }.collectAsState()
+  LaunchedEffect(snapshot.loaded) {
+    if (snapshot.loaded) CloudTrace.event("anime.library.ready", connection.id, currentPath, "videos=${snapshot.files.size} groups=${snapshot.groups.size}")
+  }
   val allFiles = snapshot.files
   val libraryGroups = snapshot.groups
   val catalog by remember(connection.id) { anime.observe(connection.id) }.collectAsState()
+  val matchProgress by remember(connection.id) { anime.observeProgress(connection.id) }.collectAsState()
   val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
   val identities = remember(snapshot.playbackIdentities, detailKey) {
     if (detailKey == null) snapshot.playbackIdentities.values.toList()
@@ -63,30 +67,48 @@ internal fun AnimeLibraryContent(
       rows.flatMap { it }.associateBy { it.mediaTitle }
     }
   }.collectAsState(emptyMap())
-  val recent by koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().recentlyPlayedDao().observeRecentlyPlayed(1000).collectAsState(emptyList())
+  val recentDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().recentlyPlayedDao()
+  val recent by remember(recentDao) { recentDao.observeRecentlyPlayed(1000) }.collectAsState(emptyList())
   val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
   LaunchedEffect(connection.id, snapshot.playbackIdentities) {
     kotlinx.coroutines.delay(750)
-    if (detailKey == null) anime.schedule(connection.id, allFiles)
+    if (detailKey == null && snapshot.loaded && allFiles.isNotEmpty()) anime.schedule(connection.id, allFiles)
   }
 
-  val visible = remember(groups, catalog, searchQuery) {
-    if (detailKey != null) emptyList() else groups.entries.filter { (path, files) ->
-      searchQuery.isBlank() || path.contains(searchQuery, true) || files.any { it.name.contains(searchQuery, true) } ||
-        catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
-    }.sortedBy { (path, _) -> catalog.subjects[catalog.folders[path]?.subjectId]?.title ?: path }
+  val visible by produceState(initialValue = emptyList<Map.Entry<String, List<NetworkFile>>>(), snapshot, catalog, searchQuery, detailKey) {
+    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+      if (detailKey != null) emptyList() else groups.entries.filter { (path, files) ->
+        searchQuery.isBlank() || path.contains(searchQuery, true) || files.any { it.name.contains(searchQuery, true) } ||
+          catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
+      }.sortedBy { (path, _) -> libraryGroups[path]?.query ?: path }
+    }
+  }
+  val watchedCounts by produceState(initialValue = emptyMap<String, Pair<Int, Int>>(), snapshot, playback) {
+    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+      libraryGroups.mapValues { (_, group) ->
+        val episodes = group.files.filterNot(::isAnimeExtraVideo)
+        episodes.count { playback[snapshot.playbackIdentities[it.path]]?.hasBeenWatched == true } to episodes.size
+      }
+    }
+  }
+  val featuredKey by produceState<String?>(null, snapshot, visible, recent, catalog) {
+    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+      val owners = visible.flatMap { entry -> entry.value.map { it.path to entry.key } }.toMap()
+      recent.firstNotNullOfOrNull { row ->
+        val reference = NetworkPlaybackUri.parse(row.filePath)
+        if (reference?.connectionId == connection.id) owners[reference.path.value] else null
+      } ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }?.key
+    }
   }
   val retainedGridState = libraryGridState ?: rememberLazyGridState()
   if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles, force = true) }, modifier = modifier.fillMaxSize()) {
   LazyVerticalGrid(state = retainedGridState, columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-    val recentKey = recent.firstNotNullOfOrNull { row ->
-      val reference = NetworkPlaybackUri.parse(row.filePath)
-      if (reference?.connectionId == connection.id) visible.firstOrNull { (_, files) -> files.any { it.path == reference.path.value } }?.key else null
-    }
-    val featured = visible.firstOrNull { it.key == recentKey } ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }
-    if (featured != null) item(span = { GridItemSpan(maxLineSpan) }) {
+    val featured = visible.firstOrNull { it.key == featuredKey }
+      ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }
+      ?: visible.firstOrNull()
+    if (featured != null) item(key = "anime-featured", span = { GridItemSpan(maxLineSpan) }) {
       val subject = catalog.subjects[catalog.folders[featured.key]?.subjectId]
       val featuredTitle = subject?.title ?: libraryGroups[featured.key]?.query.orEmpty()
       Card(onClick = { onOpenDetails(featured.key, libraryGroups.getValue(featured.key).directory, featuredTitle) }, shape = RoundedCornerShape(24.dp)) {
@@ -108,7 +130,7 @@ internal fun AnimeLibraryContent(
       val binding = catalog.folders[path]
       val subject = catalog.subjects[binding?.subjectId]
       val fallback = libraryGroups[path]?.query.orEmpty()
-      val watched = files.filterNot(::isAnimeExtraVideo).count { playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, it.path)]?.hasBeenWatched == true }
+      val (watched, episodeCount) = watchedCounts[path] ?: (0 to 0)
       Column {
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
@@ -130,9 +152,16 @@ internal fun AnimeLibraryContent(
         }
         Text(subject?.title ?: fallback, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleSmall,
           maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(subject?.date?.take(4)?.ifBlank { null } ?: stringResource(R.string.anime_unmatched),
+        val matchLabel = when {
+          subject != null -> subject.date.take(4).ifBlank { stringResource(R.string.anime_matched) }
+          matchProgress.running && matchProgress.current == path -> stringResource(R.string.anime_matching)
+          binding?.query?.endsWith(" | request-failed") == true -> stringResource(R.string.anime_match_failed)
+          binding?.attemptedAt != null -> stringResource(R.string.anime_no_match)
+          else -> stringResource(R.string.anime_unmatched)
+        }
+        Text(matchLabel,
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (watched > 0) LinearProgressIndicator(progress = { watched.toFloat() / files.count { !isAnimeExtraVideo(it) }.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+        if (watched > 0) LinearProgressIndicator(progress = { watched.toFloat() / episodeCount.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
       }
     }
     if (visible.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
@@ -143,8 +172,26 @@ internal fun AnimeLibraryContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
+  if (matchProgress.running) Surface(
+    modifier = Modifier.align(Alignment.TopCenter).padding(top = if (isRefreshing) 48.dp else 8.dp),
+    shape = RoundedCornerShape(16.dp), tonalElevation = 3.dp,
+  ) {
+    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+      CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+      Text(stringResource(R.string.anime_matching_progress, matchProgress.completed, matchProgress.total), style = MaterialTheme.typography.labelMedium)
+    }
   }
-  if (detailKey == null && visible.isEmpty()) Text(stringResource(R.string.anime_index_loading), modifier.padding(24.dp))
+  }
+  if (detailKey == null && visible.isEmpty()) Column(modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    val readingCache = !snapshot.loaded || (snapshot.groups.isNotEmpty() && searchQuery.isBlank())
+    if (readingCache) CircularProgressIndicator(Modifier.size(24.dp))
+    Text(stringResource(when {
+      readingCache -> R.string.anime_cache_loading
+      searchQuery.isNotBlank() -> R.string.ui_no_results_found
+      else -> R.string.anime_index_loading
+    }))
+  }
+
   detailKey?.let { path ->
     val files = groups[path].orEmpty()
     val binding = catalog.folders[path]

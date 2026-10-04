@@ -2975,4 +2975,10 @@
   <string name="pref_anime_cover_colors_summary">Use each anime cover to colour its detail page</string>
   <string name="anime_cast">Cast &amp; characters</string>
   <string name="anime_staff">Production staff</string>
+  <string name="anime_cache_loading">Loading saved anime library…</string>
+  <string name="anime_matching">Matching…</string>
+  <string name="anime_matching_progress">Matching in background: %1$d / %2$d</string>
+  <string name="anime_no_match">No reliable match found</string>
+  <string name="anime_match_failed">Matching failed; retry later</string>
+  <string name="anime_matched">Matched</string>
 </resources>

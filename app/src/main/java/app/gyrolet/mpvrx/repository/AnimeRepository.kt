@@ -15,9 +15,11 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 
-class AnimeLibrarySnapshot(val files: List<NetworkFile> = emptyList(), val groups: Map<String, AnimeVideoGroup> = emptyMap(), val playbackIdentities: Map<String, String> = emptyMap())
+class AnimeLibrarySnapshot(val files: List<NetworkFile> = emptyList(), val groups: Map<String, AnimeVideoGroup> = emptyMap(), val playbackIdentities: Map<String, String> = emptyMap(), val loaded: Boolean = false)
 
-data class AnimeCatalog(val folders: Map<String, AnimeFolderEntity>, val subjects: Map<Long, AnimeSubject>)
+data class AnimeMatchProgress(val running: Boolean = false, val current: String? = null, val completed: Int = 0, val total: Int = 0)
+
+data class AnimeCatalog(val folders: Map<String, AnimeFolderEntity>, val subjects: Map<Long, AnimeSubject>, val loaded: Boolean = true)
 
 /** A separate queue keeps public metadata requests out of the playback/thumbnail queue. */
 class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: android.content.Context) {
@@ -39,7 +41,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
 
   private val decodedSubjects = java.util.concurrent.ConcurrentHashMap<Long, Pair<String, AnimeSubject>>()
   private val libraries = java.util.concurrent.ConcurrentHashMap<Pair<Long, String>, StateFlow<AnimeLibrarySnapshot>>()
-  fun observeLibrary(id: Long, path: String, source: StateFlow<List<NetworkFile>>): StateFlow<AnimeLibrarySnapshot> = libraries.getOrPut(id to path) {
+  fun observeLibrary(id: Long, path: String, source: Flow<List<NetworkFile>>): StateFlow<AnimeLibrarySnapshot> = libraries.getOrPut(id to path) {
     var structureKey: List<Pair<String, String>>? = null
     var structure = emptyList<AnimeVideoGroup>()
     var identities = emptyMap<String, String>()
@@ -55,7 +57,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
         CloudTrace.event("anime.structure", id, path, "videos=${files.size} groups=${structure.size} elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}")
       }
       val latest = files.associateBy { it.path }
-      AnimeLibrarySnapshot(files, structure.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities)
+      AnimeLibrarySnapshot(files, structure.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities, loaded = true)
     }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeLibrarySnapshot())
   }
 
@@ -69,10 +71,32 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
         row.id to decoded
       }.getOrNull()
     }.toMap())
-  }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeCatalog(emptyMap(), emptyMap()))
+  }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeCatalog(emptyMap(), emptyMap(), loaded = false))
   }
 
-  fun stop(id: Long) { pending.remove(id); jobs.remove(id)?.cancel() }
+  private val warmJobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
+
+  /** Read saved data while the storage list is visible; warming never triggers network scraping. */
+  @Synchronized
+  fun prepareLibrary(id: Long, source: Flow<List<NetworkFile>>) {
+    if (libraries[id to "/"]?.value?.loaded == true || warmJobs[id]?.isActive == true) return
+    warmJobs[id] = scope.launch {
+      val snapshot = observeLibrary(id, "/", source).first { it.loaded }
+      observe(id).first { it.loaded }
+      CloudTrace.event("anime.cache.warm", id, "/", "videos=${snapshot.files.size} groups=${snapshot.groups.size}")
+    }
+  }
+
+  private val progress = java.util.concurrent.ConcurrentHashMap<Long, MutableStateFlow<AnimeMatchProgress>>()
+  fun observeProgress(id: Long): StateFlow<AnimeMatchProgress> = progress.getOrPut(id) { MutableStateFlow(AnimeMatchProgress()) }
+  private fun publishProgress(id: Long, value: AnimeMatchProgress) { progress.getOrPut(id) { MutableStateFlow(AnimeMatchProgress()) }.value = value }
+
+  fun stop(id: Long) {
+    pending.remove(id)
+    jobs.remove(id)?.cancel()
+    scheduledRevisions.remove(id)
+    progress[id]?.update { it.copy(running = false, current = null) }
+  }
 
   @Synchronized
   fun schedule(id: Long, files: List<NetworkFile>, force: Boolean = false) {
@@ -85,7 +109,9 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
     jobs[id] = scope.launch {
       dao.clearAssignments(id)
       val groups = withContext(Dispatchers.Default) { animeVideoGroups(files) }
-      groups.forEach { group ->
+      publishProgress(id, AnimeMatchProgress(running = true, total = groups.size))
+      groups.forEachIndexed { position, group ->
+        publishProgress(id, AnimeMatchProgress(true, group.key, position, groups.size))
         ensureActive()
         val path = group.key
         val baseQuery = "directory-v3 | " + group.queries.joinToString(" | ")
@@ -93,13 +119,13 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
         val previous = dao.getFolder(id, path)
         if (previous?.manual == true) {
           previous.subjectId?.let { runCatching { subject(it, forceRefresh = force) } }
-          return@forEach
+          return@forEachIndexed
         }
         if (!force && previous?.subjectId != null && previous.query == baseQuery) {
           associations.withLock { dao.bindAutomatically(previous.copy(query = query)) }
-          return@forEach
+          return@forEachIndexed
         }
-        if (!force && previous != null && previous.query == query && System.currentTimeMillis() - previous.attemptedAt < 24 * 60 * 60_000L) return@forEach
+        if (!force && previous != null && previous.query.removeSuffix(" | request-failed") == query && System.currentTimeMillis() - previous.attemptedAt < if (previous.query.endsWith(" | request-failed")) 5 * 60_000L else 24 * 60 * 60_000L) return@forEachIndexed
         try {
           val index = aliasIndex()
           val aliasId = index[animeNameKey(group.query)]?.singleOrNull()
@@ -129,14 +155,17 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
           CloudTrace.event("anime.match", id, path, "matched=${match != null}")
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) {
-          associations.withLock { dao.bindAutomatically(AnimeFolderEntity(id, path, query, previous?.takeIf { it.query == query }?.subjectId, false, previous?.episodeOffset ?: 0, System.currentTimeMillis())) }
+          associations.withLock { dao.bindAutomatically(AnimeFolderEntity(id, path, query + " | request-failed", previous?.takeIf { it.query.removeSuffix(" | request-failed") == query }?.subjectId, false, previous?.episodeOffset ?: 0, System.currentTimeMillis())) }
           CloudTrace.event("anime.failed", id, path, "error=${error.javaClass.simpleName}")
         }
       }
+      publishProgress(id, AnimeMatchProgress(completed = groups.size, total = groups.size))
     }.also { job ->
       job.invokeOnCompletion {
-        jobs.remove(id, job)
-        pending.remove(id)?.let { schedule(id, it) }
+        if (jobs.remove(id, job)) {
+          progress[id]?.update { it.copy(running = false, current = null) }
+          pending.remove(id)?.let { schedule(id, it) }
+        }
       }
     }
   }

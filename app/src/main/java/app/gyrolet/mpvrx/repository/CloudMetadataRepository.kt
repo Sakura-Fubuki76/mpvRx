@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
@@ -190,20 +191,34 @@ class CloudMetadataRepository(
 
   private val librarySnapshots = java.util.concurrent.ConcurrentHashMap<Triple<Long, String, Boolean>, kotlinx.coroutines.flow.StateFlow<List<NetworkFile>>>()
 
+  private val libraryStreams = java.util.concurrent.ConcurrentHashMap<Triple<Long, String, Boolean>, kotlinx.coroutines.flow.SharedFlow<List<NetworkFile>>>()
+
+  /** Replay actual Room results, without emitting a synthetic empty library before the disk read. */
+  fun observeLibraryData(connectionId: Long, rawPath: String, videosOnly: Boolean = false): kotlinx.coroutines.flow.SharedFlow<List<NetworkFile>> {
+    val key = Triple(connectionId, NetworkPath.from(rawPath).value, videosOnly)
+    return libraryStreams.getOrPut(key) {
+      val rows = dao.observeLibrary(connectionId, key.second, videosOnly)
+      val source = if (videosOnly) rows.map { items -> items to emptyList<app.gyrolet.mpvrx.database.entities.CloudFolderMetadataEntity>() }
+        else combine(rows, observeFolders(connectionId)) { items, folders -> items to folders }
+      source.map { (items, folders) ->
+        val summaries = folders.associateBy { it.path }
+        items.map { row ->
+          val item = row.item
+          val summary = summaries[item.path]?.takeIf { item.isDirectory }
+          NetworkFile(item.name, item.path, summary?.totalSize ?: item.size, item.isDirectory,
+            item.lastModified, item.mimeType, summary?.totalDurationMs ?: row.durationMs, row.width, row.height,
+            summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false)
+        }
+      }.distinctUntilChanged().flowOn(Dispatchers.Default)
+        .shareIn(storageScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), replay = 1)
+    }
+  }
+
   fun observeLibrary(connectionId: Long, rawPath: String, videosOnly: Boolean = false): kotlinx.coroutines.flow.StateFlow<List<NetworkFile>> {
     val key = Triple(connectionId, NetworkPath.from(rawPath).value, videosOnly)
     return librarySnapshots.getOrPut(key) {
-combine(dao.observeLibrary(connectionId, key.second, videosOnly), observeFolders(connectionId)) { rows, folders ->
-      val summaries = folders.associateBy { it.path }
-      rows.map { row ->
-        val item = row.item
-        val summary = summaries[item.path]?.takeIf { item.isDirectory }
-        NetworkFile(item.name, item.path, summary?.totalSize ?: item.size, item.isDirectory,
-          item.lastModified, item.mimeType, summary?.totalDurationMs ?: row.durationMs, row.width, row.height,
-          summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false)
-      }
-    }.distinctUntilChanged().flowOn(Dispatchers.Default)
-      .stateIn(storageScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyList())
+      observeLibraryData(connectionId, rawPath, videosOnly)
+        .stateIn(storageScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyList())
     }
   }
 

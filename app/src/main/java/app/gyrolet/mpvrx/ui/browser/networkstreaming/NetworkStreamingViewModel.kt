@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -90,6 +91,13 @@ class NetworkStreamingViewModel(
   val connections: StateFlow<List<NetworkConnection>> =
     repository
       .getAllConnections()
+      .onEach { saved ->
+        saved.filter { it.isAnime && !it.isDeleted }.forEach { connection ->
+          val cloud = getKoin().get<app.gyrolet.mpvrx.repository.CloudMetadataRepository>()
+          getKoin().get<app.gyrolet.mpvrx.repository.AnimeRepository>()
+            .prepareLibrary(connection.id, cloud.observeLibraryData(connection.id, "/", videosOnly = true))
+        }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
