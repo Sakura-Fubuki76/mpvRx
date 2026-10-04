@@ -26,6 +26,7 @@ import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.ui.browser.cards.NetworkVideoCard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,7 +69,8 @@ internal fun AnimeLibraryContent(
     }
   }.collectAsState(emptyMap())
   val recentDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().recentlyPlayedDao()
-  val recent by remember(recentDao) { recentDao.observeRecentlyPlayed(1000) }.collectAsState(emptyList())
+  val recentState by remember(recentDao) { recentDao.observeRecentlyPlayed(1000).map { it to true } }.collectAsState(emptyList<app.gyrolet.mpvrx.database.entities.RecentlyPlayedEntity>() to false)
+  val recent = recentState.first
   val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
   LaunchedEffect(connection.id, snapshot.playbackIdentities) {
     kotlinx.coroutines.delay(750)
@@ -80,7 +82,9 @@ internal fun AnimeLibraryContent(
       if (detailKey != null) emptyList() else groups.entries.filter { (path, files) ->
         searchQuery.isBlank() || path.contains(searchQuery, true) || files.any { it.name.contains(searchQuery, true) } ||
           catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
-      }.sortedBy { (path, _) -> libraryGroups[path]?.query ?: path }
+      }.sortedWith(compareBy<Map.Entry<String, List<NetworkFile>>, String>(app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT) {
+        catalog.subjects[catalog.folders[it.key]?.subjectId]?.title ?: libraryGroups[it.key]?.query ?: it.key
+      }.thenBy { libraryGroups[it.key]?.query ?: it.key }.thenBy { it.key })
     }
   }
   val watchedCounts by produceState(initialValue = emptyMap<String, Pair<Int, Int>>(), snapshot, playback) {
@@ -91,24 +95,25 @@ internal fun AnimeLibraryContent(
       }
     }
   }
-  val featuredKey by produceState<String?>(null, snapshot, visible, recent, catalog) {
+  val featuredKey by produceState<String?>(null, snapshot, visible, recentState, catalog) {
     value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+      if (!recentState.second || !snapshot.loaded || !catalog.loaded) return@withContext null
       val owners = visible.flatMap { entry -> entry.value.map { it.path to entry.key } }.toMap()
       recent.firstNotNullOfOrNull { row ->
         val reference = NetworkPlaybackUri.parse(row.filePath)
         if (reference?.connectionId == connection.id) owners[reference.path.value] else null
-      } ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }?.key
+      } ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }?.key ?: visible.firstOrNull()?.key
     }
   }
   val retainedGridState = libraryGridState ?: rememberLazyGridState()
-  if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles, force = true) }, modifier = modifier.fillMaxSize()) {
+  if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles) }, modifier = modifier.fillMaxSize()) {
   LazyVerticalGrid(state = retainedGridState, columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
     val featured = visible.firstOrNull { it.key == featuredKey }
-      ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }
-      ?: visible.firstOrNull()
-    if (featured != null) item(key = "anime-featured", span = { GridItemSpan(maxLineSpan) }) {
+    item(key = "anime-featured", span = { GridItemSpan(maxLineSpan) }) {
+      if (featured == null) Surface(Modifier.fillMaxWidth().height(280.dp), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {}
+      else {
       val subject = catalog.subjects[catalog.folders[featured.key]?.subjectId]
       val featuredTitle = subject?.title ?: libraryGroups[featured.key]?.query.orEmpty()
       Card(onClick = { onOpenDetails(featured.key, libraryGroups.getValue(featured.key).directory, featuredTitle) }, shape = RoundedCornerShape(24.dp)) {
@@ -121,10 +126,11 @@ internal fun AnimeLibraryContent(
               Text(subject?.let { "${it.date.take(4)}  ·  ${it.score}" }.orEmpty(), style = MaterialTheme.typography.labelLarge)
               Text(subject?.summary.orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
-            if (subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Fit)
+            if (subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Crop)
           }
         }
       }
+    }
     }
     items(visible, key = { it.key }) { (path, files) ->
       val binding = catalog.folders[path]
@@ -135,7 +141,7 @@ internal fun AnimeLibraryContent(
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
             if (subject?.cover?.isNotBlank() == true) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit)
+              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Crop)
             } else {
               Text(fallback, Modifier.align(Alignment.Center).padding(20.dp), style = MaterialTheme.typography.titleMedium)
             }
@@ -252,9 +258,10 @@ internal fun AnimeLibraryContent(
             val parsed = remember(file.name) { parseAnimeFilename(file.name) }
             val number = parsed.episode?.minus(binding?.episodeOffset ?: 0)
             val episode = subject?.episodes?.firstOrNull { it.number == number && it.type == parsed.episodeType && (section.isEmpty() || it.type != 0) }
+            val episodeTitle = episode?.title?.takeIf { it.isNotBlank() } ?: subject?.takeIf { episode != null && it.episodes.count { row -> row.type == episode.type } == 1 }?.title
             val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
             NetworkVideoCard(file, connection, modifier = Modifier.padding(horizontal = 16.dp),
-              titleOverride = episode?.title?.takeIf { it.isNotBlank() }?.let { "$episodeLabel · $it" },
+              titleOverride = episodeTitle?.let { "$episodeLabel · $it" },
               onClick = { onPlay(file, sectionFiles) })
           }
         }
