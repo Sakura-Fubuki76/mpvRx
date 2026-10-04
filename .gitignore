@@ -158,3 +158,6 @@ lint/tmp/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 graft/
+# Local development notes are not release sources.
+/docs/
+/计划.md
