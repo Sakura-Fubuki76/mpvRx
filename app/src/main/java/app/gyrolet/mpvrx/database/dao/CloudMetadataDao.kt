@@ -131,15 +131,17 @@ abstract class CloudMetadataDao {
     ) else folder
     putFolder(retained)
     // List responses contain no durations. Publish the persisted sum in the same transaction.
-    refreshFolderDurations(folder.connectionId)
+    refreshFolderDurations(folder.connectionId, folder.path)
   }
 
   @Query("""UPDATE cloud_folder_metadata SET totalDurationMs = COALESCE((
     SELECT SUM(v.durationMs) FROM cloud_video_metadata v WHERE v.connectionId = :connectionId
     AND (cloud_folder_metadata.path = '/' OR substr(v.path, 1, length(cloud_folder_metadata.path) + 1) = cloud_folder_metadata.path || '/')
     AND EXISTS(SELECT 1 FROM cloud_directory_items i WHERE i.connectionId = v.connectionId AND i.path = v.path
-      AND i.size = v.size AND i.lastModified = v.lastModified)), 0) WHERE connectionId = :connectionId""")
-  abstract suspend fun refreshFolderDurations(connectionId: Long)
+      AND i.size = v.size AND i.lastModified = v.lastModified)), 0) WHERE connectionId = :connectionId
+    AND (:path IS NULL OR cloud_folder_metadata.path = :path OR (:includeAncestors AND
+      (cloud_folder_metadata.path = '/' OR substr(:path, 1, length(cloud_folder_metadata.path) + 1) = cloud_folder_metadata.path || '/')))""")
+  abstract suspend fun refreshFolderDurations(connectionId: Long, path: String? = null, includeAncestors: Boolean = false)
 
   @Query("DELETE FROM cloud_video_metadata WHERE connectionId = :connectionId")
   abstract suspend fun deleteVideos(connectionId: Long)

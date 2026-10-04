@@ -265,7 +265,9 @@ class CloudMetadataRepository(
       CloudTrace.event("folder.summary", connection.id, it.path, "videos=${it.videoCount} complete=${it.scanComplete} empty=${it.scanComplete && it.videoCount == 0}")
     })
     val complete = paths.map { scanner.scan(it).scanComplete }.all { it }
-    dao.refreshFolderDurations(connection.id)
+    // Each visited directory already has its persisted duration sum. Only ancestors outside
+    // these subtrees need reconciliation; a full-tree scan therefore refreshes just the root.
+    paths.forEach { dao.refreshFolderDurations(connection.id, NetworkPath.from(it).value, includeAncestors = true) }
     return complete
   }
 
@@ -378,8 +380,9 @@ class CloudMetadataRepository(
 
   suspend fun publish(connectionId: Long, path: String, size: Long, modified: Long,
     duration: Long, width: Int, height: Int, updatedAt: Long = System.currentTimeMillis()) {
-    dao.mergeCurrentVideo(connectionId, NetworkPath.from(path).value, size, modified, duration, width, height, updatedAt)
-    if (duration > 0) dao.refreshFolderDurations(connectionId)
+    val normalized = NetworkPath.from(path).value
+    dao.mergeCurrentVideo(connectionId, normalized, size, modified, duration, width, height, updatedAt)
+    if (duration > 0) dao.refreshFolderDurations(connectionId, normalized, includeAncestors = true)
   }
 
   private fun CloudVideoMetadataEntity.matches(file: NetworkFile): Boolean =
