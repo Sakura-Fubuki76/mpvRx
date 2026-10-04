@@ -11,6 +11,23 @@ import org.junit.Test
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MetadataWorkQueueTest {
+    @Test fun twoBackgroundFilesRunWithoutTakingTheReservedForegroundWorker() = runTest {
+        val queue = MetadataWorkQueue(3, backgroundScope, foregroundWorkers = 1)
+        val started = java.util.concurrent.atomic.AtomicInteger()
+        val bothStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val background = async {
+            queue.process(listOf("first", "second"), { it }, MetadataRequestPriority.BACKGROUND) {
+                if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+                release.await()
+                true
+            }
+        }
+        bothStarted.await()
+        assertTrue(queue.process(listOf("visible"), { it }, MetadataRequestPriority.FOREGROUND) { true })
+        release.complete(Unit)
+        assertTrue(background.await())
+    }
     private lateinit var backgroundScope: CoroutineScope
     private fun runTest(block: suspend CoroutineScope.() -> Unit) = runBlocking {
         backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)

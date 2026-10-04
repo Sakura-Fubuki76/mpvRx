@@ -45,7 +45,7 @@ class CloudMetadataRepository(
 ) {
   private val http = httpClient.newBuilder().callTimeout(20, TimeUnit.SECONDS).build()
   private val workers = Semaphore(2)
-  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(2, foregroundWorkers = 1)
+  private val metadataQueue = app.gyrolet.mpvrx.domain.cloud.MetadataWorkQueue(3, foregroundWorkers = 1)
   private val locks = Array(64) { Mutex() }
 
   private val storageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
@@ -71,6 +71,11 @@ class CloudMetadataRepository(
         android.util.Log.d("CloudBatch", "storage start connection=${connection.id}")
         val discovered = hashSetOf<String>()
         var fileCount = 0
+        val metadataComplete = java.util.concurrent.atomic.AtomicBoolean(true)
+        suspend fun processBatch(batch: List<NetworkFile>) {
+          if (!cacheMissingMetadata(connection, batch,
+              app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails)) metadataComplete.set(false)
+        }
         val enumerationComplete = app.gyrolet.mpvrx.domain.cloud.streamStorageMetadata<NetworkFile>(
           enumerate = { submit ->
             fun video(file: NetworkFile) = !file.isDirectory && (file.mimeType?.startsWith("video/") == true ||
@@ -91,10 +96,23 @@ class CloudMetadataRepository(
             CloudTrace.event("storage.enumerated", connection.id, detail = "files=$fileCount complete=$complete streaming=true")
             complete
           },
-          process = { batch -> cacheMissingMetadata(connection, batch,
-            app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails) },
+          process = { batch -> processBatch(batch) },
+          consumers = 2,
         )
-        if (enumerationComplete) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
+        // Retry missing rows without re-enumerating the tree. Probe cooldown is 30 seconds.
+        var retry = 0
+        while (!metadataComplete.get() && retry < 2) {
+          kotlinx.coroutines.delay(30_000)
+          retry++
+          metadataComplete.set(true)
+          CloudTrace.event("storage.metadata.retry", connection.id, detail = "attempt=$retry")
+          app.gyrolet.mpvrx.domain.cloud.streamStorageMetadata<NetworkFile>(
+            enumerate = { submit -> submit(cachedFilesBelow(connection.id, "/")); true },
+            process = { batch -> processBatch(batch) }, consumers = 2,
+          )
+        }
+        CloudTrace.event("storage.finished", connection.id, detail = "directoriesComplete=$enumerationComplete metadataComplete=${metadataComplete.get()} files=$fileCount retries=$retry")
+        if (enumerationComplete && metadataComplete.get()) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
         android.util.Log.d("CloudBatch", "storage complete connection=${connection.id} files=$fileCount enumerationComplete=$enumerationComplete")
       } catch (cancelled: CancellationException) {
         CloudTrace.event("storage.cancelled", connection.id)
@@ -236,6 +254,7 @@ class CloudMetadataRepository(
       }
     }
     CloudTrace.event("batch.end", connection.id, detail = "priority=$priority processed=${done.get()} ready=${ready.get()} pending=${pending.size}")
+    ready.get() == pending.size
   }
 
   suspend fun probeMissing(connection: NetworkConnection, files: List<NetworkFile>) = coroutineScope {

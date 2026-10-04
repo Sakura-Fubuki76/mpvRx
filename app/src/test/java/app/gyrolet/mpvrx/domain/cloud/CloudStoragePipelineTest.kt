@@ -5,6 +5,38 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CloudStoragePipelineTest {
+  @Test fun slowMetadataDoesNotPreventDiscoveringDistantDirectories() = runBlocking {
+    val discovered = CompletableDeferred<Unit>()
+    val release = CompletableDeferred<Unit>()
+    val result = async {
+      streamStorageMetadata<Int>(enumerate = { submit ->
+        repeat(100) { submit(listOf(it)) }
+        discovered.complete(Unit)
+        true
+      }, process = { release.await() })
+    }
+    withTimeout(5000) { discovered.await() }
+    assertFalse(result.isCompleted)
+    release.complete(Unit)
+    assertTrue(result.await())
+  }
+
+  @Test fun anotherDirectoryStartsWhileAnEarlierBatchIsBlocked() = runBlocking {
+    val release = CompletableDeferred<Unit>()
+    val firstStarted = CompletableDeferred<Unit>()
+    val secondStarted = CompletableDeferred<Unit>()
+    val result = async {
+      streamStorageMetadata<Int>(enumerate = { submit ->
+        submit(listOf(1)); submit(listOf(2)); true
+      }, process = {
+        if (it == listOf(1)) { firstStarted.complete(Unit); release.await() }
+        else { firstStarted.await(); secondStarted.complete(Unit) }
+      }, consumers = 2)
+    }
+    withTimeout(5000) { secondStarted.await() }
+    release.complete(Unit)
+    assertTrue(result.await())
+  }
   @Test fun metadataStartsBeforeDirectoryTreeFinishes() = runBlocking {
     val started = CompletableDeferred<Unit>()
     val finishEnumeration = CompletableDeferred<Unit>()
