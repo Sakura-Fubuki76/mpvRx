@@ -169,6 +169,7 @@ object MediaUtils {
     val intent =
       Intent(Intent.ACTION_VIEW, selected.uri).apply {
         setClass(context, PlayerActivity::class.java)
+        addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         putExtra("internal_launch", true)
         putExtra(PlayerActivity.EXTRA_PREPARED_PLAYBACK_QUEUE, true)
@@ -317,7 +318,7 @@ object MediaUtils {
         PlayerActivity::class.java
       },
     )
-    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+    intent.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     intent.putExtra("internal_launch", true)
     localPath?.let { intent.putExtra("local_media_path", it) }

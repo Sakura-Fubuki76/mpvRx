@@ -176,6 +176,9 @@ class FolderListViewModel(
         previousFolderCount = filteredFolders.size
 
         _videoFolders.value = filteredFolders
+        if (_foldersWithNewCount.value.isEmpty() && filteredFolders.isNotEmpty()) {
+          _foldersWithNewCount.value = filteredFolders.map { FolderWithNewCount(it, 0) }
+        }
 
         // Pending deletions must not leak back into the next launch through the cache.
         val pendingDeletions = pendingFolderDeletionKeys.value
@@ -226,6 +229,7 @@ class FolderListViewModel(
         // coroutine runs first; StateFlow writes are safe from any thread.
         _allVideoFolders.value = folders
         _hasCompletedInitialLoad.value = true
+        _isLoading.value = false
         folders
       }
     } catch (e: Exception) {
@@ -318,7 +322,7 @@ class FolderListViewModel(
             val videos = folderVideos[folder] ?: MediaFileRepository.getVideosInFolder(
               context = getApplication(),
               bucketId = folder.bucketId,
-              forceFileSystemCheck = true,
+              forceFileSystemCheck = false,
             ).also {
               currentCoroutineContext().ensureActive()
               folderVideos[folder] = it
@@ -437,8 +441,8 @@ class FolderListViewModel(
     return ok
   }
 
-  /** Publishes MediaStore immediately, then merges indexed .nomedia folders in the background. */
-  private fun loadVideoFolders(forceFileSystemCheck: Boolean = false) {
+  /** Publishes MediaStore immediately if empty, then silently merges indexed .nomedia folders in the background. */
+  private fun loadVideoFolders(forceFileSystemCheck: Boolean = false, silent: Boolean = false) {
     currentScanJob?.cancel()
     folderContentRevision.update { it + 1 }
 
@@ -446,8 +450,11 @@ class FolderListViewModel(
       currentScanJob =
         viewModelScope.launch(Dispatchers.IO) {
           try {
-            _isLoading.value = _allVideoFolders.value.isEmpty()
-            _scanStatus.value = "Reading music library..."
+            val hasExistingData = _allVideoFolders.value.isNotEmpty()
+            if (!hasExistingData && !silent) {
+              _isLoading.value = true
+              _scanStatus.value = "Reading music library..."
+            }
             val folders =
               MediaFileRepository.getAllAudioFolders(
                 context = getApplication(),
@@ -462,7 +469,9 @@ class FolderListViewModel(
                 },
               )
             ensureActive()
-            publishFinalFolders(folders)
+            if (_allVideoFolders.value != folders) {
+              publishFinalFolders(folders)
+            }
             _isLoading.value = false
             _hasCompletedInitialLoad.value = true
           } catch (error: kotlinx.coroutines.CancellationException) {
@@ -486,7 +495,7 @@ class FolderListViewModel(
       viewModelScope.launch(Dispatchers.IO) {
         try {
           val hasExistingData = _allVideoFolders.value.isNotEmpty()
-          if (!hasExistingData) {
+          if (!hasExistingData && !silent) {
             _isLoading.value = true
             _scanStatus.value = "Reading media library..."
           }
@@ -496,7 +505,7 @@ class FolderListViewModel(
             MediaFileRepository.getAllVideoFoldersFast(
               context = getApplication(),
               onProgress = { count ->
-                if (!hasExistingData) _scanStatus.value = "Found $count folders"
+                if (!hasExistingData && !silent) _scanStatus.value = "Found $count folders"
               },
               forceFileSystemCheck = forceFileSystemCheck,
               includeAudioOverride = browserPreferences.includeAudioBrowser.get(),
@@ -514,24 +523,32 @@ class FolderListViewModel(
               },
             )
           ensureActive()
-          // This is the important latency boundary: never wait for a filesystem walk.
-          _allVideoFolders.value = mediaStoreFolders
-          _isLoading.value = false
-          _hasCompletedInitialLoad.value = true
+
+          // If there is no existing data, publish immediately so the screen isn't empty.
+          // If cached data is already visible, do NOT overwrite with partial mediaStore results!
+          if (!hasExistingData) {
+            _allVideoFolders.value = mediaStoreFolders
+            _isLoading.value = false
+            _hasCompletedInitialLoad.value = true
+          }
 
           val indexedFolders = MediaFileRepository.getIndexedNoMediaFolders()
           ensureActive()
           var visibleFolders = mergeFolders(mediaStoreFolders, indexedFolders)
-          _allVideoFolders.value = visibleFolders
-          Log.d(TAG, "Published ${mediaStoreFolders.size} MediaStore and ${indexedFolders.size} indexed folders")
+          if (!hasExistingData) {
+            _allVideoFolders.value = visibleFolders
+          }
+          Log.d(TAG, "Scanned ${mediaStoreFolders.size} MediaStore and ${indexedFolders.size} indexed folders")
 
           if (foldersPreferences.includeNoMediaFolders.get()) {
-            _scanStatus.value =
-              if (forceFileSystemCheck || indexedFolders.isEmpty()) {
-                "Discovering hidden folders..."
-              } else {
-                "Checking hidden folders..."
-              }
+            if (!hasExistingData && !silent) {
+              _scanStatus.value =
+                if (forceFileSystemCheck || indexedFolders.isEmpty()) {
+                  "Discovering hidden folders..."
+                } else {
+                  "Checking hidden folders..."
+                }
+            }
             MediaFileRepository
               .scanNoMediaFoldersIncrementally(
                 context = getApplication(),
@@ -539,18 +556,24 @@ class FolderListViewModel(
               ).collect { batch ->
                 ensureActive()
                 visibleFolders = mergeFolders(visibleFolders, batch)
-                _allVideoFolders.value = visibleFolders
-                _scanStatus.value = "Found ${visibleFolders.size} folders"
+                if (!hasExistingData) {
+                  _allVideoFolders.value = visibleFolders
+                  if (!silent) _scanStatus.value = "Found ${visibleFolders.size} folders"
+                }
               }
 
             // Replace the old indexed snapshot after the scan, removing deleted/stale folders.
             visibleFolders = mergeFolders(mediaStoreFolders, MediaFileRepository.getIndexedNoMediaFolders())
             ensureActive()
-            _allVideoFolders.value = visibleFolders
+            if (!hasExistingData) {
+              _allVideoFolders.value = visibleFolders
+            }
           }
 
-          publishFinalFolders(visibleFolders)
-          if (visibleFolders.isEmpty()) return@launch
+          if (visibleFolders.isEmpty()) {
+            publishFinalFolders(emptyList())
+            return@launch
+          }
 
           var needsEnrichment = false
           val foldersForEnrichment =
@@ -568,28 +591,36 @@ class FolderListViewModel(
                 folder
               }
             }
-          _allVideoFolders.value = foldersForEnrichment
 
           val needsDurationEnrichment = needsEnrichment && foldersForEnrichment.isNotEmpty() &&
             MetadataRetrieval.isFolderMetadataNeeded(browserPreferences)
-          if (!needsDurationEnrichment) return@launch
 
-          _isEnriching.value = true
-          _scanStatus.value = "Processing metadata..."
-          val enrichedFolders =
-            MetadataRetrieval.enrichFoldersIfNeeded(
-              context = getApplication(),
-              folders = foldersForEnrichment,
-              browserPreferences = browserPreferences,
-              metadataCache = metadataCache,
-              onProgress = { processed, total ->
-                _scanStatus.value = "Processing metadata $processed/$total"
-              },
-            )
+          val finalFolders = if (needsDurationEnrichment) {
+            if (!silent) {
+              _isEnriching.value = true
+              _scanStatus.value = "Processing metadata..."
+            }
+            val enrichedFolders =
+              MetadataRetrieval.enrichFoldersIfNeeded(
+                context = getApplication(),
+                folders = foldersForEnrichment,
+                browserPreferences = browserPreferences,
+                metadataCache = metadataCache,
+                onProgress = { processed, total ->
+                  if (!silent) _scanStatus.value = "Processing metadata $processed/$total"
+                },
+              )
+            ensureActive()
+            val enrichedByKey = enrichedFolders.associateBy(::folderKey)
+            foldersForEnrichment.map { enrichedByKey[folderKey(it)] ?: it }
+          } else {
+            foldersForEnrichment
+          }
 
-          ensureActive()
-          val enrichedByKey = enrichedFolders.associateBy(::folderKey)
-          _allVideoFolders.value = foldersForEnrichment.map { enrichedByKey[folderKey(it)] ?: it }
+          // Only publish if the list has actually changed from what is currently displayed
+          if (_allVideoFolders.value != finalFolders) {
+            publishFinalFolders(finalFolders)
+          }
         } catch (e: kotlinx.coroutines.CancellationException) {
           Log.d(TAG, "Scan cancelled (new scan started)")
           throw e

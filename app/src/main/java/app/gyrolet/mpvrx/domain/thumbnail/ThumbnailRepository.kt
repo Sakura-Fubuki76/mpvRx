@@ -265,9 +265,21 @@ class ThumbnailRepository(
         return@withContext bitmap
       }
 
-      val decoded =
-        readBitmapFromDisk(diskCacheKey(video), isNetworkUrl(video.path))
-          ?: return@withContext null
+      val isNetwork = isNetworkUrl(video.path)
+      var decoded = readBitmapFromDisk(diskCacheKey(video), isNetwork)
+      if (decoded == null && !isNetwork) {
+        if (video.duration > 0L) {
+          decoded = readBitmapFromDisk(diskCacheKey(video.copy(duration = 0L)), false)
+        } else {
+          val canonical = canonicalLocalPath(video)
+          val resolvedDur = resolveLocalMetadata(video, canonical).duration
+          if (resolvedDur > 0L) {
+            decoded = readBitmapFromDisk(diskCacheKey(video.copy(duration = resolvedDur)), false)
+          }
+        }
+      }
+      if (decoded == null) return@withContext null
+
       val scaled = scaleBitmap(decoded, widthPx, heightPx)
       synchronized(memoryCache) {
         memoryCache.put(key, scaled)

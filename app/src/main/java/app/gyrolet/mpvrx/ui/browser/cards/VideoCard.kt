@@ -404,10 +404,14 @@ fun VideoCard(
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
+            if (thumbnail == null && showThumbnails) {
               thumbnail =
                 withContext(Dispatchers.IO) {
-                  thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+                  if (allowThumbnailGeneration && allowThumbnailLoading) {
+                    thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+                  } else {
+                    thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+                  }
                 }
             }
           }
@@ -759,10 +763,14 @@ fun VideoCard(
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (allowThumbnailGeneration && allowThumbnailLoading && thumbnail == null && showThumbnails) {
+            if (thumbnail == null && showThumbnails) {
               thumbnail =
                 withContext(Dispatchers.IO) {
-                  thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
+                  if (allowThumbnailGeneration && allowThumbnailLoading) {
+                    thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
+                  } else {
+                    thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)
+                  }
                 }
             }
           }

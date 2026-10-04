@@ -4831,6 +4831,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         .onSuccess { uri ->
           if (subtitle.isHashMatch) {
             PlaybackSession.setPropertyDouble("sub-delay", 0.0)
+            PlaybackSession.setPropertyDouble("secondary-sub-delay", 0.0)
             Log.d(TAG, "Applied perfect-sync subtitle match for ${subtitle.displayName}")
           }
           addSubtitle(uri)

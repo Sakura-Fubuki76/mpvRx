@@ -661,6 +661,9 @@ class PlayerActivity :
     ) {
       val animateArtwork = PlayerArtworkTransitions.motion?.destination == PlayerArtworkDestination.FULL
       overrideActivityTransition(OVERRIDE_TRANSITION_OPEN, if (animateArtwork) 0 else R.anim.slide_in_up, 0)
+    } else {
+      @Suppress("DEPRECATION")
+      overridePendingTransition(android.R.anim.fade_in, 0)
     }
     if (intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER && player.userScriptsNeedReload()) {
       currentPlaybackIntentForScriptReload()?.let { playbackIntent ->
@@ -3865,7 +3868,9 @@ class PlayerActivity :
     currentUri?.let { viewModel.calculateVideoHash(it) }
 
     reportJellyfinStop()
-    currentUri?.toString()?.let { url ->
+    // Only a remote server can hold a playback session. A local file has no token, no host and no
+    // reachable Emby/Jellyfin endpoint, so building a reporter for it is dead work on this path.
+    currentUri?.takeIf { HttpUtils.isNetworkStream(it) }?.toString()?.let { url ->
       val tokenFromHeader =
         networkPlaylistHeaders.getOrNull(playlistIndex)?.get("X-Emby-Token")
           ?: intent.getStringArrayExtra("headers")?.let { PlaybackHttpHeaders.fromFlatPairs(it)["X-Emby-Token"] }
@@ -4577,6 +4582,9 @@ class PlayerActivity :
     }
 
     PlaybackSession.setPropertyDouble("sub-delay", subDelay)
+    // The secondary track has its own delay property and is otherwise left on the startup
+    // value, so a saved sync would silently not apply to it.
+    PlaybackSession.setPropertyDouble("secondary-sub-delay", subDelay)
     PlaybackSession.setPropertyDouble("speed", state.playbackSpeed)
     // Re-apply audio-pitch-correction after speed change, as mpv resets it to default
     PlaybackSession.setPropertyBoolean("audio-pitch-correction", audioPreferences.audioPitchCorrection.get())
@@ -5970,39 +5978,45 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     // assignment does not recreate the Activity; it relayouts the window mid-transition.
     var width = sourceIntent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
     var height = sourceIntent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
-    var rotation = 0
+    var rotation = sourceIntent.getIntExtra(EXTRA_VIDEO_ROTATION, 0).takeIf { it != 0 }
+      ?: sourceIntent.getIntExtra("rotation", 0)
 
-    extractUriFromIntent(sourceIntent)
-      ?.takeIf { uri -> uri.scheme.equals("content", true) || uri.scheme.equals("file", true) }
-      ?.let { uri ->
-        runCatching {
-          val retriever = android.media.MediaMetadataRetriever()
-          try {
-            retriever.setDataSource(this, uri)
-            if (width <= 0) {
-              width =
-                retriever
-                  .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                  ?.toIntOrNull()
-                  ?: 0
+    // Only invoke expensive MediaMetadataRetriever synchronously if dimensions are not provided in intent extras
+    if (width <= 0 || height <= 0) {
+      extractUriFromIntent(sourceIntent)
+        ?.takeIf { uri -> uri.scheme.equals("content", true) || uri.scheme.equals("file", true) }
+        ?.let { uri ->
+          runCatching {
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+              retriever.setDataSource(this, uri)
+              if (width <= 0) {
+                width =
+                  retriever
+                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                    ?.toIntOrNull()
+                    ?: 0
+              }
+              if (height <= 0) {
+                height =
+                  retriever
+                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                    ?.toIntOrNull()
+                    ?: 0
+              }
+              if (rotation == 0) {
+                rotation =
+                  retriever
+                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                    ?.toIntOrNull()
+                    ?: 0
+              }
+            } finally {
+              retriever.release()
             }
-            if (height <= 0) {
-              height =
-                retriever
-                  .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                  ?.toIntOrNull()
-                  ?: 0
-            }
-            rotation =
-              retriever
-                .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-                ?.toIntOrNull()
-                ?: 0
-          } finally {
-            retriever.release()
           }
         }
-      }
+    }
     if (width <= 0 || height <= 0) return
 
     val normalizedRotation = ((rotation % 360) + 360) % 360
@@ -8112,6 +8126,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     private const val EXTRA_SCRIPT_RESTORE_PAUSED = "script_restore_paused"
     const val EXTRA_VIDEO_WIDTH = "video_width"
     const val EXTRA_VIDEO_HEIGHT = "video_height"
+    const val EXTRA_VIDEO_ROTATION = "video_rotation"
 
     /** Start playback at this many seconds in, overriding resume-from-history. Set by snapshot jumps. */
     const val EXTRA_START_POSITION_SECONDS = "start_position_seconds"

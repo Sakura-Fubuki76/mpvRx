@@ -99,7 +99,9 @@ class App :
     private const val TAG = "App"
     private const val POST_START_MAINTENANCE_DELAY_MS = 10_000L
     private const val THUMBNAIL_WARMUP_DELAY_MS = 5_000L
-    private const val IDLE_MPV_CORE_GRACE_MS = 3L * 60L * 1000L
+    // Was 3 minutes, shorter than a normal folder browse-through. Every open inside that window
+    // paid a full core rebuild: initOptions() plus MPVLib.init() (mpv.conf + Lua scripts).
+    private const val IDLE_MPV_CORE_GRACE_MS = 20L * 60L * 1000L
     private const val WATCH_STATS_INTERVAL_MS = 15_000L
 
     /**
@@ -497,6 +499,9 @@ class App :
         if (stillFullyIdle) {
           Log.d(TAG, "Destroying libmpv after idle grace period")
           PlaybackSession.destroy()
+          // Re-create the bare handle so the next open skips MPVLib.create. Publishes no state,
+          // so the collectLatest above is not re-entered.
+          PlaybackSession.prewarmNativeCore(this@App)
         }
       }
     }
