@@ -4,6 +4,10 @@ These notes are written in plain English and focus on what changed for real use.
 
 ## 2.7.3 - WebDAV, Cloud Metadata, and Restore-only Anime4K
 
+- Redirected stable and preview update checks to this fork's releases and preview site.
+- Improved thumbnail resolution and image-only seek preview positioning, with reusable sprite sheets and valid-frame tracking.
+- Improved whole-storage metadata scheduling with visible-folder priority, fair storage rotation, playback-aware dispatch, and delayed retries.
+- Removed redundant per-storage media enhancement switches; network thumbnail visibility remains controlled by the global appearance setting.
 - Added a dedicated WebDAV tab with multiple saved storages, OpenList/AList authentication, indexed search, and Baidu Netdisk request headers.
 - Added persistent cloud directory and video metadata, whole-storage background scanning, prioritized thumbnail and duration extraction, and filtering of folders without videos after scanning completes.
 - Added MP4/MKV keyframe extraction, native libyuv thumbnail processing, reusable WebP sprite sheets, seek previews, and notification artwork.

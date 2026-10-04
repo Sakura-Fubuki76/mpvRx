@@ -42,7 +42,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PREVIEW_MANIFEST_URL: https://riteshp2001.github.io/mpvRx/latest.json
+          PREVIEW_MANIFEST_URL: https://sakura-fubuki76.github.io/mpvRx/latest.json
         run: |
           set -euo pipefail
 
@@ -278,7 +278,7 @@ jobs:
 
       - name: Stage GitHub Pages preview site
         env:
-          SITE_BASE_URL: https://riteshp2001.github.io/mpvRx
+          SITE_BASE_URL: https://sakura-fubuki76.github.io/mpvRx
         shell: bash
         run: |
           set -euo pipefail
