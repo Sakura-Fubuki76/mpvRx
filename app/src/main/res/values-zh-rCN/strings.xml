@@ -2905,4 +2905,34 @@
   <string name="ui_search_album_count">专辑（%1$d）</string>
   <string name="ui_search_artist_count">艺术家（%1$d）</string>
   <string name="browser_grid_column_count">%1$d 列</string>
+
+  <string name="anime_storage_label">Anime（动画媒体库）</string>
+  <string name="anime_storage_hint">为此存储启用 Bangumi 海报、简介与剧集元数据。</string>
+  <string name="anime_library">动画媒体库</string>
+  <string name="anime_library_count">%1$d 部作品</string>
+  <string name="anime_available_count">%1$d 个视频</string>
+  <string name="anime_refresh">刷新</string>
+  <string name="anime_unmatched">待匹配</string>
+  <string name="anime_index_loading">暂无已索引视频，目录扫描会在后台继续。</string>
+  <string name="anime_attribution">元数据：Bangumi · 名称别名：bangumi-data（CC BY 4.0）</string>
+  <string name="anime_match_edit">修正匹配</string>
+  <string name="anime_browse_files">浏览文件</string>
+  <string name="anime_episodes">选集</string>
+  <string name="anime_search_hint">作品名或 Bangumi 条目 ID</string>
+  <string name="anime_offset">集数偏移</string>
+  <string name="anime_offset_hint">文件集数减去偏移量即为 Bangumi 集数。例如填写 12，将文件第 13 集对应到第 1 集。</string>
+  <string name="anime_search">搜索</string>
+  <string name="anime_close">关闭</string>
+  <string name="anime_continue">继续观看</string>
+  <string name="anime_play">播放</string>
+  <string name="anime_regular_episodes">正片</string>
+  <string name="anime_extras">特典 / OP / ED</string>
+
+  <string name="anime_grouping">动画媒体库归类</string>
+  <string name="anime_grouping_hint">将已索引文件或文件夹归入作品，不移动实际文件</string>
+  <string name="anime_group_source">选择文件或文件夹</string>
+  <string name="anime_group_target">归入动画作品</string>
+  <string name="anime_group_restore">恢复自动归类</string>
+  <string name="anime_group_saved">已保存的归类</string>
+  <string name="anime_group_empty">请先为存储启用 Anime，并打开存储建立文件索引</string>
 </resources>

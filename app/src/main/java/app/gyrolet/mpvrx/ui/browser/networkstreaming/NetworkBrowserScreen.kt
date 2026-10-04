@@ -111,6 +111,7 @@ data class NetworkBrowserScreen(
   val connectionId: Long,
   val connectionName: String,
   val currentPath: String = "/",
+  val showAnimeLibrary: Boolean = true,
   /**
    * When set, the browser runs as a picker for that playlist: selecting files is enabled and
    * confirming writes them via `PlaylistRepository`. Null means the normal browse/play mode.
@@ -389,7 +390,16 @@ data class NetworkBrowserScreen(
         }
       },
     ) { padding ->
-      NetworkBrowserContent(
+      if (connection?.isAnime == true && isCloudLibrary && showAnimeLibrary && !isPickerMode) {
+        AnimeLibraryContent(
+          connection = requireNotNull(connection), currentPath = currentPath, searchQuery = searchQuery,
+          onPlay = { file, episodes -> viewModel.playAnimeVideo(file, episodes) },
+          onBrowse = { folder -> backstack.navigateTo(NetworkBrowserScreen(connectionId, connectionName, folder.path, showAnimeLibrary = false)) },
+          onRefresh = { viewModel.loadFiles(forceStorageScan = true) }, modifier = Modifier.padding(padding),
+          isRefreshing = isRefreshing.value,
+          onOpenDetails = { key, directory, title -> backstack.navigateTo(AnimeDetailsScreen(connectionId, connectionName, key, directory, title)) },
+        )
+      } else NetworkBrowserContent(
         files = files,
         connection = connection,
         isLoading = isLoading && files.isEmpty(),
@@ -411,6 +421,7 @@ data class NetworkBrowserScreen(
               connectionId = connectionId,
               connectionName = connectionName,
               currentPath = folder.path,
+              showAnimeLibrary = showAnimeLibrary,
               targetPlaylistId = targetPlaylistId,
               targetPlaylistIsAudio = targetPlaylistIsAudio,
             ),

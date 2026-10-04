@@ -83,6 +83,7 @@ internal fun ConnectionEditorSheet(
   var port by remember(initialConnection) { mutableStateOf(initialConnection.port.toString()) }
   var path by remember(initialConnection) { mutableStateOf(initialConnection.path) }
   var isAnonymous by remember(initialConnection) { mutableStateOf(initialConnection.isAnonymous) }
+  var isAnime by remember(initialConnection) { mutableStateOf(initialConnection.isAnime) }
   var useHttps by remember(initialConnection) { mutableStateOf(initialConnection.useHttps) }
   var username by remember(initialConnection) { mutableStateOf(initialConnection.username) }
   var password by remember(initialConnection) { mutableStateOf("") }
@@ -122,6 +123,7 @@ internal fun ConnectionEditorSheet(
           password = if (isAnonymous) "" else password,
           path = path.trim().ifBlank { "/" },
           isAnonymous = isAnonymous,
+          isAnime = protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) && isAnime,
           useHttps = protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) && useHttps,
         ),
         isAnonymous || clearPassword,
@@ -256,6 +258,11 @@ internal fun ConnectionEditorSheet(
           },
           label = stringResource(R.string.ui_use_https_secure_connection),
         )
+      }
+
+      if (protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)) {
+        ConnectionToggle(checked = isAnime, onCheckedChange = { isAnime = it }, label = stringResource(R.string.anime_storage_label))
+        Text(stringResource(R.string.anime_storage_hint), style = MaterialTheme.typography.bodySmall)
       }
 
       OutlinedTextField(

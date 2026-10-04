@@ -76,6 +76,7 @@ fun NetworkVideoCard(
   isGridMode: Boolean = false,
   /** Corner label naming the media type; null hides it (shown only when images are mixed in). */
   mediaType: NetworkMediaType? = null,
+  titleOverride: String? = null,
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
@@ -181,7 +182,7 @@ fun NetworkVideoCard(
     }
   }
 
-  val displayName = if (showExtensionField) file.name else file.name.substringBeforeLast('.', file.name)
+  val displayName = titleOverride ?: if (showExtensionField) file.name else file.name.substringBeforeLast('.', file.name)
 
   if (connection.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) {
     val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()

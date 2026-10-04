@@ -2948,4 +2948,34 @@
   <string name="ui_search_album_count">Albums (%1$d)</string>
   <string name="ui_search_artist_count">Artists (%1$d)</string>
   <string name="browser_grid_column_count">%1$d cols</string>
+
+  <string name="anime_storage_label">Anime</string>
+  <string name="anime_storage_hint">Use Bangumi posters, summaries and episode metadata for this storage.</string>
+  <string name="anime_library">Anime library</string>
+  <string name="anime_library_count">%1$d series</string>
+  <string name="anime_available_count">%1$d videos available</string>
+  <string name="anime_refresh">Refresh</string>
+  <string name="anime_unmatched">Awaiting match</string>
+  <string name="anime_index_loading">No indexed videos yet. Folder scanning runs in the background.</string>
+  <string name="anime_attribution">Metadata: Bangumi · Title aliases: bangumi-data (CC BY 4.0)</string>
+  <string name="anime_match_edit">Correct match</string>
+  <string name="anime_browse_files">Browse files</string>
+  <string name="anime_episodes">Episodes</string>
+  <string name="anime_search_hint">Title or Bangumi subject ID</string>
+  <string name="anime_offset">Episode offset</string>
+  <string name="anime_offset_hint">File episode minus offset = Bangumi episode. Example: offset 12 maps file 13 to episode 1.</string>
+  <string name="anime_search">Search</string>
+  <string name="anime_close">Close</string>
+  <string name="anime_continue">Continue watching</string>
+  <string name="anime_play">Play</string>
+  <string name="anime_regular_episodes">Main episodes</string>
+  <string name="anime_extras">Extras / OP / ED</string>
+
+  <string name="anime_grouping">Anime library assignments</string>
+  <string name="anime_grouping_hint">Assign indexed files or folders to an anime without moving files</string>
+  <string name="anime_group_source">Choose a file or folder</string>
+  <string name="anime_group_target">Assign to an anime</string>
+  <string name="anime_group_restore">Restore automatic grouping</string>
+  <string name="anime_group_saved">Saved assignments</string>
+  <string name="anime_group_empty">Enable Anime for a storage and open it to index files first</string>
 </resources>

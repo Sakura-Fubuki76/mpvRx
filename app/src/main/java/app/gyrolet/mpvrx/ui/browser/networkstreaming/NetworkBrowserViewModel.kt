@@ -151,6 +151,7 @@ class NetworkBrowserViewModel(
           repository.getConnectionById(connectionId)
             ?: throw Exception("Connection not found")
         _connection.value = connection
+        if (!connection.isAnime) getKoin().get<app.gyrolet.mpvrx.repository.AnimeRepository>().stop(connectionId)
 
         suspend fun publish(fileList: List<NetworkFile>, startWork: Boolean = true) {
           if (generation != loadGeneration) return
@@ -354,11 +355,23 @@ class NetworkBrowserViewModel(
     _importedPlaylistId.emit(playlistId.toInt())
   }
 
+  fun playAnimeVideo(file: NetworkFile, episodes: List<NetworkFile>) {
+    viewModelScope.launch {
+      try {
+        val connection = _connection.value ?: repository.getConnectionById(connectionId) ?: error("Connection not found")
+        val queue = if (playerPreferences.playlistMode.get()) episodes.filter { it.isPlayableNetworkVideo() } else listOf(file)
+        playVideoInternal(connection, file, queue.takeIf { rows -> rows.any { it.path == file.path } })
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (error: Exception) { _error.value = error.message }
+    }
+  }
+
   private fun playVideoInternal(
     connection: NetworkConnection,
     file: NetworkFile,
+    episodeQueue: List<NetworkFile>? = null,
   ) {
-    val playableFiles = currentDirectoryPlayableFiles(file)
+    val playableFiles = episodeQueue ?: currentDirectoryPlayableFiles(file)
     val playlistIndex =
       playableFiles
         .indexOfFirst { it.path == file.path }

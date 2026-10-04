@@ -1,0 +1,69 @@
+package app.gyrolet.mpvrx.ui.browser.networkstreaming
+
+import android.app.Application
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import app.gyrolet.mpvrx.R
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.lifecycle.viewmodel.compose.viewModel
+import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.repository.AnimeCatalog
+import app.gyrolet.mpvrx.repository.AnimeRepository
+import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.utils.LocalBackStack
+import app.gyrolet.mpvrx.ui.utils.navigateTo
+import app.gyrolet.mpvrx.ui.utils.popSafely
+import kotlinx.serialization.Serializable
+import org.koin.compose.koinInject
+
+@Serializable
+data class AnimeDetailsScreen(
+  val connectionId: Long,
+  val connectionName: String,
+  val groupKey: String,
+  val directory: String,
+  val initialTitle: String,
+) : Screen {
+  @OptIn(ExperimentalMaterial3Api::class)
+  @Composable
+  override fun Content() {
+    val backstack = LocalBackStack.current
+    val context = LocalContext.current
+    val model: NetworkBrowserViewModel = viewModel(
+      key = "AnimeDetails_${connectionId}_$groupKey",
+      factory = NetworkBrowserViewModel.factory(context.applicationContext as Application, connectionId, directory),
+    )
+    LaunchedEffect(connectionId, directory) { model.loadFiles() }
+    DisposableEffect(model) { onDispose { model.pauseBackgroundWork() } }
+    val connection by model.connection.collectAsState()
+    val repository = koinInject<AnimeRepository>()
+    val catalog by remember(connectionId) { repository.observe(connectionId) }
+      .collectAsState(AnimeCatalog(emptyMap(), emptyMap()))
+    val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
+    var editMatch by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize()) {
+      connection?.let { server ->
+        AnimeLibraryContent(server, "/", "",
+          onPlay = { file, queue -> model.playAnimeVideo(file, queue) },
+          onBrowse = { folder -> backstack.navigateTo(NetworkBrowserScreen(connectionId, connectionName, folder.path, showAnimeLibrary = false)) },
+          onRefresh = { model.loadFiles(forceStorageScan = true) },
+          detailKey = groupKey, onEditMatch = { editMatch = true })
+      }
+    IconButton(onClick = { backstack.popSafely() }, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp).background(Color.Black.copy(alpha = .45f), CircleShape)) {
+      Icon(Icons.RoundedFilled.ArrowBack, contentDescription = null, tint = Color.White)
+    }
+    }
+    if (editMatch) AnimeMatchDialog(connectionId, groupKey, initialTitle,
+      catalog.folders[groupKey]?.episodeOffset ?: 0, repository) { editMatch = false }
+  }
+}
