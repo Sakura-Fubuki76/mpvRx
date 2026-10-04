@@ -68,8 +68,12 @@ abstract class CloudMetadataDao {
       AND d.size = v.size AND d.lastModified = v.lastModified
     WHERE d.connectionId = :connectionId
       AND (:path = '/' OR substr(d.path, 1, length(:path) + 1) = :path || '/')
+      AND (:videosOnly = 0 OR (d.isDirectory = 0 AND (d.mimeType LIKE 'video/%'
+        OR lower(substr(d.name, -4)) IN ('.mp4','.mkv','.avi','.mov','.wmv','.flv','.m4v','.3gp','.3g2','.mpg','.m2v','.ogv','.mts','.vob','.f4v','.asf')
+        OR lower(substr(d.name, -5)) IN ('.webm','.mpeg','.m2ts','.divx','.xvid','.rmvb')
+        OR lower(substr(d.name, -3)) IN ('.ts','.rm'))))
     ORDER BY d.path""")
-  abstract fun observeLibrary(connectionId: Long, path: String): Flow<List<app.gyrolet.mpvrx.database.entities.CloudLibraryItem>>
+  abstract fun observeLibrary(connectionId: Long, path: String, videosOnly: Boolean = false): Flow<List<app.gyrolet.mpvrx.database.entities.CloudLibraryItem>>
 
   @Query("SELECT * FROM cloud_directory_state WHERE connectionId = :connectionId AND path = :path")
   abstract suspend fun getDirectoryState(connectionId: Long, path: String): CloudDirectoryStateEntity?

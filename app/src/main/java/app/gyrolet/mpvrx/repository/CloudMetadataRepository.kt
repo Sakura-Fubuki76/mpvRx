@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -79,14 +80,21 @@ class CloudMetadataRepository(
               app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.BACKGROUND, includeThumbnails)) metadataComplete.set(false)
         }
         val enumerationComplete = app.gyrolet.mpvrx.domain.cloud.streamStorageMetadata<NetworkFile>(
-          enumerate = { submit ->
+          enumerate = enumerate@ { submit ->
             fun video(file: NetworkFile) = !file.isDirectory && (file.mimeType?.startsWith("video/") == true ||
               app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(file.name) in FileTypeUtils.VIDEO_EXTENSIONS)
             fun revision(file: NetworkFile) = "${file.path}|${file.size}|${file.lastModified}"
-            val warm = cachedFilesBelow(connection.id, "/").filter(::video)
+            val persisted = cachedFilesBelow(connection.id, "/")
+            val warm = persisted.filter(::video)
             warm.forEach { discovered.add(revision(it)) }
             submit(warm)
             CloudTrace.event("storage.warm", connection.id, detail = "cachedVideos=${warm.size}")
+            val rootIndex = dao.getFolder(connection.id, "/")
+            if (!force && rootIndex?.scanComplete == true && app.gyrolet.mpvrx.domain.cloud.isCloudDirectoryFresh(rootIndex.updatedAt)) {
+              fileCount = persisted.size
+              CloudTrace.event("storage.index.skip", connection.id, detail = "reason=fresh_persistent_tree videos=${warm.size}")
+              return@enumerate true
+            }
             val complete = scanFolders(connection, listOf("/"), network, forceRefresh = force) { listed ->
               val videos = listed.filter { video(it) && discovered.add(revision(it)) }
               submit(videos)
@@ -114,7 +122,7 @@ class CloudMetadataRepository(
           )
         }
         CloudTrace.event("storage.finished", connection.id, detail = "directoriesComplete=$enumerationComplete metadataComplete=${metadataComplete.get()} files=$fileCount retries=$retry")
-        if (enumerationComplete && metadataComplete.get()) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
+        if (enumerationComplete) storageScans[connection.id]?.takeIf { it.job == currentCoroutineContext()[kotlinx.coroutines.Job] }?.completedAt = System.currentTimeMillis()
         android.util.Log.d("CloudBatch", "storage complete connection=${connection.id} files=$fileCount enumerationComplete=$enumerationComplete")
       } catch (cancelled: CancellationException) {
         CloudTrace.event("storage.cancelled", connection.id)
@@ -180,8 +188,12 @@ class CloudMetadataRepository(
     }
   }
 
-  fun observeLibrary(connectionId: Long, rawPath: String): Flow<List<NetworkFile>> =
-    combine(dao.observeLibrary(connectionId, NetworkPath.from(rawPath).value), observeFolders(connectionId)) { rows, folders ->
+  private val librarySnapshots = java.util.concurrent.ConcurrentHashMap<Triple<Long, String, Boolean>, kotlinx.coroutines.flow.StateFlow<List<NetworkFile>>>()
+
+  fun observeLibrary(connectionId: Long, rawPath: String, videosOnly: Boolean = false): kotlinx.coroutines.flow.StateFlow<List<NetworkFile>> {
+    val key = Triple(connectionId, NetworkPath.from(rawPath).value, videosOnly)
+    return librarySnapshots.getOrPut(key) {
+combine(dao.observeLibrary(connectionId, key.second, videosOnly), observeFolders(connectionId)) { rows, folders ->
       val summaries = folders.associateBy { it.path }
       rows.map { row ->
         val item = row.item
@@ -191,6 +203,9 @@ class CloudMetadataRepository(
           summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false)
       }
     }.distinctUntilChanged().flowOn(Dispatchers.Default)
+      .stateIn(storageScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyList())
+    }
+  }
 
   fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId).distinctUntilChanged()
 
