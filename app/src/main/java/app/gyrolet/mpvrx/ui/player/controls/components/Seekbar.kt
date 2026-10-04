@@ -636,7 +636,7 @@ private fun SeekbarContent(
     contentAlignment = Alignment.Center,
   ) {
     if (isVisuallyInteracting && !showWavyVisualizer) {
-      val gap = with(previewDensity) { 8.dp.roundToPx() }
+      val gap = with(previewDensity) { 16.dp.roundToPx() }
       val fraction = if (safeDuration > 0) safeThumbPosition / safeDuration else 0f
       androidx.compose.ui.window.Popup(
         popupPositionProvider = remember(gap, fraction) { SeekPreviewPositionProvider(gap, fraction) },
