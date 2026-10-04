@@ -15,17 +15,18 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 
-class AnimeLibrarySnapshot(val files: List<NetworkFile> = emptyList(), val groups: Map<String, AnimeVideoGroup> = emptyMap(), val playbackIdentities: Map<String, String> = emptyMap(), val loaded: Boolean = false)
+class AnimeLibrarySnapshot(val files: List<NetworkFile> = emptyList(), val groups: Map<String, AnimeVideoGroup> = emptyMap(), val playbackIdentities: Map<String, String> = emptyMap(), val loaded: Boolean = false, val featuredKey: String? = null)
 
 data class AnimeMatchProgress(val running: Boolean = false, val current: String? = null, val completed: Int = 0, val total: Int = 0)
 
 data class AnimeCatalog(val folders: Map<String, AnimeFolderEntity>, val subjects: Map<Long, AnimeSubject>, val loaded: Boolean = true)
 
 /** A separate queue keeps public metadata requests out of the playback/thumbnail queue. */
-class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: android.content.Context) {
+class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyrolet.mpvrx.database.dao.RecentlyPlayedDao, client: OkHttpClient, context: android.content.Context) {
   private val http = client.newBuilder().callTimeout(15, TimeUnit.SECONDS).build()
   private val json = Json { ignoreUnknownKeys = true }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+  private val recentHistory = recentDao.observeRecentlyPlayed(1000).shareIn(scope, SharingStarted.Eagerly, replay = 1)
   private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
   private val pending = java.util.concurrent.ConcurrentHashMap<Long, List<NetworkFile>>()
   private val datasetFile = java.io.File(context.filesDir, "anime/bangumi-data.json")
@@ -45,7 +46,7 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
     var structureKey: List<Pair<String, String>>? = null
     var structure = emptyList<AnimeVideoGroup>()
     var identities = emptyMap<String, String>()
-    combine(source, dao.observeFolders(id)) { files, folders ->
+    combine(source, dao.observeFolders(id), recentHistory) { files, folders, recent ->
       val key = files.map { it.path to it.name }
       if (key != structureKey) {
         val started = android.os.SystemClock.elapsedRealtime()
@@ -58,7 +59,8 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
       }
       val latest = files.associateBy { it.path }
       val presented = animeSplitGroups(structure, splitBindings(folders))
-      AnimeLibrarySnapshot(files, presented.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities, loaded = true)
+      val recentPaths = recent.mapNotNull { app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(it.filePath)?.takeIf { reference -> reference.connectionId == id }?.path?.value }
+      AnimeLibrarySnapshot(files, presented.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities, loaded = true, featuredKey = animeFeaturedGroup(presented, recentPaths))
     }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeLibrarySnapshot())
   }
 

@@ -1097,7 +1097,7 @@ val DatabaseModule =
     single { ThumbnailRepository(androidContext()) }
     single { get<MpvRxDatabase>().cloudMetadataDao() }
     single { get<MpvRxDatabase>().animeDao() }
-    single { app.gyrolet.mpvrx.repository.AnimeRepository(get(), get(), androidContext()) }
+    single { app.gyrolet.mpvrx.repository.AnimeRepository(get(), get<MpvRxDatabase>().recentlyPlayedDao(), get(), androidContext()) }
     single { app.gyrolet.mpvrx.repository.CloudMetadataRepository(get(), get(), get()) }
     single { app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor(get()) }
     single { app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository(androidContext(), get(), get(), get()) }

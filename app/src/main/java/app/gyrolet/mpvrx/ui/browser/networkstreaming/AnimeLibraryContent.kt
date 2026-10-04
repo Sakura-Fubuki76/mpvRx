@@ -26,7 +26,6 @@ import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.ui.browser.cards.NetworkVideoCard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.map
 import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,9 +67,6 @@ internal fun AnimeLibraryContent(
       rows.flatMap { it }.associateBy { it.mediaTitle }
     }
   }.collectAsState(emptyMap())
-  val recentDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().recentlyPlayedDao()
-  val recentState by remember(recentDao) { recentDao.observeRecentlyPlayed(1000).map { it to true } }.collectAsState(emptyList<app.gyrolet.mpvrx.database.entities.RecentlyPlayedEntity>() to false)
-  val recent = recentState.first
   val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
   LaunchedEffect(connection.id, snapshot.playbackIdentities) {
     kotlinx.coroutines.delay(750)
@@ -79,7 +75,7 @@ internal fun AnimeLibraryContent(
 
   val visible by produceState(initialValue = emptyList<Map.Entry<String, List<NetworkFile>>>(), snapshot, catalog, searchQuery, detailKey) {
     value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-      if (detailKey != null) emptyList() else groups.entries.filter { (path, files) ->
+      if (detailKey != null || !snapshot.loaded || !catalog.loaded) emptyList() else groups.entries.filter { (path, files) ->
         searchQuery.isBlank() || path.contains(searchQuery, true) || files.any { it.name.contains(searchQuery, true) } ||
           catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
       }.sortedWith(compareBy<Map.Entry<String, List<NetworkFile>>, String>(app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT) {
@@ -95,25 +91,15 @@ internal fun AnimeLibraryContent(
       }
     }
   }
-  val featuredKey by produceState<String?>(null, snapshot, visible, recentState, catalog) {
-    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-      if (!recentState.second || !snapshot.loaded || !catalog.loaded) return@withContext null
-      val owners = visible.flatMap { entry -> entry.value.map { it.path to entry.key } }.toMap()
-      recent.firstNotNullOfOrNull { row ->
-        val reference = NetworkPlaybackUri.parse(row.filePath)
-        if (reference?.connectionId == connection.id) owners[reference.path.value] else null
-      } ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }?.key ?: visible.firstOrNull()?.key
-    }
-  }
   val retainedGridState = libraryGridState ?: rememberLazyGridState()
   if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles) }, modifier = modifier.fillMaxSize()) {
   LazyVerticalGrid(state = retainedGridState, columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-    val featured = visible.firstOrNull { it.key == featuredKey }
-    item(key = "anime-featured", span = { GridItemSpan(maxLineSpan) }) {
-      if (featured == null) Surface(Modifier.fillMaxWidth().height(280.dp), shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {}
-      else {
+    val featured = visible.firstOrNull { it.key == snapshot.featuredKey }
+      ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }
+      ?: visible.firstOrNull()
+    if (featured != null) item(key = "anime-featured", span = { GridItemSpan(maxLineSpan) }) {
       val subject = catalog.subjects[catalog.folders[featured.key]?.subjectId]
       val featuredTitle = subject?.title ?: libraryGroups[featured.key]?.query.orEmpty()
       Card(onClick = { onOpenDetails(featured.key, libraryGroups.getValue(featured.key).directory, featuredTitle) }, shape = RoundedCornerShape(24.dp)) {
@@ -130,7 +116,6 @@ internal fun AnimeLibraryContent(
           }
         }
       }
-    }
     }
     items(visible, key = { it.key }) { (path, files) ->
       val binding = catalog.folders[path]

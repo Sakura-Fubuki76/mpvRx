@@ -113,3 +113,9 @@ fun animePartEpisodeOffset(number: Int, subject: AnimeSubject): Int? {
   val source = subject.episodes.singleOrNull { it.type == 0 }?.number ?: return null
   return if (source % 1.0 == 0.0) number - source.toInt() else null
 }
+
+/** History is loaded with the snapshot, so the UI never guesses the first card before recency. */
+fun animeFeaturedGroup(groups: List<AnimeVideoGroup>, recentPaths: List<String>): String? {
+  val owners = groups.flatMap { group -> group.files.map { it.path to group.key } }.toMap()
+  return recentPaths.firstNotNullOfOrNull { owners[it] }
+}

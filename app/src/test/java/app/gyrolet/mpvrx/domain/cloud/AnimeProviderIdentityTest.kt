@@ -117,4 +117,11 @@ class AnimeProviderIdentityTest {
     assertEquals(group.files.toSet(),split.flatMap { it.files }.toSet())
     assertEquals("探偵オペラ ミルキィホームズ Alternative",animePartBase(subject(47464).name))
   }
+  @Test fun recentFeatureUsesLatestVideoOwnerIncludingSplitSubjects() {
+    val one = app.gyrolet.mpvrx.domain.network.NetworkFile("A - 01.mkv","/A/01.mkv",1,false)
+    val two = one.copy(name="A - 02.mkv",path="/A/02.mkv")
+    val groups=listOf(AnimeVideoGroup("one","/A","ONE",listOf(one),listOf("ONE")),AnimeVideoGroup("two","/A","TWO",listOf(two),listOf("TWO")))
+    assertEquals("two",animeFeaturedGroup(groups,listOf("/Other/01.mkv",two.path,one.path)))
+    assertNull(animeFeaturedGroup(groups,emptyList()))
+  }
 }
