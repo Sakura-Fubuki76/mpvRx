@@ -2991,6 +2991,8 @@
   <string name="pref_anime_cover_colors">Anime detail cover colours</string>
   <string name="pref_anime_cover_colors_summary">Use each anime cover to colour its detail page</string>
   <string name="anime_cast">Cast &amp; characters</string>
+  <string name="anime_voices">Voice actors</string>
+  <string name="anime_characters">Characters</string>
   <string name="anime_staff">Production staff</string>
   <string name="anime_cache_loading">Loading saved anime library…</string>
   <string name="anime_matching">Matching…</string>
