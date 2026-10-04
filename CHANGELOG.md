@@ -2,6 +2,17 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 2.7.4 - Anime Libraries and Persistent Cloud Indexes
+
+- Added Anime-enabled WebDAV libraries with Bangumi posters, immersive detail pages, episode names, cast and staff, and optional cover-derived colours.
+- Added conservative AniList title bridging for English and romanized releases, verified Bangumi aliases, season and movie safeguards, and support for reseeded episode names such as 10v2.
+- Follow Bangumi's separate ONE/TWO subjects when a numbered collection maps unambiguously to separate files; retain each subject's actual episode numbering and original file paths.
+- Sort Anime cards by their displayed metadata title using the existing natural ordering, with file and directory titles as fallbacks.
+- Persist cloud directories, library snapshots and metadata associations; prewarm saved Anime libraries and avoid restarting matching on ordinary refresh.
+- Show matching progress only for due work, preserve successful matches, and distinguish provider failures from missing matches.
+- Fill poster cards without top or bottom letterboxing while keeping full artwork on detail pages.
+- Reduced library scrolling work and moved debug trace writes off the UI thread.
+
 ## 2.7.3 - WebDAV, Cloud Metadata, and Restore-only Anime4K
 
 - Redirected stable and preview update checks to this fork's releases and preview site.
