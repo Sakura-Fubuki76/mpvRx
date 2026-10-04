@@ -1,0 +1,1178 @@
+{
+  "anilist": {
+    "Memory Snow": [
+      {
+        "id": 100049,
+        "title": {
+          "romaji": "Re:Zero kara Hajimeru Isekai Seikatsu OVAs",
+          "english": "Re:ZERO -Starting Life in Another World- OVAs",
+          "native": "Re:ゼロから始める異世界生活 OVAs"
+        },
+        "synonyms": [
+          "Re:ZERO -Starting Life in Another World- Memory Snow",
+          "Re:ZERO -Starting Life in Another World- The Frozen Bond",
+          "Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow",
+          "Re:Zero kara Hajimeru Isekai Seikatsu: Hyouketsu no Kizuna",
+          "Re:ゼロから始める異世界生活 Memory Snow",
+          "Re:ゼロから始める異世界生活 氷結の絆",
+          "Re:Zero รีเซทชีวิต ฝ่าวิกฤตต่างโลก Memory Snow",
+          "Re:Zero รีเซทชีวิต ฝ่าวิกฤตต่างโลก The Frozen Bond",
+          "Re:Zero — жизнь с нуля в другом мире OVA. Ледяные узы"
+        ],
+        "format": "OVA",
+        "episodes": 2
+      }
+    ],
+    "Milky Alternative": [
+      {
+        "id": 14647,
+        "title": {
+          "romaji": "Tantei Opera Milky Holmes: Alternative",
+          "english": "Detective Opera Milky Holmes: Alternative",
+          "native": "探偵オペラ ミルキィホームズ Alternative"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 2
+      }
+    ],
+    "Milky SS": [
+      {
+        "id": 10923,
+        "title": {
+          "romaji": "Tantei Opera Milky Holmes: Summer Special",
+          "english": "Detective Opera Milky Holmes: Summer Special",
+          "native": "探偵オペラ ミルキィホームズ サマー・スペシャル"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 1
+      }
+    ],
+    "Shirobako Movie": [
+      {
+        "id": 101574,
+        "title": {
+          "romaji": "SHIROBAKO Movie",
+          "english": "SHIROBAKO the Movie",
+          "native": "劇場版 SHIROBAKO"
+        },
+        "synonyms": [
+          "White Box Movie"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      }
+    ],
+    "Baka season 1": [
+      {
+        "id": 6347,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu",
+          "english": "Baka and Test - Summon the Beasts",
+          "native": "バカとテストと召喚獣"
+        },
+        "synonyms": [
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures",
+          "Baka to Test to Shokanju"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 8516,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Ni!",
+          "english": "Baka and Test - Summon the Beasts 2",
+          "native": "バカとテストと召喚獣 にっ！"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu 2",
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures 2"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 9471,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Matsuri",
+          "english": "Baka and Test - Summon the Beasts: Matsuri",
+          "native": "バカとテストと召喚獣 ～祭～"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu OVA",
+          "Baka to Test to Shokanju OVA",
+          "The Idiot, the Tests, and the Summoned Creatures OVA",
+          "Baka and Test: Summon the Beasts OVA"
+        ],
+        "format": "OVA",
+        "episodes": 2
+      },
+      {
+        "id": 7870,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Specials",
+          "english": "Baka and Test - Summon the Beasts Specials",
+          "native": "未公開映像 (制作: ムッツリ商会)"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu: Private Footage (Produced by Muttsuri Company)",
+          "Mikoukai Eizou (Seisaku: Muttsuri Shoukai)",
+          "The Idiot",
+          "the Tests"
+        ],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 10834,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: SPINOUT! Sore ga Bokura no Nichijou",
+          "english": "Baka and Test – Summon the Beasts 2 Specials",
+          "native": "バカとテストと召喚獣SPINOUT! それが僕らの日常。遠征中"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu Ni! Specials",
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures Specials"
+        ],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 107348,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Mini Anime",
+          "english": "Baka and Test Mini Special",
+          "native": "バカとテストと召喚獣 ミニアニメ"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 1
+      },
+      {
+        "id": 10431,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Matsuri Special",
+          "english": "Baka and Test - Summon the Beasts: Matsuri Special",
+          "native": "バカとテストと召喚獣 ～祭～"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu OVA Special",
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures OVA Special"
+        ],
+        "format": "SPECIAL",
+        "episodes": 1
+      },
+      {
+        "id": 21467,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Ni!: Mahou Hideyoshi Hideyoshi",
+          "english": "Baka and Test - Summon the Beasts: Hideyoshi Hideyoshi Magic Special",
+          "native": "バカとテストと召喚獣にっ！ 『魔法秀吉ひでよし』"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 1
+      },
+      {
+        "id": 21468,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Matsuri - Sentakushi Ikou nomi",
+          "english": null,
+          "native": "バカとテストと召喚獣 ～祭～ 選択肢以降のみ"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 7805,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Mondai - Christmas ni Tsuite Kotae Nasai",
+          "english": "Baka and Test - Summon the Beasts: Christmas Special",
+          "native": "バカとテストと召喚獣 問題 クリスマスについて答えなさい"
+        },
+        "synonyms": [],
+        "format": "ONA",
+        "episodes": 1
+      }
+    ],
+    "Baka season 2": [
+      {
+        "id": 8516,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Ni!",
+          "english": "Baka and Test - Summon the Beasts 2",
+          "native": "バカとテストと召喚獣 にっ！"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu 2",
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures 2"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 10834,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: SPINOUT! Sore ga Bokura no Nichijou",
+          "english": "Baka and Test – Summon the Beasts 2 Specials",
+          "native": "バカとテストと召喚獣SPINOUT! それが僕らの日常。遠征中"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu Ni! Specials",
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures Specials"
+        ],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 6347,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu",
+          "english": "Baka and Test - Summon the Beasts",
+          "native": "バカとテストと召喚獣"
+        },
+        "synonyms": [
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures",
+          "Baka to Test to Shokanju"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 21467,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Ni!: Mahou Hideyoshi Hideyoshi",
+          "english": "Baka and Test - Summon the Beasts: Hideyoshi Hideyoshi Magic Special",
+          "native": "バカとテストと召喚獣にっ！ 『魔法秀吉ひでよし』"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 1
+      },
+      {
+        "id": 7870,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Specials",
+          "english": "Baka and Test - Summon the Beasts Specials",
+          "native": "未公開映像 (制作: ムッツリ商会)"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu: Private Footage (Produced by Muttsuri Company)",
+          "Mikoukai Eizou (Seisaku: Muttsuri Shoukai)",
+          "The Idiot",
+          "the Tests"
+        ],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 9471,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Matsuri",
+          "english": "Baka and Test - Summon the Beasts: Matsuri",
+          "native": "バカとテストと召喚獣 ～祭～"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu OVA",
+          "Baka to Test to Shokanju OVA",
+          "The Idiot, the Tests, and the Summoned Creatures OVA",
+          "Baka and Test: Summon the Beasts OVA"
+        ],
+        "format": "OVA",
+        "episodes": 2
+      },
+      {
+        "id": 10431,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Matsuri Special",
+          "english": "Baka and Test - Summon the Beasts: Matsuri Special",
+          "native": "バカとテストと召喚獣 ～祭～"
+        },
+        "synonyms": [
+          "Baka to Test to Shoukanjuu OVA Special",
+          "The Idiot",
+          "the Tests",
+          "and the Summoned Creatures OVA Special"
+        ],
+        "format": "SPECIAL",
+        "episodes": 1
+      },
+      {
+        "id": 107348,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu Mini Anime",
+          "english": "Baka and Test Mini Special",
+          "native": "バカとテストと召喚獣 ミニアニメ"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 1
+      },
+      {
+        "id": 21468,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Matsuri - Sentakushi Ikou nomi",
+          "english": null,
+          "native": "バカとテストと召喚獣 ～祭～ 選択肢以降のみ"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 7805,
+        "title": {
+          "romaji": "Baka to Test to Shoukanjuu: Mondai - Christmas ni Tsuite Kotae Nasai",
+          "english": "Baka and Test - Summon the Beasts: Christmas Special",
+          "native": "バカとテストと召喚獣 問題 クリスマスについて答えなさい"
+        },
+        "synonyms": [],
+        "format": "ONA",
+        "episodes": 1
+      }
+    ],
+    "Hibike! Euphonium": [
+      {
+        "id": 20912,
+        "title": {
+          "romaji": "Hibike! Euphonium",
+          "english": "Sound! Euphonium",
+          "native": "響け！ユーフォニアム"
+        },
+        "synonyms": [
+          "Résonne ! Euphonium",
+          "吹响吧!上低音号"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 21460,
+        "title": {
+          "romaji": "Hibike! Euphonium 2",
+          "english": "Sound! Euphonium 2",
+          "native": "響け！ユーフォニアム 2"
+        },
+        "synonyms": [
+          "Résonne ! Euphonium 2"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 109731,
+        "title": {
+          "romaji": "Hibike! Euphonium 3",
+          "english": "Sound! Euphonium 3",
+          "native": "響け！ユーフォニアム３"
+        },
+        "synonyms": [
+          "響け! ユーフォニアム 久美子3年生編",
+          "Hibike! Euphonium: Kumiko 3 Nensei-hen",
+          "Résonne ! Euphonium"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 98338,
+        "title": {
+          "romaji": "Hibike! Euphonium 2 Specials",
+          "english": "Sound! Euphonium 2 Shorts",
+          "native": "響け！ユーフォニアム2"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 7
+      },
+      {
+        "id": 21376,
+        "title": {
+          "romaji": "Hibike! Euphonium: Kakedasu Monaka",
+          "english": "Sound! Euphonium: Ready, Set, Monaka",
+          "native": "響け！ユーフォニアム 番外編 かけだすモナカ"
+        },
+        "synonyms": [
+          "Hibike! Euphonium: Fonce, Monaka",
+          "Sound! Euphonium Episode 14"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 101992,
+        "title": {
+          "romaji": "Hibike! Euphonium: Chikai no Finale",
+          "english": "Sound! Euphonium: The Movie - Our Promise: A Brand New Day",
+          "native": "劇場版 響け！ユーフォニアム～誓いのフィナーレ～"
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 98876,
+        "title": {
+          "romaji": "Hibike! Euphonium: Todoketai Melody",
+          "english": "Sound! Euphonium The Movie — May the melody reach you! —",
+          "native": "劇場版 響け！ユーフォニアム～届けたいメロディ～"
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 177008,
+        "title": {
+          "romaji": "Hibike! Euphonium 3: Extra Episodes",
+          "english": null,
+          "native": "響け！ユーフォニアム３Extra Episode"
+        },
+        "synonyms": [
+          "Sound! Euphonium 3 Extra Episode"
+        ],
+        "format": "SPECIAL",
+        "episodes": 6
+      },
+      {
+        "id": 194116,
+        "title": {
+          "romaji": "Saishuu Gakushou Hibike! Euphonium - Kouhen",
+          "english": null,
+          "native": "最終楽章 響け！ユーフォニアム後編"
+        },
+        "synonyms": [
+          "Sound! Euphonium, The Final Movie Part 2"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 188035,
+        "title": {
+          "romaji": "Saishuu Gakushou Hibike! Euphonium - Zenpen",
+          "english": null,
+          "native": "最終楽章 響け！ユーフォニアム 前編"
+        },
+        "synonyms": [
+          "Sound! Euphonium, The Final Movie Part 1",
+          "Final Movement: Sound! Euphonium"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 21255,
+        "title": {
+          "romaji": "Hibike! Euphonium: Suisougaku-bu no Nichijou",
+          "english": "Sound! Euphonium Shorts",
+          "native": "響け！ユーフォニアム 吹奏楽部の日常"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 7
+      },
+      {
+        "id": 150429,
+        "title": {
+          "romaji": "Tokubetsu-hen Hibike! Euphonium: Ensemble Contest",
+          "english": "Sound! Euphonium: Ensemble Contest",
+          "native": "特別編 響け！ユーフォニアム～アンサンブルコンテスト～"
+        },
+        "synonyms": [
+          "Sound! Euphonium: Special Edition ~Ensemble Contest~",
+          "극장판 울려라! 유포니엄: 앙상블 콘테스트"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 21638,
+        "title": {
+          "romaji": "Hibike! Euphonium: Kitauji Koukou Suisougaku-bu e Youkoso",
+          "english": "Sound! Euphonium The Movie: Welcome to the Kitauji High School Concert Band",
+          "native": "劇場版 響け！ユーフォニアム～北宇治高校吹奏楽部へようこそ～"
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      }
+    ],
+    "THE IDOLM@STER": [
+      {
+        "id": 10278,
+        "title": {
+          "romaji": "THE IDOLM@STER",
+          "english": "The Idol Master",
+          "native": "アイドルマスター"
+        },
+        "synonyms": [
+          "The Idolmaster",
+          "The iDOLM@STER"
+        ],
+        "format": "TV",
+        "episodes": 25
+      },
+      {
+        "id": 98310,
+        "title": {
+          "romaji": "The Idolm@ster SideM",
+          "english": "THE IDOLM@STER Side M",
+          "native": "アイドルマスター SideM"
+        },
+        "synonyms": [
+          "The Idolmaster Side M"
+        ],
+        "format": "TV",
+        "episodes": 14
+      },
+      {
+        "id": 162889,
+        "title": {
+          "romaji": "The iDOLM@STER: Shiny Colors",
+          "english": "THE iDOLM@STER SHINY COLORS",
+          "native": "アイドルマスター シャイニーカラーズ"
+        },
+        "synonyms": [
+          " ShinyIM@S"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 14835,
+        "title": {
+          "romaji": "The Idolm@ster: Shiny Festa",
+          "english": null,
+          "native": "アイドルマスター シャイニーフェスタ"
+        },
+        "synonyms": [
+          "The Idolmaster: Shiny Festa"
+        ],
+        "format": "OVA",
+        "episodes": 3
+      },
+      {
+        "id": 4033,
+        "title": {
+          "romaji": "The Idolm@ster: Live for You!",
+          "english": null,
+          "native": "アイドルマスター ライブフォーユー!"
+        },
+        "synonyms": [
+          "The Idolmaster: Live for You!"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 120755,
+        "title": {
+          "romaji": "The IDOLM@STER Million Live!",
+          "english": "THE IDOLM@STER Million Live!",
+          "native": "アイドルマスター ミリオンライブ！"
+        },
+        "synonyms": [
+          "Тот, кто зажигает звёзды: Миллионный концерт!"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 20693,
+        "title": {
+          "romaji": "THE IDOLM@STER Cinderella Girls",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS",
+          "native": "アイドルマスターシンデレラガールズ"
+        },
+        "synonyms": [
+          "The Idolmaster: Cinderella Girls",
+          "The iDOLM@STER Cinderella Girls"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 21094,
+        "title": {
+          "romaji": "THE IDOLM@STER Cinderella Girls 2nd SEASON",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS",
+          "native": "アイドルマスターシンデレラガールズ 2nd SEASON"
+        },
+        "synonyms": [
+          "The Idolmaster: Cinderella Girls 2nd Season"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 124082,
+        "title": {
+          "romaji": "Azur Lane Anime PVs",
+          "english": null,
+          "native": "アズールレーン アニメPVs"
+        },
+        "synonyms": [
+          "Azur Lane x THE IDOLM@STER",
+          "Azur Lane | SSSS.GRIDMAN / SSSS.DYNAZENON",
+          "Azur Lane x Atelier Ryza 2",
+          "Azur Lane x Dead or Alive Xtreme Venus Vacation"
+        ],
+        "format": "SPECIAL",
+        "episodes": null
+      },
+      {
+        "id": 187375,
+        "title": {
+          "romaji": "THE IDOLM@STER Million Live!: Itsuka, Mannaka de",
+          "english": null,
+          "native": "アイドルマスター ミリオンライブ！～いつか、真ん中で～"
+        },
+        "synonyms": [
+          "THE IDOLM@STER Million Live! OVA"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 175533,
+        "title": {
+          "romaji": "The iDOLM@STER: Shiny Colors 2nd season",
+          "english": "THE iDOLM@Ster SHINY COLORS Season 2",
+          "native": "アイドルマスター シャイニーカラーズ 2nd season"
+        },
+        "synonyms": [
+          "ShinyIM@S 2"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 1694,
+        "title": {
+          "romaji": "Idolm@ster Xenoglossia",
+          "english": "IDOLM@STER: XENOGLOSSIA",
+          "native": "アイドルマスター ゼノグラシア"
+        },
+        "synonyms": [
+          "Idol Master Xenoglossia",
+          "Idolmaster Xenoglossia"
+        ],
+        "format": "TV",
+        "episodes": 26
+      },
+      {
+        "id": 97765,
+        "title": {
+          "romaji": "Cinderella Girls Gekijou",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS Theater",
+          "native": "シンデレラガールズ劇場"
+        },
+        "synonyms": [
+          "Cingeki",
+          "The IDOLM@STER Cinderella Girls Gekijou (TV)"
+        ],
+        "format": "TV_SHORT",
+        "episodes": 13
+      },
+      {
+        "id": 137075,
+        "title": {
+          "romaji": "VOY@GER",
+          "english": null,
+          "native": "VOY@GER"
+        },
+        "synonyms": [
+          "アイドルマスターシリーズ コンセプトムービー2021",
+          "THE IDOLM@STER Series Concept Movie 2021"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 101546,
+        "title": {
+          "romaji": "The Idolm@ster SideM: PASSION of the PASSION",
+          "english": null,
+          "native": "アイドルマスター SideM『PASSION of the PASSION』"
+        },
+        "synonyms": [
+          "The Idolmaster Side M Special",
+          "Made In Passion!"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 177456,
+        "title": {
+          "romaji": "The IDOLM@STER Million Live!: The Backstage",
+          "english": null,
+          "native": "アイドルマスター ミリオンライブ！ ～The Backstage～"
+        },
+        "synonyms": [],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 103923,
+        "title": {
+          "romaji": "The Idolm@ster SideM Wake Atte Mini!",
+          "english": "THE IDOLM@STER SideM Wakeatte Mini!",
+          "native": "アイドルマスター SideM　理由あってMini!"
+        },
+        "synonyms": [
+          "Idolmaster SideM - Wakeatte Mini!",
+          "Wakeattte Mini!"
+        ],
+        "format": "TV_SHORT",
+        "episodes": 12
+      },
+      {
+        "id": 146975,
+        "title": {
+          "romaji": "THE iDOLM@STER Cinderella Girls: U149",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS U149",
+          "native": "アイドルマスター シンデレラガールズ U149"
+        },
+        "synonyms": [
+          "PROJECT U149",
+          "Тот, кто зажигает звёзды: Золушки U149"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 17437,
+        "title": {
+          "romaji": "THE IDOLM@STER MOVIE: Kagayaki no Mukougawa e!",
+          "english": null,
+          "native": "THE IDOLM@STER MOVIE 輝きの向こう側へ！"
+        },
+        "synonyms": [
+          "The Idolmaster Movie",
+          "The IDOLM@STER Movie: To the Glittering Other Side!",
+          "The Idolmaster Movie: Beyond the Brilliant Future!"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 113221,
+        "title": {
+          "romaji": "THE IDOLM@STER CINDERELLA GIRLS: Spin-off!",
+          "english": null,
+          "native": "THE IDOLM@STER CINDERELLA GIRLS Spin-off!"
+        },
+        "synonyms": [],
+        "format": "ONA",
+        "episodes": 1
+      },
+      {
+        "id": 98556,
+        "title": {
+          "romaji": "Cinderella Girls Gekijou: Kayou Cinderella Theater",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS Theater (Web)",
+          "native": "シンデレラガールズ劇場 火曜シンデレラシアター"
+        },
+        "synonyms": [
+          "Cingeki ONA",
+          "The IDOLM@STER Cinderella Girls Gekijou (Game)",
+          "Cinderella Girls Gekijou ONA",
+          "シンデレラガールズ劇場 ONA",
+          "THE IDOLM@STER CINDERELLA GIRLS Theater: Tuesday Cinderella Theater"
+        ],
+        "format": "ONA",
+        "episodes": 13
+      },
+      {
+        "id": 185612,
+        "title": {
+          "romaji": "The iDOLM@STER: Shiny Colors 2nd season - SHHis",
+          "english": null,
+          "native": "アイドルマスター シャイニーカラーズ 2nd season SHHis"
+        },
+        "synonyms": [],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 101267,
+        "title": {
+          "romaji": "Cinderella Girls Gekijou 3rd Season",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS Theater 3rd Season",
+          "native": "シンデレラガールズ劇場 第3期"
+        },
+        "synonyms": [
+          "Cingeki"
+        ],
+        "format": "TV_SHORT",
+        "episodes": 13
+      },
+      {
+        "id": 108810,
+        "title": {
+          "romaji": "Cinderella Girls Gekijou: Kayou Cinderella Theater CLIMAX SEASON",
+          "english": "THE IDOLM@STER CINDERELLA GIRLS Theater CLIMAX SEASON",
+          "native": "シンデレラガールズ劇場 火曜シンデレラシアターCLIMAX SEASON"
+        },
+        "synonyms": [
+          "Cinderella Girls Gekijou CLIMAX SEASON ONA",
+          "Cingeki CLIMAX SEASON ONA"
+        ],
+        "format": "ONA",
+        "episodes": 7
+      },
+      {
+        "id": 11889,
+        "title": {
+          "romaji": "The Idolm@ster: 765 Pro to Iu Monogatari",
+          "english": null,
+          "native": "アイドルマスター 765プロという物語"
+        },
+        "synonyms": [
+          "The Idolmaster Special"
+        ],
+        "format": "SPECIAL",
+        "episodes": 1
+      }
+    ],
+    "To LOVE-Ru Darkness": [
+      {
+        "id": 13663,
+        "title": {
+          "romaji": "To LOVE-Ru Darkness",
+          "english": "To Love Ru Darkness",
+          "native": "To LOVEる -とらぶる- ダークネス"
+        },
+        "synonyms": [
+          "To LOVE-Ru Trouble Darkness",
+          "To-Love-Ru Darkness",
+          "ToLoveRu Darkness"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 20995,
+        "title": {
+          "romaji": "To LOVE-Ru Darkness 2nd",
+          "english": "To Love Ru Darkness 2",
+          "native": "To LOVEる -とらぶる- ダークネス2nd"
+        },
+        "synonyms": [
+          "To LOVE-Ru Trouble Darkness 2nd"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 13851,
+        "title": {
+          "romaji": "To LOVE-Ru Darkness OVA",
+          "english": null,
+          "native": "To LOVEる -とらぶる- ダークネス"
+        },
+        "synonyms": [
+          "To LOVE-Ru Trouble Darkness OVA",
+          "To-Love-Ru Darkness OVA",
+          "ToLoveRu Darkness OVA",
+          "To Love Ru Darkness OVA"
+        ],
+        "format": "OVA",
+        "episodes": 6
+      },
+      {
+        "id": 21853,
+        "title": {
+          "romaji": "To LOVE-Ru Darkness 2nd OVA",
+          "english": null,
+          "native": "To LOVEる -とらぶる- ダークネス2nd"
+        },
+        "synonyms": [
+          "To Love Ru Darkness 2nd OVA"
+        ],
+        "format": "OVA",
+        "episodes": 3
+      },
+      {
+        "id": 21852,
+        "title": {
+          "romaji": "To LOVE-Ru Darkness 2nd Specials",
+          "english": "To Love Ru Darkness 2 Specials",
+          "native": "To LOVEる -とらぶる- ダークネス2nd"
+        },
+        "synonyms": [],
+        "format": "SPECIAL",
+        "episodes": 2
+      }
+    ]
+  },
+  "bangumi": {
+    "225462": {
+      "id": 225462,
+      "name": "Re:ゼロから始める異世界生活 Memory Snow",
+      "name_cn": "Re：从零开始的异世界生活 雪之回忆",
+      "platform": "OVA",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "Re：从零开始的异世界生活 Memory Snow"
+            },
+            {
+              "v": "Re:Zero kara Hajimeru Isekai Seikatsu (2018)"
+            },
+            {
+              "v": "Re:Zero - Starting Life in Another World (2018)"
+            }
+          ]
+        }
+      ]
+    },
+    "22756": {
+      "id": 22756,
+      "name": "探偵オペラ ミルキィホームズ サマー・スペシャル",
+      "name_cn": "侦探歌剧 少女福尔摩斯 夏季特别篇",
+      "platform": "TV",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "侦探歌剧SS"
+            }
+          ]
+        }
+      ]
+    },
+    "64172": {
+      "id": 64172,
+      "name": "THE IDOLM@STER MOVIE 輝きの向こう側へ！",
+      "name_cn": "偶像大师 剧场版 向着光辉的彼岸！",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "k": "台湾上映译名",
+              "v": "THE IDOLM@STER MOVIE 前往光輝的另一端！"
+            },
+            {
+              "v": "偶像大师剧场版：前往光辉的彼端"
+            },
+            {
+              "v": "偶像大师剧场版 走向光辉的未来"
+            },
+            {
+              "v": "THE iDOLM@STER MOVIE Beyond The Brilliant Future！"
+            }
+          ]
+        }
+      ]
+    },
+    "45884": {
+      "id": 45884,
+      "name": "To LOVEる-とらぶる-ダークネス OAD",
+      "name_cn": "出包王女Darkness OAD",
+      "platform": "OVA",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "To LOVEる -とらぶる- ダークネス OAD"
+            },
+            {
+              "v": "To Love Ru Darkness OAD"
+            }
+          ]
+        }
+      ]
+    },
+    "210486": {
+      "id": 210486,
+      "name": "To LOVEる-とらぶる-ダークネス OVA",
+      "name_cn": "出包王女Darkness OVA",
+      "platform": "OVA",
+      "infobox": []
+    },
+    "216372": {
+      "id": 216372,
+      "name": "劇場版 響け！ユーフォニアム～誓いのフィナーレ～",
+      "name_cn": "剧场版 吹响吧！上低音号～誓言的终章～",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "剧场版 吹响！悠风号～誓言的终章～"
+            },
+            {
+              "v": "剧场版 吹响！上低音号～誓言的终章～"
+            },
+            {
+              "v": "剧场版 吹响吧！上低音号~誓言的终曲~"
+            }
+          ]
+        }
+      ]
+    },
+    "152092": {
+      "id": 152092,
+      "name": "劇場版 響け！ユーフォニアム～北宇治高校吹奏楽部へようこそ～",
+      "name_cn": "剧场版 吹响吧！上低音号～欢迎来到北宇治高中吹奏乐部～",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "剧场版 吹响！悠风号～欢迎来到北宇治高中吹奏乐部～"
+            },
+            {
+              "v": "剧场版 吹响！上低音号～欢迎来到北宇治高中吹奏乐部～"
+            }
+          ]
+        }
+      ]
+    },
+    "211089": {
+      "id": 211089,
+      "name": "劇場版 響け！ユーフォニアム～届けたいメロディ～",
+      "name_cn": "剧场版 吹响吧！上低音号～想要传达的旋律～",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "剧场版 吹响！悠风号～想要传达的旋律～"
+            },
+            {
+              "v": "剧场版 吹响！上低音号～想要传达的旋律～"
+            }
+          ]
+        }
+      ]
+    },
+    "244761": {
+      "id": 244761,
+      "name": "劇場版 SHIROBAKO",
+      "name_cn": "剧场版 白箱",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "Gekijouban Shirobako"
+            },
+            {
+              "v": "Shirobako the Movie"
+            }
+          ]
+        }
+      ]
+    },
+    "3326": {
+      "id": 3326,
+      "name": "バカとテストと召喚獣",
+      "name_cn": "笨蛋，测验，召唤兽",
+      "platform": "TV",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "Baka to Test to Shoukanjuu"
+            },
+            {
+              "v": "笨蛋测验召唤兽"
+            },
+            {
+              "v": "笨蛋测试召唤兽"
+            },
+            {
+              "v": "笨蛋，测试，召唤兽"
+            }
+          ]
+        }
+      ]
+    },
+    "11145": {
+      "id": 11145,
+      "name": "バカとテストと召喚獣にっ!",
+      "name_cn": "笨蛋，测验，召唤兽2！",
+      "platform": "TV",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "Baka to Test to Shoukanjuu Ni!"
+            },
+            {
+              "v": "Baka and Test: Summon the Beasts (2)"
+            },
+            {
+              "v": "Baka to Test to Shoukanjuu 2"
+            },
+            {
+              "v": "笨蛋，测验，召唤兽2"
+            },
+            {
+              "v": "笨蛋、测验、召唤兽2"
+            },
+            {
+              "v": "笨蛋测试召唤兽 第二季"
+            }
+          ]
+        }
+      ]
+    },
+    "47464": {
+      "id": 47464,
+      "name": "探偵オペラ ミルキィホームズ Alternative ONE～小林オペラと5枚の絵画～",
+      "name_cn": "侦探歌剧 少女福尔摩斯 Alternative ONE",
+      "platform": "TV",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "侦探歌剧 Alternative ONE"
+            }
+          ]
+        }
+      ]
+    },
+    "54728": {
+      "id": 54728,
+      "name": "探偵オペラ ミルキィホームズ Alternative TWO～小林オペラと虚空の大鴉～",
+      "name_cn": "侦探歌剧 少女福尔摩斯 Alternative TWO",
+      "platform": "TV",
+      "infobox": []
+    }
+  }
+}

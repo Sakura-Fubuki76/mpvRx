@@ -78,7 +78,7 @@ import app.gyrolet.mpvrx.domain.network.NetworkConnection
     app.gyrolet.mpvrx.database.entities.CloudDirectoryStateEntity::class,
     app.gyrolet.mpvrx.database.entities.CloudFolderMetadataEntity::class,
   ],
-  version = 33,
+  version = 34,
   exportSchema = true,
 )
 @TypeConverters(NetworkProtocolConverter::class, NetworkStreamEntryTypeConverter::class)

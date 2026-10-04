@@ -10,6 +10,7 @@ data class AnimeSubject(
   val tags: List<String> = emptyList(), val episodes: List<AnimeEpisode> = emptyList(),
   val cast: List<AnimeCast> = emptyList(), val staff: List<AnimePerson> = emptyList(),
   val creditsFetchedAt: Long = 0,
+  val aliases: List<String> = emptyList(), val format: String = "",
 ) {
   val title: String get() = chineseName.ifBlank { name }
 }
@@ -88,10 +89,13 @@ fun animeNameKey(name: String): String = Normalizer.normalize(name, Normalizer.F
 
 /** Ambiguous search results require confirmation; popularity is never an identity signal. */
 fun matchAnimeSubject(query: String, candidates: List<AnimeSubject>): AnimeSubject? {
-  val key = animeNameKey(query)
+  val key = animeIdentityKey(query)
   if (key.length < 2) return null
-  return candidates.filter { animeNameKey(it.name) == key || animeNameKey(it.chineseName) == key }
-    .distinctBy { it.id }.singleOrNull()
+  val shortMovie = animeIsMovie(query) && Regex("(?i)\\bmovie$").containsMatchIn(query)
+  return candidates.filter { subject ->
+    (listOf(subject.name, subject.chineseName) + subject.aliases).any { it.isNotBlank() && animeIdentityKey(it, if (animeIsMovie(query)) subject.format else "") == key } ||
+      (shortMovie && subject.format == "剧场版" && (listOf(subject.name) + subject.aliases).any { animeMovieBase(it) == animeMovieBase(query) })
+  }.distinctBy { it.id }.singleOrNull()
 }
 
 private val extraDirectoryNames = setOf("sp", "sps", "special", "specials", "extra", "extras", "bonus", "ncop", "nced", "op", "ed", "pv", "cm", "menu", "menus", "previews", "creditless", "cds", "ova", "次回予告", "特典", "映像特典")
@@ -179,7 +183,12 @@ fun animeVideoGroups(files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>):
     val ancestors = directory.split('/').filter { it.isNotBlank() }.dropLast(1).asReversed().map(::animeDirectoryTitle)
     val season = animeSeason(title)
     val safeAncestors = ancestors.filter { ancestorUsage[it] == 1 }
-    val queries = (listOf(title) + safeAncestors).filter { it.isNotBlank() && (season == null || animeSeason(it) == season) }.distinct()
+    val fileAliases = if (seasonFolder == null) emptyList() else rows.filter {
+      it.path.substringBeforeLast('/') == directory && !isAnimeExtraVideo(it)
+    }.map { parseAnimeFilename(it.name) }.filter { it.episode != null && it.title.isNotBlank() }
+      .groupBy { animeIdentityKey(it.title) }.values.filter { it.map { row -> row.episode }.distinct().size >= 2 }
+      .map { it.first().title }
+    val queries = (listOf(title) + safeAncestors + fileAliases).filter { it.isNotBlank() && (season == null || animeSeason(it) == season || animeExplicitSeason(it) == season) }.distinct()
     if (mixed && titles.size > 1) {
       // In a mixed folder, a filename is evidence of identity; the folder is only a location.
       // Keep unidentifiable files together rather than attaching them to an arbitrary show.

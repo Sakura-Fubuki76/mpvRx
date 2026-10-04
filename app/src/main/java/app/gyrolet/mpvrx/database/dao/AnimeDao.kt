@@ -29,4 +29,9 @@ abstract class AnimeDao {
   open suspend fun bindAutomatically(folder: AnimeFolderEntity) {
     if (getFolder(folder.connectionId, folder.path)?.manual != true) putFolder(folder)
   }
+  /** Upgrade saved identities in one transaction, producing a single catalog invalidation. */
+  @Transaction
+  open suspend fun bindAutomatically(folders: List<AnimeFolderEntity>) {
+    folders.forEach { folder -> if (getFolder(folder.connectionId, folder.path)?.manual != true) putFolder(folder) }
+  }
 }

@@ -15,4 +15,6 @@ data class AnimeFolderEntity(
   val manual: Boolean,
   val episodeOffset: Int,
   val attemptedAt: Long,
+  @androidx.room.ColumnInfo(defaultValue = "NULL") val parentPath: String? = null,
+  @androidx.room.ColumnInfo(defaultValue = "NULL") val partNumber: Int? = null,
 )

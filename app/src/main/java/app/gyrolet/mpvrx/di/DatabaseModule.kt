@@ -1021,6 +1021,21 @@ val MIGRATION_32_33 = object : Migration(32, 33) {
   }
 }
 
+val MIGRATION_33_34 = object : Migration(33, 34) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE anime_folders ADD COLUMN parentPath TEXT DEFAULT NULL")
+    db.execSQL("ALTER TABLE anime_folders ADD COLUMN partNumber INTEGER DEFAULT NULL")
+    // Upgrade the experimental split format without dropping associations or manual matches.
+    db.query("SELECT connectionId, path, query FROM anime_folders WHERE query LIKE '#split-v1 | %'").use { rows ->
+      while (rows.moveToNext()) {
+        val binding = org.json.JSONObject(rows.getString(2).removePrefix("#split-v1 | "))
+        db.execSQL("UPDATE anime_folders SET parentPath = ?, partNumber = ?, query = ? WHERE connectionId = ? AND path = ?",
+          arrayOf(binding.getString("parent"), binding.getInt("number"), binding.getString("title"), rows.getLong(0), rows.getString(1)))
+      }
+    }
+  }
+}
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -1069,6 +1084,7 @@ val DatabaseModule =
           MIGRATION_30_31,
           MIGRATION_31_32,
           MIGRATION_32_33,
+          MIGRATION_33_34,
         ).build()
     }
 
