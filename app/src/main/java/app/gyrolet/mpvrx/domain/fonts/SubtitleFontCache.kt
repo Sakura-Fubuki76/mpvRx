@@ -28,9 +28,8 @@ object SubtitleFontCache {
 
   private val lock = Mutex()
   private val json = Json { ignoreUnknownKeys = true }
-  private val extensions = setOf("ttf", "otf", "ttc", "woff", "woff2")
   @Serializable private data class SourceFont(val uri: String, val name: String, val size: Long, val modified: Long)
-  @Serializable private data class Sources(val roots: List<String>, val checkedAt: Long, val files: List<SourceFont>)
+  @Serializable private data class Sources(val roots: List<String>, val checkedAt: Long, val files: List<SourceFont>, val traversalVersion: Int = 0)
   @Serializable private data class Entry(val name: String, val size: Long, val modified: Long, val families: Set<String>)
 
   fun directory(context: Context, mediaId: String): File {
@@ -53,14 +52,14 @@ object SubtitleFontCache {
       val old = runCatching { json.decodeFromString<List<Entry>>(manifest.readText()) }.getOrDefault(emptyList()).associateBy { it.name }
       bank.mkdirs()
       val requestedNames = families.filter { it.isNotBlank() && it.lowercase(Locale.ROOT) !in setOf("sans-serif", "serif", "monospace") }
-      val bankFiles = bank.listFiles().orEmpty().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in extensions }
+      val bankFiles = fontBankFiles(bank)
       val missing = requestedNames.filter { family -> bankFiles.none { file ->
-        AssFontNames.matches(file.name, family) || (old[file.name]?.families ?: FontNameReader.names(file)).any { it.equals(family.removePrefix("@"), true) }
+        AssFontNames.matches(file.name, family) || (old[file.relativeTo(bank).invariantSeparatorsPath]?.families ?: FontNameReader.names(file)).any { it.equals(family.removePrefix("@"), true) }
       } }.toSet()
       if (missing.isNotEmpty()) importRequestedFonts(context, bank, missing, allowSourceScan)
-      val entries = bank.listFiles().orEmpty().filter { it.isFile && it.extension.lowercase(Locale.ROOT) in extensions }.map { file ->
-        old[file.name]?.takeIf { it.size == file.length() && it.modified == file.lastModified() }
-          ?: Entry(file.name, file.length(), file.lastModified(), FontNameReader.names(file))
+      val entries = fontBankFiles(bank).map { file ->
+        old[file.relativeTo(bank).invariantSeparatorsPath]?.takeIf { it.size == file.length() && it.modified == file.lastModified() }
+          ?: Entry(file.relativeTo(bank).invariantSeparatorsPath, file.length(), file.lastModified(), FontNameReader.names(file))
       }
       if (entries != old.values.toList()) {
         val pending = File(context.filesDir, "font-names.json.tmp")
@@ -68,18 +67,18 @@ object SubtitleFontCache {
         java.nio.file.Files.move(pending.toPath(), manifest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
       }
       for (family in requestedNames) {
-        val found = entries.count { entry -> AssFontNames.matches(entry.name, family) || entry.families.any { it.equals(family.removePrefix("@"), true) } }
+        val found = entries.count { entry -> AssFontNames.matches(File(entry.name).name, family) || entry.families.any { it.equals(family.removePrefix("@"), true) } }
         CloudTrace.event("fonts.family", detail = "family=${family.replace('\n', ' ').replace('\r', ' ').take(96)} matches=$found")
       }
       val active = directory(context, mediaId).apply { mkdirs() }
       if (reset) active.listFiles()?.forEach { it.delete() }
       val requested = families.map { it.trim().removePrefix("@").lowercase(Locale.ROOT) }.toSet()
       val matches = entries.filter { entry -> requested.any { family ->
-        AssFontNames.matches(entry.name, family) || entry.families.any { it.lowercase(Locale.ROOT) == family }
+        AssFontNames.matches(File(entry.name).name, family) || entry.families.any { it.lowercase(Locale.ROOT) == family }
       } }
       for (entry in matches) {
         val source = File(bank, entry.name)
-        val target = File(active, entry.name)
+        val target = File(active, fontStorageName(entry.name))
         if (target.exists() && target.length() == entry.size && target.lastModified() == entry.modified) continue
         target.delete()
         runCatching { Os.link(source.path, target.path) }.getOrElse { source.copyTo(target, overwrite = true) }
@@ -95,28 +94,38 @@ object SubtitleFontCache {
     if (roots.isEmpty()) return
     val catalogFile = File(context.filesDir, "font-sources.json")
     val cached = runCatching { json.decodeFromString<Sources>(catalogFile.readText()) }.getOrNull()
-    val fresh = cached != null && cached.roots == roots && System.currentTimeMillis() - cached.checkedAt in 0..86400000L
+    val fresh = cached != null && cached.traversalVersion == 2 && cached.roots == roots && System.currentTimeMillis() - cached.checkedAt in 0..86400000L
     if (!fresh && !allowSourceScan) return
     val catalog = if (fresh) cached!! else {
       val files = mutableListOf<SourceFont>()
       val seen = hashSetOf<String>()
-      suspend fun visit(tree: Uri, documentId: String, depth: Int) {
-        kotlinx.coroutines.currentCoroutineContext().ensureActive()
-        if (depth > 64 || seen.size >= 5000 || !seen.add(documentId + tree)) return
-        val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, documentId)
-        val columns = arrayOf("document_id", "_display_name", "mime_type", "_size", "last_modified")
-        val directories = mutableListOf<String>()
-        context.contentResolver.query(children, columns, null, null, null)?.use { cursor ->
-          while (cursor.moveToNext()) {
-            val id = cursor.getString(0)
-            val name = cursor.getString(1) ?: continue
-            if (cursor.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) directories += id
-            else if (name.substringAfterLast('.', "").lowercase(Locale.ROOT) in extensions)
-              files += SourceFont(android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(),
-                name, cursor.getLong(3), cursor.getLong(4))
+      var complete = true
+      suspend fun visit(tree: Uri, documentId: String) {
+        val pending = java.util.ArrayDeque<String>().apply { add(documentId) }
+        while (pending.isNotEmpty()) {
+          kotlinx.coroutines.currentCoroutineContext().ensureActive()
+          val parentId = pending.removeLast()
+          if (!seen.add("$tree|$parentId")) continue
+          val children = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+          val columns = arrayOf("document_id", "_display_name", "mime_type", "_size", "last_modified")
+          try {
+            val cursor = context.contentResolver.query(children, columns, null, null, null)
+            if (cursor == null) { complete = false; continue }
+            cursor.use {
+              while (it.moveToNext()) {
+                val id = it.getString(0)
+                val name = it.getString(1) ?: continue
+                if (it.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) pending.add(id)
+                else if (isFontFile(name)) files += SourceFont(
+                  android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, it.getLong(3), it.getLong(4))
+              }
+            }
+          } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+          catch (error: Exception) {
+            complete = false
+            CloudTrace.event("fonts.source.failed", detail = "error=${error.javaClass.simpleName}")
           }
         }
-        for (id in directories) visit(tree, id, depth + 1)
       }
       for (root in roots) {
         try {
@@ -125,18 +134,23 @@ object SubtitleFontCache {
           val selected = if (root == advanced.mpvConfStorageUri.get())
             document.listFiles().firstOrNull { it.isDirectory && it.name.equals("fonts", true) } ?: continue
           else document
-          visit(uri, android.provider.DocumentsContract.getDocumentId(selected.uri), 0)
+          visit(uri, android.provider.DocumentsContract.getDocumentId(selected.uri))
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (_: Exception) { /* Preserve the previous bank when a permission/provider is unavailable. */ }
+        catch (_: Exception) { complete = false /* Keep existing bank and retry the incomplete catalog later. */ }
       }
-      Sources(roots, System.currentTimeMillis(), files).also {
-        catalogFile.writeText(json.encodeToString(it))
+      Sources(roots, System.currentTimeMillis(), files, traversalVersion = 2).also {
+        if (complete) {
+          val pending = File(context.filesDir, "font-sources.json.tmp")
+          pending.writeText(json.encodeToString(it))
+          java.nio.file.Files.move(pending.toPath(), catalogFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        }
+        CloudTrace.event("fonts.source.scanned", detail = "directories=${seen.size} files=${files.size} complete=$complete")
       }
     }
     for (font in catalog.files.filter { font -> names.any { AssFontNames.matches(font.name, it) } }) {
       kotlinx.coroutines.currentCoroutineContext().ensureActive()
       if (font.name.contains('/') || font.name.contains('\\')) continue
-      val target = File(bank, font.name)
+      val target = File(bank, fontStorageName("${font.uri}/${font.name}"))
       if (target.exists() && target.length() == font.size && font.modified > 0 && target.lastModified() == font.modified) continue
       val pending = File(bank, ".${font.name}.tmp")
       try {

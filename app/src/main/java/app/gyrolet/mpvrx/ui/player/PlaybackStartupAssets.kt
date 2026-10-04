@@ -103,7 +103,6 @@ object PlaybackStartupAssets : KoinComponent {
       syncBundledAssetsIfNeeded()
       prepareUserMpvAssetsForStartup()
       googleFontsRepository.syncMpvFonts()
-      sanitizeInternalFontsDirectory()
     }
     Log.d(TAG, "MPV startup assets ready in ${SystemClock.elapsedRealtime() - startedAt} ms")
   }
@@ -126,6 +125,7 @@ object PlaybackStartupAssets : KoinComponent {
 
   private fun prepareUserMpvAssetsForStartup() {
     app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.migrateLegacyBank(context)
+    File(filesDir, "font-bank").mkdirs()
     ensureConfigCacheForStartup()
     val syncPreferences = assetSyncPreferences
     val currentSelection = currentUserMpvAssetSelection()
@@ -143,7 +143,8 @@ object PlaybackStartupAssets : KoinComponent {
       return
     }
 
-    syncFromUserMpvDirectory()
+    // Font trees are indexed in the background and imported on demand, never on the open path.
+    syncFromUserMpvDirectory(includeFonts = false)
     rememberUserMpvAssetSelection(syncPreferences)
     userMpvAssetsFullySynced = true
   }
@@ -216,7 +217,7 @@ object PlaybackStartupAssets : KoinComponent {
   internal fun rememberUserMpvAssetSelection(syncPreferences: android.content.SharedPreferences) {
     syncPreferences.edit().putString(USER_MPV_ASSET_SELECTION, currentUserMpvAssetSelection()).apply()
   }
-  internal fun syncFromUserMpvDirectory() {
+  internal fun syncFromUserMpvDirectory(includeFonts: Boolean = true) {
     synchronized(assetLock) {
     val mpvConfStorageUri = advancedPreferences.mpvConfStorageUri.get()
 
@@ -235,7 +236,7 @@ object PlaybackStartupAssets : KoinComponent {
       syncScripts(tree, rootChildren)
       syncScriptOpts(tree, rootChildren)
       syncShaders(tree, rootChildren)
-      syncFonts(tree, rootChildren)
+      if (includeFonts) syncFonts(tree, rootChildren)
       Log.d(TAG, "Full MPV directory sync completed")
     } else {
       // Fallback: use preferences-based config (no user directory set)
@@ -445,18 +446,10 @@ object PlaybackStartupAssets : KoinComponent {
   ) {
     val internalFontsDir = File(filesDir, "font-bank")
     internalFontsDir.mkdirs()
-    internalFontsDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
 
     val fontsSubdir = findSubdirCaseInsensitive(tree, "fonts", rootChildren)
     val sourceDir = fontsSubdir ?: tree
-    val fontExtensions = setOf("ttf", "otf", "ttc", "woff", "woff2")
-    val count =
-      syncFlatDocumentDirectory(
-        sourceDir = sourceDir,
-        destinationDir = internalFontsDir,
-        includeFile = { name -> name.substringAfterLast('.', "").lowercase() in fontExtensions },
-        deleteMissing = false,
-      )
+    val count = syncFontDirectory(sourceDir, internalFontsDir)
 
     Log.d(TAG, "Fonts sync: $count file(s) from MPV directory")
   }
@@ -489,7 +482,6 @@ object PlaybackStartupAssets : KoinComponent {
 
     val destinationDir = File(filesDir, "font-bank")
     destinationDir.mkdirs()
-    destinationDir.listFiles()?.filter { it.isDirectory }?.forEach { it.deleteRecursively() }
     syncFontDirectory(sourceDir, destinationDir)
   }
 
@@ -515,24 +507,17 @@ object PlaybackStartupAssets : KoinComponent {
     destinationDir.mkdirs()
     var copiedCount = 0
 
-    listTreeFilesSafely(sourceDir).forEach { document ->
-      val name = document.name ?: return@forEach
-      when {
-        document.isDirectory -> {
-          copiedCount += syncFontDirectory(document, destinationDir)
-        }
-        document.isFile -> {
-          val extension = name.substringAfterLast('.', "").lowercase()
-          if (extension !in setOf("ttf", "otf", "ttc", "woff", "woff2")) {
-            return@forEach
-          }
-
-          if (copyDocumentToFileIfNeeded(document, File(destinationDir, name))) {
-            copiedCount++
-          }
-        }
-      }
-    }
+    data class Node(val document: DocumentFile, val relative: String)
+    app.gyrolet.mpvrx.domain.fonts.walkFontTree(Node(sourceDir, ""), { it.document.uri.toString() },
+      { it.document.isDirectory }, { node ->
+        listTreeFilesSafely(node.document).mapNotNull { child -> child.name?.let { name ->
+          Node(child, if (node.relative.isEmpty()) name else "${node.relative}/$name")
+        } }
+      }, { node ->
+        if (app.gyrolet.mpvrx.domain.fonts.isFontFile(node.document.name.orEmpty()) &&
+            copyDocumentToFileIfNeeded(node.document,
+              File(destinationDir, app.gyrolet.mpvrx.domain.fonts.fontStorageName(node.relative)))) copiedCount++
+      })
 
     return copiedCount
   }
@@ -719,17 +704,6 @@ object PlaybackStartupAssets : KoinComponent {
       File(filesDir, "shaders").mkdirs()
     }.onFailure { e ->
       Log.e(TAG, "Error creating fallback config files", e)
-    }
-  }
-
-  private fun sanitizeInternalFontsDirectory() {
-    val fontsDir = File(filesDir, "font-bank")
-    if (!fontsDir.exists()) {
-      return
-    }
-
-    fontsDir.listFiles()?.filter { it.isDirectory }?.forEach { nestedDir ->
-      nestedDir.deleteRecursively()
     }
   }
 

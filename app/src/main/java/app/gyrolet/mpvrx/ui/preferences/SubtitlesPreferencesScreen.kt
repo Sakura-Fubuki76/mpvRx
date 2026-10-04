@@ -94,7 +94,6 @@ import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.media.copyFontsFromDirectory
 import app.gyrolet.mpvrx.utils.media.loadCustomFontEntries
 import app.gyrolet.mpvrx.utils.media.resolveSubtitleStorageDirectory
-import com.github.k1rakishou.fsaf.FileManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,7 +115,6 @@ object SubtitlesPreferencesScreen : Screen {
     val appearancePreferences = koinInject<AppearancePreferences>()
     val googleFontsRepository = koinInject<GoogleFontsRepository>()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
-    val fileManager = koinInject<FileManager>()
     val wyzieSearchRepository = koinInject<WyzieSearchRepository>()
     val scope = rememberCoroutineScope()
     var fontRefreshKey by remember { mutableStateOf(0) }
@@ -124,7 +122,7 @@ object SubtitlesPreferencesScreen : Screen {
     fun reloadFontsFrom(uriString: String) {
       if (uriString.isBlank()) return
       scope.launch(Dispatchers.IO) {
-        val copiedFonts = copyFontsFromDirectory(context, fileManager, uriString)
+        val copiedFonts = copyFontsFromDirectory(context, uriString)
         withContext(Dispatchers.Main) {
           fontRefreshKey++
           Toast
