@@ -161,3 +161,4 @@ graft/
 # Local development notes are not release sources.
 /docs/
 /计划.md
+/trace_processor
