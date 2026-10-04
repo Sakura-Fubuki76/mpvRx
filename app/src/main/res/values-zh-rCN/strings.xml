@@ -70,7 +70,7 @@
   <string name="pref_appearance_thumbnail_generation_change_title">更改缩略图策略？</string>
   <string name="pref_appearance_thumbnail_generation_change_summary">这将清除缓存的缩略图。浏览时将使用所选策略生成新的缩略图。</string>
   <string name="pref_appearance_thumbnail_quality_title">缩略图质量</string>
-  <string name="pref_appearance_thumbnail_quality_summary">缩略图最高分辨率：%1$d px。更高的质量会占用更多存储空间，生成速度也可能更慢。</string>
+  <string name="pref_appearance_thumbnail_quality_summary">本地视频缩略图最高分辨率：%1$d px。更高的质量会占用更多存储空间，生成速度也可能更慢。不影响 WebDAV。</string>
   <string name="pref_appearance_thumbnail_position_title">缩略图帧位置</string>
   <string name="pref_appearance_thumbnail_position_summary">截取视频 %1$d%% 位置的画面</string>
   <string name="pref_appearance_show_network_thumbnails_title">显示网络缩略图（实验性）</string>

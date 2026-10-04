@@ -437,7 +437,7 @@ class ThumbnailRepository(
     width: Int,
     height: Int,
   ): String =
-    "${videoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey()}".also { key ->
+    "${videoBaseKey(video)}|$width|$height|${thumbnailModeKey()}|${thumbnailQualityKey(video)}".also { key ->
       resolvedThumbnailKeys.put(peekIdentity(video, width, height), key)
     }
 
@@ -462,7 +462,7 @@ class ThumbnailRepository(
     heightPx: Int,
   ): String =
     "${video.path}|${video.uri}|${video.size}|${video.dateModified}|${video.duration}" +
-      "|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+      "|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey(video)}"
 
   /**
    * Folder prefetch and a visible card may request different sizes for the same source.
@@ -474,12 +474,12 @@ class ThumbnailRepository(
     video: Video,
   ): Boolean =
     key.startsWith("${videoBaseKey(video)}|") &&
-      key.endsWith("|${thumbnailModeKey()}|${thumbnailQualityKey()}")
+      key.endsWith("|${thumbnailModeKey()}|${thumbnailQualityKey(video)}")
 
   // Keep extraction-quality changes from reusing smaller legacy images that were
   // cached without their requested dimensions in the key.
   fun diskCacheKey(video: Video): String =
-    "video-thumb-v3-master|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey()}"
+    "video-thumb-v3-master|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey(video)}"
 
   private fun canonicalLocalPath(video: Video): String {
     val raw = video.path.ifBlank { video.uri.toString() }
@@ -794,7 +794,7 @@ class ThumbnailRepository(
         BitmapFactory.decodeFile(
           file.absolutePath,
           BitmapFactory.Options().apply {
-            inSampleSize = calculateThumbnailSampleSize(bounds.outWidth, bounds.outHeight, thumbnailMaxSize())
+            inSampleSize = calculateThumbnailSampleSize(bounds.outWidth, bounds.outHeight, if (network) 1080 else thumbnailMaxSize())
             inPreferredConfig = Bitmap.Config.RGB_565
           },
         )
@@ -1521,7 +1521,7 @@ class ThumbnailRepository(
     identity: String,
     widthPx: Int,
     heightPx: Int,
-  ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}|true|true"
+  ): String = "$identity|network|$widthPx|$heightPx|${thumbnailModeKey()}|High|true|true"
 
   /**
    * Builds the same key as [networkThumbnailKey] but records it against [identity] so
@@ -1538,7 +1538,7 @@ class ThumbnailRepository(
   }
 
   private fun networkThumbnailDiskKey(identity: String): String =
-    "video-thumb-v4-yuv|$identity|network|${thumbnailModeKey()}|${thumbnailQualityKey()}|true|true"
+    "video-thumb-v4-yuv|$identity|network|${thumbnailModeKey()}|High|true|true"
 
   private fun hasRecentNetworkThumbnailFailure(identity: String): Boolean {
     val failedAt = networkThumbnailFailedAt[identity] ?: return false
@@ -1580,7 +1580,7 @@ class ThumbnailRepository(
     heightPx: Int,
   ): String {
     val md = MessageDigest.getInstance("MD5")
-    md.update("$widthPx|$heightPx|${thumbnailModeKey()}|${thumbnailQualityKey()}|".toByteArray())
+    md.update("$widthPx|$heightPx|${thumbnailModeKey()}|${if (videos.all { app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(it.path) != null || isNetworkUrl(it.path) }) "High" else thumbnailQualityKey()}|".toByteArray())
     for (video in videos) {
       md.update(video.path.toByteArray())
       md.update("|".toByteArray())
@@ -1594,6 +1594,9 @@ class ThumbnailRepository(
 
   private fun thumbnailModeKey(): String =
     browserPreferences.thumbnailMode.get().thumbnailModeCacheKey(browserPreferences.thumbnailFramePosition.get())
+
+  private fun thumbnailQualityKey(video: Video): String =
+    if (app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(video.path) != null || isNetworkUrl(video.path)) "High" else thumbnailQualityKey()
 
   private fun thumbnailQualityKey(): String = browserPreferences.thumbnailQuality.get().name
 
@@ -1619,7 +1622,7 @@ class ThumbnailRepository(
       FastThumbnails.generateAsync(
         path,
         10.0,
-        maxOf(widthPx, heightPx, MAX_THUMBNAIL_SIZE).coerceAtMost(thumbnailMaxSize()),
+        maxOf(widthPx, heightPx, MAX_THUMBNAIL_SIZE).coerceAtMost(1080),
         useHwDec = false,
       )
     } catch (cancellation: CancellationException) {
