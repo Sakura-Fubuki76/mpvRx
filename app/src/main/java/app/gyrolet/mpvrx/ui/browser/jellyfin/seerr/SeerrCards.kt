@@ -513,7 +513,7 @@ fun SeerrRequestCard(
       }
       val requesterName = request.requestedBy.displayName ?: request.requestedBy.username ?: "User"
       Text(
-        text = "Requested by $requesterName",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_requested_by_value, requesterName),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = 1,

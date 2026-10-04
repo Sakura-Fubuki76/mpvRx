@@ -961,7 +961,7 @@ fun JellyfinContent(
             onSearch = { query -> viewModel.performSearch(query, debounceMs = 0L) },
             modifier = Modifier.fillMaxWidth(),
             inputFieldModifier = Modifier.focusRequester(searchFocusRequester),
-            placeholder = { Text("Search movies, shows, episodes...") },
+            placeholder = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_movies_shows_episodes)) },
             leadingIcon = {
               Icon(
                 imageVector = Icons.RoundedFilled.Search,
@@ -1271,7 +1271,7 @@ fun JellyfinContent(
                 isSearching = true
               },
               icon = { Icon(Icons.RoundedFilled.Search, contentDescription = null) },
-              text = { Text("Search") },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.tutorial_search_title)) },
             )
 
             FloatingActionButtonMenuItem(
@@ -1280,7 +1280,7 @@ fun JellyfinContent(
                 viewModel.playRandom(context)
               },
               icon = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
-              text = { Text("Play Random") },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_random)) },
             )
 
             FloatingActionButtonMenuItem(
@@ -1289,7 +1289,7 @@ fun JellyfinContent(
                 isManageServersOpen = true
               },
               icon = { Icon(Icons.RoundedFilled.Jellyfin, contentDescription = null) },
-              text = { Text("Switch Server") },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_switch_server)) },
             )
 
             FloatingActionButtonMenuItem(
@@ -1482,13 +1482,13 @@ private fun EmptyServersView(
     }
     Spacer(modifier = Modifier.height(16.dp))
     Text(
-      text = "Connect to Jellyfin",
+      text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_connect_to_jellyfin),
       style = MaterialTheme.typography.titleLarge,
       fontWeight = FontWeight.Bold,
     )
     Spacer(modifier = Modifier.height(8.dp))
     Text(
-      text = "Stream your media library directly with mpvRx hardware acceleration and zero transcoding.",
+      text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_stream_your_media_library_directly_with_mpvrx_hardware_acceleration_and_zer),
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
       textAlign = TextAlign.Center,
@@ -1501,7 +1501,7 @@ private fun EmptyServersView(
         modifier = Modifier.size(18.dp),
       )
       Spacer(modifier = Modifier.width(8.dp))
-      Text("Add Jellyfin Server")
+      Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_jellyfin_server))
     }
   }
 }
@@ -1542,11 +1542,11 @@ private fun ErrorView(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       FilledTonalButton(onClick = onRetry) {
-        Text("Retry")
+        Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.audiobook_retry))
       }
       if (isAuthError && onReauthenticate != null) {
         Button(onClick = onReauthenticate) {
-          Text("Re-authenticate")
+          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_re_authenticate))
         }
       }
     }

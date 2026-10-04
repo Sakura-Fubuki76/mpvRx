@@ -174,7 +174,7 @@ fun SharedAddServerDialog(
       OutlinedTextField(
         value = serverUrl,
         onValueChange = onServerUrlChange,
-        label = { Text("Server Address") },
+        label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.navidrome_server_address)) },
         placeholder = { Text(serverUrlPlaceholder) },
         leadingIcon = {
           Icon(
@@ -209,7 +209,7 @@ fun SharedAddServerDialog(
       OutlinedTextField(
         value = serverName,
         onValueChange = onServerNameChange,
-        label = { Text("Display Name (Optional)") },
+        label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_display_name_optional)) },
         placeholder = { Text(serverNamePlaceholder) },
         leadingIcon = {
           Icon(
@@ -231,7 +231,7 @@ fun SharedAddServerDialog(
       // Authentication Method Selector
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          text = "Authentication Method",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_authentication_method),
           style = MaterialTheme.typography.labelLarge,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -251,7 +251,7 @@ fun SharedAddServerDialog(
               )
             },
           ) {
-            Text("Credentials")
+            Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_credentials))
           }
           SegmentedButton(
             selected = isTokenAuth,
@@ -266,7 +266,7 @@ fun SharedAddServerDialog(
               )
             },
           ) {
-            Text("API Token")
+            Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_api_token))
           }
         }
       }
@@ -276,7 +276,7 @@ fun SharedAddServerDialog(
         OutlinedTextField(
           value = username,
           onValueChange = onUsernameChange,
-          label = { Text("Username") },
+          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.navidrome_username)) },
           leadingIcon = {
             Icon(
               imageVector = Icons.RoundedFilled.Person,
@@ -297,7 +297,7 @@ fun SharedAddServerDialog(
         OutlinedTextField(
           value = password,
           onValueChange = onPasswordChange,
-          label = { Text("Password") },
+          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.navidrome_password)) },
           leadingIcon = {
             Icon(
               imageVector = Icons.RoundedFilled.Lock,
@@ -329,7 +329,7 @@ fun SharedAddServerDialog(
           OutlinedTextField(
             value = username,
             onValueChange = onUsernameChange,
-            label = { Text("Username (Optional)") },
+            label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_username_optional)) },
             placeholder = { usernameInTokenModePlaceholder?.let { Text(it) } },
             leadingIcon = {
               Icon(
@@ -431,7 +431,7 @@ fun SharedAddServerDialog(
           )
           Spacer(modifier = Modifier.width(10.dp))
           Text(
-            text = "Connecting...",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_connecting_b98e3f),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
           )
@@ -443,7 +443,7 @@ fun SharedAddServerDialog(
           )
           Spacer(modifier = Modifier.width(8.dp))
           Text(
-            text = "Connect Server",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_connect_server),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
           )
@@ -510,13 +510,13 @@ fun <T> SharedManageServersDialog(
             color = MaterialTheme.colorScheme.onSurface,
           )
           Text(
-            text = "${servers.size} configured server${if (servers.size == 1) "" else "s"}",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_configured_server_count, servers.size),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
         TextButton(onClick = onDismiss) {
-          Text("Done")
+          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.clip_done))
         }
       }
 
@@ -547,7 +547,7 @@ fun <T> SharedManageServersDialog(
                 modifier = Modifier.size(40.dp),
               )
               Text(
-                text = "No servers connected yet",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_servers_connected_yet),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -638,7 +638,7 @@ fun <T> SharedManageServersDialog(
                         modifier = Modifier.padding(2.dp),
                       ) {
                         Text(
-                          text = "Active",
+                          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.pref_server_active),
                           style = MaterialTheme.typography.labelSmall,
                           color = MaterialTheme.colorScheme.onPrimary,
                           modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -708,7 +708,7 @@ fun <T> SharedManageServersDialog(
           modifier = Modifier.size(18.dp),
         )
         Spacer(modifier = Modifier.width(8.dp))
-        Text("Add Another Server")
+        Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_another_server))
       }
 
       Spacer(modifier = Modifier.height(12.dp))

@@ -293,7 +293,7 @@ fun LyricsView(
               CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
               Spacer(modifier = Modifier.height(12.dp))
               Text(
-                text = "Fetching synced lyrics...",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_fetching_synced_lyrics),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

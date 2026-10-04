@@ -343,7 +343,7 @@ fun TorrentDetailSheet(
               color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
               Text(
-                text = "${group.files.size} Episodes",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_torrent_episode_count, group.files.size),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -374,7 +374,7 @@ fun TorrentDetailSheet(
               color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
               Text(
-                text = "Updated $relativeTime",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_updated_value, relativeTime),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -481,7 +481,7 @@ fun TorrentDetailSheet(
                   modifier = Modifier.size(16.dp),
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Play from Beginning (Episode 1)", style = MaterialTheme.typography.labelMedium)
+                Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_from_beginning_episode_1), style = MaterialTheme.typography.labelMedium)
               }
             }
           }
@@ -500,7 +500,7 @@ fun TorrentDetailSheet(
                 .clickable(enabled = canExpandOverview) { isOverviewExpanded = !isOverviewExpanded },
           ) {
             Text(
-              text = "Storyline",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_storyline),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -548,7 +548,7 @@ fun TorrentDetailSheet(
             verticalAlignment = Alignment.CenterVertically,
           ) {
             Text(
-              text = "Files & Episodes (${group.files.size})",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_files_episodes_count, group.files.size),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -582,7 +582,7 @@ fun TorrentDetailSheet(
                 Modifier
                   .fillMaxWidth()
                   .padding(top = 8.dp),
-              placeholder = { Text("Filter episodes by name or number...") },
+              placeholder = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_filter_episodes_by_name_or_number)) },
               leadingIcon = {
                 Icon(
                   imageVector = Icons.RoundedFilled.Search,
@@ -619,7 +619,7 @@ fun TorrentDetailSheet(
             contentAlignment = Alignment.Center,
           ) {
             Text(
-              text = "No matching episodes found",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_matching_episodes_found),
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

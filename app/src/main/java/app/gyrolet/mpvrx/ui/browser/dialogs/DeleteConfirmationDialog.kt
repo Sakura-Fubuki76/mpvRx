@@ -65,7 +65,7 @@ fun DeleteConfirmationDialog(
           modifier = Modifier.size(28.dp),
         )
         Text(
-          text = "Delete $itemCount $itemText?",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_count_confirm, itemCount),
           style = MaterialTheme.typography.headlineSmall,
           fontWeight = FontWeight.Bold,
           color = MaterialTheme.colorScheme.onSurface,
@@ -96,7 +96,7 @@ fun DeleteConfirmationDialog(
               modifier = Modifier.size(20.dp),
             )
             Text(
-              text = "This action cannot be undone. The selected item${if (itemCount == 1) "" else "s"} will be permanently deleted.",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_permanent_warning),
               style = MaterialTheme.typography.bodyMedium,
               fontWeight = FontWeight.Medium,
               color = MaterialTheme.colorScheme.onErrorContainer,

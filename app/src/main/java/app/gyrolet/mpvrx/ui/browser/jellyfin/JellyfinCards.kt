@@ -480,7 +480,7 @@ fun JellyfinHeroBanner(
                 modifier = Modifier.size(18.dp),
               )
               Spacer(modifier = Modifier.width(6.dp))
-              Text(text = "Details", fontWeight = FontWeight.Medium)
+              Text(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_details), fontWeight = FontWeight.Medium)
             }
 
             // Trailer Icon Button
@@ -627,7 +627,7 @@ fun JellyfinSectionHeader(
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
       ) {
         Text(
-          text = "See All",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_see_all),
           style = MaterialTheme.typography.labelMedium,
           fontWeight = FontWeight.SemiBold,
           color = MaterialTheme.colorScheme.primary,
@@ -1267,7 +1267,7 @@ fun JellyfinLibraryChipRow(
     FilterChip(
       selected = selectedLibraryId == null,
       onClick = { onSelectLibrary(null) },
-      label = { Text("All", fontWeight = if (selectedLibraryId == null) FontWeight.Bold else FontWeight.Normal) },
+      label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.seerr_tab_all), fontWeight = if (selectedLibraryId == null) FontWeight.Bold else FontWeight.Normal) },
       shape = RoundedCornerShape(12.dp),
       colors =
         FilterChipDefaults.filterChipColors(
@@ -1332,7 +1332,7 @@ fun JellyfinGenreChipRow(
     FilterChip(
       selected = selectedGenre == null,
       onClick = { onSelectGenre(null) },
-      label = { Text("All", fontWeight = if (selectedGenre == null) FontWeight.Bold else FontWeight.Normal) },
+      label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.seerr_tab_all), fontWeight = if (selectedGenre == null) FontWeight.Bold else FontWeight.Normal) },
       shape = RoundedCornerShape(12.dp),
       colors =
         FilterChipDefaults.filterChipColors(

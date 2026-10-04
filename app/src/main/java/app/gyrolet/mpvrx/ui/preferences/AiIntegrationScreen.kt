@@ -659,7 +659,7 @@ val apiKeyInfo =
                       }
                     } else {
                       Text(
-                        text = "Tap 'Fetch Models' to load available models from ${provider.displayName}",
+                        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_fetch_models_hint, provider.displayName),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

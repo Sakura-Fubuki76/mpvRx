@@ -168,7 +168,7 @@ fun SortDialog(
                   shape = SegmentedButtonDefaults.itemShape(index = index, count = viewModeSelector.options.size),
                   colors = themedSegmentedButtonColors(),
                 ) {
-                  Text(text = option.label)
+                  Text(text = browserOptionLabel(option.label))
                 }
               }
             }
@@ -219,12 +219,12 @@ fun SortDialog(
                   icon = {
                     Icon(
                       imageVector = option.icon,
-                      contentDescription = option.label,
+                      contentDescription = browserOptionLabel(option.label),
                       modifier = Modifier.size(16.dp),
                     )
                   },
                 ) {
-                  Text(text = option.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  Text(text = browserOptionLabel(option.label), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
               }
             }
@@ -257,7 +257,7 @@ fun SortDialog(
                       enabled = enableLayoutModeOptions,
                     )
                     Text(
-                      text = layoutModeSelector.checkboxLabel,
+                      text = browserOptionLabel(layoutModeSelector.checkboxLabel),
                       modifier = Modifier.weight(1f),
                       style = MaterialTheme.typography.bodyMedium,
                     )
@@ -280,7 +280,7 @@ fun SortDialog(
                   ) {
                     Checkbox(checked = manualGridToggle.checked, onCheckedChange = null, enabled = isEnabled)
                     Text(
-                      text = manualGridToggle.label,
+                      text = browserOptionLabel(manualGridToggle.label),
                       modifier = Modifier.weight(1f),
                       style = MaterialTheme.typography.bodyMedium,
                     )
@@ -414,7 +414,7 @@ private fun SortTypeSelector(
         ) {
           Icon(
             imageVector = icons[index],
-            contentDescription = type,
+            contentDescription = browserOptionLabel(type),
             modifier = Modifier.size(30.dp),
             tint =
               if (selected) {
@@ -425,7 +425,7 @@ private fun SortTypeSelector(
           )
         }
         Text(
-          text = type,
+          text = browserOptionLabel(type),
           style = MaterialTheme.typography.labelSmall,
           fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
           color =
@@ -481,7 +481,7 @@ private fun SortOrderSelector(
           )
         },
       ) {
-        Text(text = label)
+        Text(text = browserOptionLabel(label))
       }
     }
   }
@@ -490,7 +490,7 @@ private fun SortOrderSelector(
 @Composable
 private fun DialogSectionTitle(text: String) {
   Text(
-    text = text,
+    text = browserOptionLabel(text),
     style = MaterialTheme.typography.titleSmall,
     modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
   )
@@ -512,7 +512,7 @@ private fun ToggleChipRow(toggles: List<VisibilityToggle>) {
         selected = toggle.checked,
         onClick = { toggle.onCheckedChange(!toggle.checked) },
         enabled = toggle.enabled,
-        label = { Text(text = toggle.label) },
+        label = { Text(text = browserOptionLabel(toggle.label)) },
         border =
           FilterChipDefaults.filterChipBorder(
             enabled = toggle.enabled,
@@ -549,14 +549,14 @@ private fun GridColumnsNextSection(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
-            text = folderGridColumnSelector.label,
+            text = browserOptionLabel(folderGridColumnSelector.label),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
           Text(
-            text = if (folderGridColumnSelector.unitSuffix.isEmpty()) "${folderGridColumnSelector.currentValue}" else "${folderGridColumnSelector.currentValue} ${folderGridColumnSelector.unitSuffix}",
+            text = gridColumnValue(folderGridColumnSelector),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
@@ -584,14 +584,14 @@ private fun GridColumnsNextSection(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
-            text = videoGridColumnSelector.label,
+            text = browserOptionLabel(videoGridColumnSelector.label),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
           Text(
-            text = if (videoGridColumnSelector.unitSuffix.isEmpty()) "${videoGridColumnSelector.currentValue}" else "${videoGridColumnSelector.currentValue} ${videoGridColumnSelector.unitSuffix}",
+            text = gridColumnValue(videoGridColumnSelector),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,
@@ -621,7 +621,7 @@ private fun GridColumnsNextSection(
     ) {
       DialogSectionTitle(text = selector.label)
       Text(
-        text = if (selector.unitSuffix.isEmpty()) "${selector.currentValue}" else "${selector.currentValue} ${selector.unitSuffix}",
+        text = gridColumnValue(selector),
         style = MaterialTheme.typography.bodySmall,
         fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
@@ -641,6 +641,13 @@ private fun GridColumnsNextSection(
       modifier = Modifier.fillMaxWidth().tvFocusHighlight(RoundedCornerShape(8.dp), focusedScale = 1.01f),
     )
   }
+}
+
+@Composable
+private fun gridColumnValue(selector: GridColumnSelector): String = when (selector.unitSuffix) {
+  "" -> selector.currentValue.toString()
+  "cols" -> androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.browser_grid_column_count, selector.currentValue)
+  else -> "${selector.currentValue} ${selector.unitSuffix}"
 }
 
 data class VisibilityToggle(

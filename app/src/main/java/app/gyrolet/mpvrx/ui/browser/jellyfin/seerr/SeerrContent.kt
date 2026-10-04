@@ -317,7 +317,7 @@ fun SeerrContent(
         } else if (uiState.searchResults.isEmpty() && uiState.searchQuery.isNotBlank()) {
           Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-              text = "No results found for \"${uiState.searchQuery}\"",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_no_results_value, uiState.searchQuery),
               style = MaterialTheme.typography.bodyLarge,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -242,7 +242,7 @@ fun LyricsSheet(
               CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
               Spacer(modifier = Modifier.height(12.dp))
               Text(
-                text = "Fetching synced lyrics...",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_fetching_synced_lyrics),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -337,7 +337,7 @@ fun LyricsSheet(
               verticalArrangement = Arrangement.Center,
             ) {
               Text(
-                text = "No lyrics found for this track.",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_lyrics_found_for_this_track),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )

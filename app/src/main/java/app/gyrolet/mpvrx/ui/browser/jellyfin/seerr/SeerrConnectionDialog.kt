@@ -271,7 +271,7 @@ fun SeerrConnectionDialog(
                   modifier = Modifier.padding(top = 4.dp),
                 ) {
                   Text(
-                    text = "Admin",
+                    text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_admin),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -326,7 +326,7 @@ fun SeerrConnectionDialog(
           HorizontalDivider()
           Spacer(modifier = Modifier.height(16.dp))
           Text(
-            text = "Switch or Reconfigure Server",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_switch_or_reconfigure_server),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
           )
@@ -359,7 +359,7 @@ fun SeerrConnectionDialog(
         FilterChip(
           selected = authType == SeerrAuthType.JELLYFIN,
           onClick = { authType = SeerrAuthType.JELLYFIN },
-          label = { Text("Jellyfin Auth") },
+          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_jellyfin_auth)) },
           shape = RoundedCornerShape(10.dp),
           colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -369,7 +369,7 @@ fun SeerrConnectionDialog(
         FilterChip(
           selected = authType == SeerrAuthType.LOCAL,
           onClick = { authType = SeerrAuthType.LOCAL },
-          label = { Text("Local Account") },
+          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_local_account)) },
           shape = RoundedCornerShape(10.dp),
           colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -379,7 +379,7 @@ fun SeerrConnectionDialog(
         FilterChip(
           selected = authType == SeerrAuthType.API_KEY,
           onClick = { authType = SeerrAuthType.API_KEY },
-          label = { Text("API Key") },
+          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.seerr_api_key)) },
           shape = RoundedCornerShape(10.dp),
           colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -517,7 +517,7 @@ fun SeerrConnectionDialog(
             modifier = Modifier.size(20.dp),
           )
           Spacer(modifier = Modifier.width(10.dp))
-          Text("Connecting…", fontWeight = FontWeight.Bold)
+          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_connecting_7305d3), fontWeight = FontWeight.Bold)
         } else {
           Icon(Icons.RoundedFilled.Link, contentDescription = null, modifier = Modifier.size(20.dp))
           Spacer(modifier = Modifier.width(8.dp))

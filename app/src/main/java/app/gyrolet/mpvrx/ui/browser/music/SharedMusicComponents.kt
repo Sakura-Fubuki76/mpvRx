@@ -431,7 +431,7 @@ fun SharedMusicSectionHeader(
     )
     if (onSeeAllClick != null) {
       Text(
-        text = "See all",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_see_all_2941c5),
         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier
@@ -686,7 +686,7 @@ fun SharedMusicDetailHeader(
         ) {
           Icon(Icons.RoundedFilled.Shuffle, contentDescription = null, modifier = Modifier.size(20.dp))
           Spacer(Modifier.width(6.dp))
-          Text("Shuffle")
+          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.btn_label_shuffle))
         }
       }
     }

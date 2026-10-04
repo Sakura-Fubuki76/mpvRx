@@ -184,7 +184,7 @@ fun NavidromeContent(
           OutlinedTextField(
             value = uiState.searchQuery,
             onValueChange = viewModel::onSearchQueryChanged,
-            placeholder = { Text("Search songs, albums, artists...") },
+            placeholder = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_songs_albums_artists)) },
             leadingIcon = {
               IconButton(onClick = {
                 isSearching = false
@@ -330,7 +330,7 @@ fun NavidromeContent(
         if (result.songs.isNotEmpty()) {
           item {
             Text(
-              text = "Songs (${result.songs.size})",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_song_count, result.songs.size),
               style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -350,7 +350,7 @@ fun NavidromeContent(
         if (result.albums.isNotEmpty()) {
           item {
             Text(
-              text = "Albums (${result.albums.size})",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_album_count, result.albums.size),
               style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -370,7 +370,7 @@ fun NavidromeContent(
         if (result.artists.isNotEmpty()) {
           item {
             Text(
-              text = "Artists (${result.artists.size})",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_artist_count, result.artists.size),
               style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
               color = MaterialTheme.colorScheme.onSurface,
               modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),

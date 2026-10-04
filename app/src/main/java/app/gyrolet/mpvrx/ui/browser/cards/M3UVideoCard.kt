@@ -431,7 +431,7 @@ fun M3UVideoCard(
           }
           if (showStreamDetails && hasCustomUserAgent) {
             M3UMetadataChip(
-              text = "UA",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_ua),
               containerColor = MaterialTheme.colorScheme.tertiaryContainer,
               contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
             )

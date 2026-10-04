@@ -687,7 +687,7 @@ fun MusicLibraryContent(
                 musicViewModel.playAllSongs(context, songs, shuffle = false)
               },
               icon = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
-              text = { Text("Play All Songs") },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_all_songs)) },
             )
             FloatingActionButtonMenuItem(
               onClick = {
@@ -695,7 +695,7 @@ fun MusicLibraryContent(
                 musicViewModel.playAllSongs(context, songs, shuffle = true)
               },
               icon = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
-              text = { Text("Shuffle Songs") },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_shuffle_songs)) },
             )
           }
         }
@@ -906,7 +906,7 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("Play") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.downloads_play)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -915,7 +915,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Add to Playlist") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_to_playlist)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -924,7 +924,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Share") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.generic_share)) },
                 leadingContent = { Icon(Icons.RoundedFilled.Share, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -933,7 +933,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Delete Song", color = MaterialTheme.colorScheme.error) },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_song), color = MaterialTheme.colorScheme.error) },
                 leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                 modifier = Modifier.clickable {
                   val target = song
@@ -1023,14 +1023,14 @@ fun MusicLibraryContent(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                   Text(text = album.title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                  Text(text = "${album.artist} • ${albumSongs.size} tracks", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  Text(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_artist_track_count, album.artist, albumSongs.size), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
               }
 
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("View Album Tracks") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_view_album_tracks)) },
                 leadingContent = { Icon(Icons.RoundedFilled.Audiotrack, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = album
@@ -1039,7 +1039,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Play Album") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_album)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = albumSongs
@@ -1048,7 +1048,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Shuffle Album") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_shuffle_album)) },
                 leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = albumSongs
@@ -1057,7 +1057,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Add Album to Playlist") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_album_to_playlist)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = albumSongs
@@ -1092,14 +1092,14 @@ fun MusicLibraryContent(
                 Spacer(modifier = Modifier.width(14.dp))
                 Column(modifier = Modifier.weight(1f)) {
                   Text(text = artist.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                  Text(text = "${artistSongs.size} songs", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  Text(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_song_count, artistSongs.size), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
               }
 
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("View Artist Songs") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_view_artist_songs)) },
                 leadingContent = { Icon(Icons.RoundedFilled.Person, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = artist
@@ -1108,7 +1108,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Play Artist Songs") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_artist_songs)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = artistSongs
@@ -1117,7 +1117,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Shuffle Artist Songs") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_shuffle_artist_songs)) },
                 leadingContent = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = artistSongs
@@ -1126,7 +1126,7 @@ fun MusicLibraryContent(
                 }
               )
               ListItem(
-                content = { Text("Add Artist Songs to Playlist") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_artist_songs_to_playlist)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistAdd, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val list = artistSongs
@@ -1162,7 +1162,7 @@ fun MusicLibraryContent(
               HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
               ListItem(
-                content = { Text("Open Playlist") },
+                content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_open_playlist)) },
                 leadingContent = { Icon(Icons.RoundedFilled.PlaylistPlay, contentDescription = null) },
                 modifier = Modifier.clickable {
                   val target = playlist
@@ -1172,7 +1172,7 @@ fun MusicLibraryContent(
               )
               if (!playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)) {
                 ListItem(
-                  content = { Text("Delete Playlist", color = MaterialTheme.colorScheme.error) },
+                  content = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_playlist), color = MaterialTheme.colorScheme.error) },
                   leadingContent = { Icon(Icons.RoundedFilled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                   modifier = Modifier.clickable {
                     val target = playlist
@@ -1394,7 +1394,7 @@ private fun SongsTabContent(
   onSongsChanged: () -> Unit,
 ) {
   if (songs.isEmpty()) {
-    EmptyMusicState(text = "No songs found")
+    EmptyMusicState(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.playlist_add_songs_empty_title))
     return
   }
 
@@ -1616,7 +1616,7 @@ private fun AlbumsTabContent(
   gridState: LazyGridState = rememberLazyGridState(),
 ) {
   if (albums.isEmpty()) {
-    EmptyMusicState(text = "No albums found")
+    EmptyMusicState(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_albums_found))
     return
   }
 
@@ -1737,7 +1737,7 @@ private fun AlbumGridCard(
           modifier = Modifier.fillMaxWidth()
         )
         Text(
-          text = "${album.songCount} songs",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_song_count, album.songCount),
           style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.primary,
           textAlign = TextAlign.Start,
@@ -1811,7 +1811,7 @@ private fun AlbumListCard(
       }
 
       Text(
-        text = "${album.songCount} songs",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_song_count, album.songCount),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary
       )
@@ -1832,7 +1832,7 @@ private fun ArtistsTabContent(
   gridState: LazyGridState = rememberLazyGridState(),
 ) {
   if (artists.isEmpty()) {
-    EmptyMusicState(text = "No artists found")
+    EmptyMusicState(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_artists_found))
     return
   }
 
@@ -1936,7 +1936,7 @@ private fun ArtistGridCard(
         modifier = Modifier.fillMaxWidth()
       )
       Text(
-        text = "${artist.songCount} songs",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_song_count, artist.songCount),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
@@ -1996,7 +1996,7 @@ private fun ArtistListCard(
           color = MaterialTheme.colorScheme.onSurface
         )
         Text(
-          text = "${artist.songCount} songs • ${artist.albumCount} albums",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_artist_library_counts, artist.songCount, artist.albumCount),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -2334,14 +2334,14 @@ private fun PlaylistsTabContent(
       verticalAlignment = Alignment.CenterVertically
     ) {
       Text(
-        text = "${playlists.size} Playlists",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_playlist_count_value, playlists.size),
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant
       )
     }
 
     if (playlists.isEmpty()) {
-      EmptyMusicState(text = "No playlists found. Create one!")
+      EmptyMusicState(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_playlists_found_create_one))
     } else {
       val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
       Box(modifier = Modifier.fillMaxSize()) {
@@ -2463,7 +2463,7 @@ private fun AlbumDetailSheet(
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
           Text(
-            text = "${songs.size} Tracks",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_track_count, songs.size),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary
           )
@@ -2472,7 +2472,7 @@ private fun AlbumDetailSheet(
         Button(onClick = onPlayAlbum) {
           Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
           Spacer(modifier = Modifier.width(4.dp))
-          Text("Play")
+          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.downloads_play))
         }
       }
 
@@ -2547,7 +2547,7 @@ private fun ArtistDetailSheet(
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
           )
           Text(
-            text = "${songs.size} Songs",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_song_count, songs.size),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
           )
@@ -2556,7 +2556,7 @@ private fun ArtistDetailSheet(
         Button(onClick = onPlayArtist) {
           Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
           Spacer(modifier = Modifier.width(4.dp))
-          Text("Play All")
+          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_all))
         }
       }
 
@@ -2597,12 +2597,12 @@ private fun CreatePlaylistDialog(
 
   androidx.compose.material3.AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Create Playlist") },
+    title = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_create_playlist)) },
     text = {
       OutlinedTextField(
         value = playlistName,
         onValueChange = { playlistName = it },
-        label = { Text("Playlist Name") },
+        label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_playlist_name)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth()
       )
@@ -2612,12 +2612,12 @@ private fun CreatePlaylistDialog(
         onClick = { onCreate(playlistName) },
         enabled = playlistName.isNotBlank()
       ) {
-        Text("Create")
+        Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.snapshot_folder_create))
       }
     },
     dismissButton = {
       TextButton(onClick = onDismiss) {
-        Text("Cancel")
+        Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.downloads_cancel))
       }
     }
   )

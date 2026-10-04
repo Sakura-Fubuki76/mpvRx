@@ -383,7 +383,7 @@ fun SeerrDetailSheet(
 
               if (runtime != null && runtime > 0) {
                 Text(
-                  text = "${runtime / 60}h ${runtime % 60}m",
+                  text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_hours_minutes_value, runtime / 60, runtime % 60),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -716,14 +716,14 @@ fun SeerrDetailSheet(
           ) {
             Icon(Icons.RoundedFilled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(6.dp))
-            Text("Delete Request", fontWeight = FontWeight.SemiBold)
+            Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_request), fontWeight = FontWeight.SemiBold)
           }
 
           if (showDeleteDialog) {
             AlertDialog(
               onDismissRequest = { showDeleteDialog = false },
-              title = { Text("Delete Request?") },
-              text = { Text("Are you sure you want to delete and cancel the request for \"$title\"?") },
+              title = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_request_606629)) },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_cancel_media_request_confirm, title)) },
               confirmButton = {
                 Button(
                   onClick = {
@@ -735,12 +735,12 @@ fun SeerrDetailSheet(
                     contentColor = MaterialTheme.colorScheme.onError,
                   ),
                 ) {
-                  Text("Delete")
+                  Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.snapshot_delete))
                 }
               },
               dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                  Text("Cancel")
+                  Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.downloads_cancel))
                 }
               },
             )
@@ -758,7 +758,7 @@ fun SeerrDetailSheet(
             .padding(horizontal = 16.dp, vertical = 6.dp),
         ) {
           Text(
-            text = "Overview",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.media_info_tab_overview),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -800,7 +800,7 @@ fun SeerrDetailSheet(
             .padding(vertical = 8.dp),
         ) {
           Text(
-            text = "Cast",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_cast),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -900,7 +900,7 @@ private fun ResolutionProfileDropdown(
     verticalArrangement = Arrangement.spacedBy(6.dp),
   ) {
     Text(
-      text = "Resolution Profile",
+      text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_resolution_profile),
       style = MaterialTheme.typography.labelLarge,
       fontWeight = FontWeight.SemiBold,
       color = MaterialTheme.colorScheme.onSurface,

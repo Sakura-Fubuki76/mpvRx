@@ -96,7 +96,7 @@ fun RenameDialog(
     onDismissRequest = onDismiss,
     title = {
       Text(
-        text = "Rename $itemType",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_rename_item),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.Bold,
       )

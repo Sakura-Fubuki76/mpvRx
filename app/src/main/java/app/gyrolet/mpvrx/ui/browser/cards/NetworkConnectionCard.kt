@@ -139,7 +139,7 @@ fun NetworkConnectionCard(
       // Connection details
       if (connection.path != "/") {
         Text(
-          text = "Path: ${connection.path}",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_server_path_value, connection.path),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           modifier = Modifier.padding(top = 4.dp),
@@ -148,7 +148,7 @@ fun NetworkConnectionCard(
 
       if (connection.username.isNotEmpty() && !connection.isAnonymous) {
         Text(
-          text = "User: ${connection.username}",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_server_user_value, connection.username),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           modifier = Modifier.padding(top = 4.dp),
@@ -158,7 +158,7 @@ fun NetworkConnectionCard(
       // Error message
       if (error != null) {
         Text(
-          text = "Error: $error",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_error_value, error),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.error,
           modifier = Modifier.padding(top = 8.dp),

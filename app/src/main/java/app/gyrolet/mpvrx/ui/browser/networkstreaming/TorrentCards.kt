@@ -228,7 +228,7 @@ fun TorrentHeroBanner(
                   border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
                 ) {
                   Text(
-                    text = "${group.files.size} Files",
+                    text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_torrent_file_count, group.files.size),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -317,7 +317,7 @@ fun TorrentHeroBanner(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                  text = "Watch Now",
+                  text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_watch_now),
                   style = MaterialTheme.typography.labelLarge,
                   fontWeight = FontWeight.Bold,
                 )
@@ -340,7 +340,7 @@ fun TorrentHeroBanner(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                  text = "Details",
+                  text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_details),
                   style = MaterialTheme.typography.labelLarge,
                   fontWeight = FontWeight.SemiBold,
                 )
@@ -423,7 +423,7 @@ fun TorrentSectionHeader(
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
       ) {
         Text(
-          text = "See All",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_see_all),
           style = MaterialTheme.typography.labelLarge,
           fontWeight = FontWeight.SemiBold,
           color = MaterialTheme.colorScheme.primary,

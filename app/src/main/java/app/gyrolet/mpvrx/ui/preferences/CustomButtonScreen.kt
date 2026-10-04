@@ -891,7 +891,7 @@ fun ButtonExpandedContent(
 
     // Tap action — required
     LuaEditorEntryCard(
-      label = "Tap action *",
+      label = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_tap_action_required),
       code = draftContent,
       isRequired = true,
       onClick = { onOpenScriptEditor("content") },
@@ -899,14 +899,14 @@ fun ButtonExpandedContent(
 
     // Long press
     LuaEditorEntryCard(
-      label = "Long press action",
+      label = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_long_press_action),
       code = draftLongPress,
       onClick = { onOpenScriptEditor("longPress") },
     )
 
     // On startup
     LuaEditorEntryCard(
-      label = "On startup",
+      label = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_on_startup),
       code = draftStartup,
       onClick = { onOpenScriptEditor("startup") },
     )

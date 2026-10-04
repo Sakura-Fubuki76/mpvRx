@@ -64,7 +64,7 @@ fun FileOperationProgressDialog(
     },
     title = {
       Text(
-        text = "$operationName files",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_file_operation_title),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.Bold,
       )
@@ -105,7 +105,7 @@ fun FileOperationProgressDialog(
             // Current File Info
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               Text(
-                text = "File ${progress.currentFileIndex} of ${progress.totalFiles}",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_file_operation_count, progress.currentFileIndex, progress.totalFiles),
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

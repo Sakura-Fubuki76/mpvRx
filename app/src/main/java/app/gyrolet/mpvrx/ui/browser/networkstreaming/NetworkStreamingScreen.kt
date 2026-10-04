@@ -449,7 +449,7 @@ object NetworkStreamingScreen : Screen {
             ExtendedFloatingActionButton(
               onClick = { showAddMediaDialog = true },
               icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
-              text = { Text("Add Media") },
+              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_media)) },
               modifier = Modifier.padding(bottom = navigationBarHeight),
             )
           }
@@ -702,14 +702,14 @@ private fun AddMediaDialog(
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
-          text = "Paste a torrent magnet link, direct video stream (HLS, MP4, MKV), or YouTube URL to save and play.",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_paste_a_torrent_magnet_link_direct_video_stream_hls_mp4_mkv_or_youtube_url_),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
           value = inputUrl,
           onValueChange = { inputUrl = it },
-          label = { Text("Stream or Magnet URL") },
+          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_stream_or_magnet_url)) },
           placeholder = { Text("magnet:?xt=... or https://...") },
           modifier = Modifier.fillMaxWidth(),
           singleLine = true,

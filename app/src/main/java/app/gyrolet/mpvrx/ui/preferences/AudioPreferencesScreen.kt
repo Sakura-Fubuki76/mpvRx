@@ -696,7 +696,7 @@ object AudioPreferencesScreen : Screen {
         text = {
           Column {
             Text(
-              text = "Toggle tabs or use arrows to rearrange order:",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_toggle_tabs_or_use_arrows_to_rearrange_order),
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.outline,
               modifier = Modifier.padding(bottom = 8.dp),

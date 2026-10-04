@@ -197,7 +197,7 @@ fun BulkAiRenameDialog(
             ) {
               CircularProgressIndicator(modifier = Modifier.padding(bottom = 8.dp))
               Text(
-                "Processing ${selectedVideos.size} file(s)…",
+                androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_ai_processing_files, selectedVideos.size),
                 style = MaterialTheme.typography.bodyMedium,
               )
             }
@@ -209,7 +209,7 @@ fun BulkAiRenameDialog(
 
             val checkedCount = checkedState.values.count { it }
             Text(
-              "$checkedCount / ${previewItems.size} file(s) selected to rename",
+              androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_rename_selected_count, checkedCount, previewItems.size),
               style = MaterialTheme.typography.labelMedium,
               color = MaterialTheme.colorScheme.outline,
             )

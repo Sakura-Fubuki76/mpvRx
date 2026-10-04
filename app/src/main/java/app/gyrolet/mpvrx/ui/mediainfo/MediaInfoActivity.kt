@@ -386,7 +386,7 @@ class MediaInfoActivity : AppCompatActivity() {
         shape = MaterialTheme.shapes.extraLarge,
       ) {
         Text(
-          text = "Error: $errorMessage",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_error_value, errorMessage),
           style = MaterialTheme.typography.bodyLarge,
           fontWeight = FontWeight.Medium,
           color = MaterialTheme.colorScheme.onErrorContainer,

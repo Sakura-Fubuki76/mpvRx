@@ -402,7 +402,7 @@ fun PlaylistSheet(
               )
             }
             Text(
-              text = "$totalCount items",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_queue_item_count, totalCount),
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

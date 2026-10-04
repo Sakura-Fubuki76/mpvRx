@@ -2804,7 +2804,7 @@ private fun UpNextPlaylistContent(
           color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
         ) {
           Text(
-            text = "${chapters.size} chapters",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_chapter_count, chapters.size),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -2920,7 +2920,7 @@ private fun UpNextPlaylistContent(
       horizontalArrangement = Arrangement.SpaceBetween,
     ) {
       Text(
-        text = "Coming up next",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_coming_up_next),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.onSurface,
@@ -2930,7 +2930,7 @@ private fun UpNextPlaylistContent(
         color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
       ) {
         Text(
-          text = "${displayPlaylist.size} tracks",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_music_track_count, displayPlaylist.size),
           style = MaterialTheme.typography.labelSmall,
           fontWeight = FontWeight.SemiBold,
           color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -2945,7 +2945,7 @@ private fun UpNextPlaylistContent(
         contentAlignment = Alignment.Center,
       ) {
         Text(
-          text = "No songs in queue",
+          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_songs_in_queue),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

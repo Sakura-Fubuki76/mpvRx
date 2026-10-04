@@ -320,7 +320,7 @@ fun OnlineSubtitleSearchSheet(
                   .padding(horizontal = MaterialTheme.spacing.medium),
             ) {
               Text(
-                text = "Found ${mediaSearchResults.size}",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_found_count_value, mediaSearchResults.size),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline,
                 modifier =
@@ -629,7 +629,7 @@ private fun SubdlEpisodeDropdown(
       shape = RoundedCornerShape(8.dp),
     ) {
       Text(
-        text = "Ep $selectedEpisode",
+        text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_episode_value, selectedEpisode),
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
@@ -903,7 +903,7 @@ private fun SeriesSelectionControls(
           DropdownMenuItem(
             text = {
               Text(
-                "Season ${season.season_number}",
+                androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_season_value, season.season_number),
                 style = MaterialTheme.typography.bodyLarge,
               )
             },
@@ -953,7 +953,7 @@ private fun SeriesSelectionControls(
             text = {
               Column(modifier = Modifier.padding(vertical = 4.dp)) {
                 Text(
-                  "Ep ${episode.episode_number}",
+                  androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_episode_value, episode.episode_number),
                   style = MaterialTheme.typography.bodyLarge,
                   fontWeight = FontWeight.Bold,
                 )

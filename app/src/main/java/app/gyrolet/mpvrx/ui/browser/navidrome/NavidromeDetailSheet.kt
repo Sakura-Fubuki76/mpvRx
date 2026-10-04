@@ -145,7 +145,7 @@ fun NavidromeDetailSheet(
           if (album.songs.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
-              text = "Tracks",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_tracks),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -201,7 +201,7 @@ fun NavidromeDetailSheet(
           if (playlist.songs.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
-              text = "Tracks",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_tracks),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,

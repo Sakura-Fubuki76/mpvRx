@@ -236,7 +236,7 @@ fun JellyfinPersonSheet(
             verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             Text(
-              text = "Biography",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_biography),
               style = MaterialTheme.typography.titleSmall,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -292,7 +292,7 @@ fun JellyfinPersonSheet(
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Text(
-            text = "Known For",
+            text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_known_for),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -349,7 +349,7 @@ fun JellyfinPersonSheet(
               verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
               Text(
-                text = "No titles found in your library for this person",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_titles_found_in_your_library_for_this_person),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

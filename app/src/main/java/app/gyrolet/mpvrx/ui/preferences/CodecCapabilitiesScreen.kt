@@ -728,7 +728,7 @@ object CodecCapabilitiesScreen : Screen {
                 StatCounterChip(
                   modifier = Modifier.weight(1f),
                   count = hwCount,
-                  label = "Hardware",
+                  label = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_hardware),
                   icon = Icons.RoundedFilled.DeveloperBoard,
                   containerColor = MaterialTheme.colorScheme.primaryContainer,
                   contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -736,7 +736,7 @@ object CodecCapabilitiesScreen : Screen {
                 StatCounterChip(
                   modifier = Modifier.weight(1f),
                   count = swCount,
-                  label = "Software",
+                  label = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_software),
                   icon = Icons.RoundedFilled.Code,
                   containerColor = MaterialTheme.colorScheme.tertiaryContainer,
                   contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -744,7 +744,7 @@ object CodecCapabilitiesScreen : Screen {
                 StatCounterChip(
                   modifier = Modifier.weight(1f),
                   count = videoCount,
-                  label = "Video",
+                  label = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.watch_stats_video),
                   icon = Icons.RoundedFilled.Videocam,
                   containerColor = MaterialTheme.colorScheme.secondaryContainer,
                   contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -872,7 +872,7 @@ object CodecCapabilitiesScreen : Screen {
             )
             if (searchQuery.isNotEmpty()) {
               Text(
-                text = "${filteredCodecs.size} matches",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_codec_match_count, filteredCodecs.size),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Bold,

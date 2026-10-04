@@ -204,7 +204,7 @@ fun JellyfinDetailSheet(
           if ((item.type == "MusicArtist" || item.type == "Artist" || item.type == "AlbumArtist") && seasons.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               Text(
-                text = "Albums",
+                text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_albums),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -861,8 +861,8 @@ fun JellyfinDetailSheet(
             if (showDeleteDialog) {
               AlertDialog(
                 onDismissRequest = { showDeleteDialog = false },
-                title = { Text("Delete ${if (item.isSeries) "Series" else "Item"}?") },
-                text = { Text("Are you sure you want to delete \"${item.name}\" from your Jellyfin server? This will permanently delete the media files.") },
+                title = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_media_confirm)) },
+                text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_delete_server_media_warning, item.name)) },
                 confirmButton = {
                   Button(
                     onClick = {
@@ -874,12 +874,12 @@ fun JellyfinDetailSheet(
                       contentColor = MaterialTheme.colorScheme.onError,
                     ),
                   ) {
-                    Text("Delete")
+                    Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.snapshot_delete))
                   }
                 },
                 dismissButton = {
                   TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Cancel")
+                    Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.downloads_cancel))
                   }
                 },
               )
@@ -900,7 +900,7 @@ fun JellyfinDetailSheet(
             verticalArrangement = Arrangement.spacedBy(4.dp),
           ) {
             Text(
-              text = "Storyline",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_storyline),
               style = MaterialTheme.typography.titleSmall,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -1020,7 +1020,7 @@ fun JellyfinDetailSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Text(
-              text = "Cast",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_cast),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -1110,7 +1110,7 @@ fun JellyfinDetailSheet(
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Text(
-              text = "Episodes",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_episodes),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
@@ -1198,7 +1198,7 @@ fun JellyfinDetailSheet(
                       )
                       if (season.childCount != null && season.childCount > 0) {
                         Text(
-                          text = "${season.childCount} ep",
+                          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_episode_count_value, season.childCount),
                           style = MaterialTheme.typography.labelSmall,
                           color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1297,7 +1297,7 @@ fun JellyfinDetailSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             Text(
-              text = "More Like This",
+              text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_more_like_this),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.onSurface,
