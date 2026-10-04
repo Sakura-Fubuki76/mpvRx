@@ -78,13 +78,6 @@ object NetworkConfigurationPreferencesScreen : Screen {
           modifier = Modifier.fillMaxSize().padding(padding).then(settingsHighlight),
         ) {
           item {
-            PreferenceCard {
-              Preference(title = { Text(stringResource(R.string.anime_grouping)) },
-                summary = { Text(stringResource(R.string.anime_grouping_hint)) },
-                onClick = { backStack.navigateTo(AnimeGroupingPreferencesScreen) })
-            }
-          }
-          item {
             PreferenceSectionHeader(title = stringResource(R.string.pref_section_p2p_streaming))
           }
           item {

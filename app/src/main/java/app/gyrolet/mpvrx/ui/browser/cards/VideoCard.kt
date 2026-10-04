@@ -220,6 +220,7 @@ fun VideoCard(
   thumbnailWidthPx: Int? = null,
   thumbnailHeightPx: Int? = null,
   showSubtitleIndicator: Boolean = true,
+  titleOverride: String? = null,
   overrideShowSizeChip: Boolean? = null,
   overrideShowResolutionChip: Boolean? = null,
   useFolderNameStyle: Boolean = false,
@@ -285,7 +286,7 @@ fun VideoCard(
       hasResolutionMetadataChip ||
       hasFramerateMetadataChip ||
       hasDateMetadataChip
-  val displayName =
+  val displayName = titleOverride ?:
     if (resolvedUiConfig.showExtensionField) {
       video.displayName
     } else if (video.isAudio && video.title.isNotBlank()) {

@@ -133,6 +133,14 @@ class NetworkBrowserViewModel(
     }
   }
 
+  /** Details observe the existing library; opening them must not enumerate storage again. */
+  fun loadAnimeConnection() {
+    viewModelScope.launch { _connection.value = repository.getConnectionById(connectionId) }
+  }
+
+  var animeScrollIndex: Int = 0
+  var animeScrollOffset: Int = 0
+
   fun loadFiles(forceStorageScan: Boolean = false) {
     app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.load", connectionId, currentPath, "force=$forceStorageScan")
     if (forceStorageScan) cloudMetadata.cancelStorage(connectionId)

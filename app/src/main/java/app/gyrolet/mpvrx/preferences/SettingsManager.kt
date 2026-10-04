@@ -474,7 +474,7 @@ class SettingsManager(
               for (index in 0 until matches.length()) {
                 val mapping = matches.getJSONObject(index)
                 val subjectId = mapping.optLong("subjectId")
-                if ((subjectId > 0 || mapping.optString("query").startsWith("#group:")) && mapping.optString("path").isNotBlank()) database.animeDao().putFolder(
+                if (subjectId > 0 && mapping.optString("path").isNotBlank()) database.animeDao().putFolder(
                   app.gyrolet.mpvrx.database.entities.AnimeFolderEntity(id,
                     app.gyrolet.mpvrx.domain.network.NetworkPath.from(mapping.getString("path")).value,
                     mapping.optString("query"), subjectId.takeIf { it > 0 }, true, mapping.optInt("offset"), 0))

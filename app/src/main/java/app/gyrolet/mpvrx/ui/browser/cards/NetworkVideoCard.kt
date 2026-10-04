@@ -211,7 +211,7 @@ fun NetworkVideoCard(
       progressPercentage = progress, isWatched = playbackInfo.isWatched, isOldAndUnplayed = playbackInfo.isOldAndUnplayed, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig().copy(showThumbnails = displayThumb),
-      showSubtitleIndicator = showSubtitleIndicator)
+      showSubtitleIndicator = showSubtitleIndicator, titleOverride = titleOverride)
     return
   }
 

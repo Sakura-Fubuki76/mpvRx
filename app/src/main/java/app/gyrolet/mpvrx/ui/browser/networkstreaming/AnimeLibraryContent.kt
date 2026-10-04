@@ -40,13 +40,14 @@ internal fun AnimeLibraryContent(
   onOpenDetails: (String, String, String) -> Unit = { _, _, _ -> },
   detailKey: String? = null,
   isRefreshing: Boolean = false,
+  libraryGridState: LazyGridState? = null,
   onEditMatch: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val cloud = koinInject<CloudMetadataRepository>()
   val anime = koinInject<AnimeRepository>()
-  val allFiles by remember(connection.id, currentPath) { cloud.observeLibrary(connection.id, currentPath) }.collectAsState(emptyList())
-  val catalog by remember(connection.id) { anime.observe(connection.id) }.collectAsState(AnimeCatalog(emptyMap(), emptyMap()))
+  val allFiles by remember(connection.id, currentPath) { cloud.observeLibrary(connection.id, currentPath, videosOnly = true) }.collectAsState()
+  val catalog by remember(connection.id) { anime.observe(connection.id) }.collectAsState()
   val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
   val identities = remember(connection.id, allFiles) { allFiles.filterNot { it.isDirectory }.map {
     app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, it.path)
@@ -57,14 +58,19 @@ internal fun AnimeLibraryContent(
       rows.flatMap { it }.associateBy { it.mediaTitle }
     }
   }.collectAsState(emptyMap())
-  val libraryGroups = remember(allFiles, catalog.folders) { regroupAnimeVideos(allFiles, catalog.folders.values.filter { it.query.startsWith("#group:") }.associate { it.path.removePrefix("/#assignment") to it.query.removePrefix("#group:") }).associateBy { it.key } }
+  val structureKey = remember(allFiles) { allFiles.map { Triple(it.path, it.name, it.isDirectory) } }
+  val structure = remember(structureKey) { animeVideoGroups(allFiles).map { group -> group.copy(files = group.files.sortedWith(
+    compareBy<NetworkFile> { animeSectionPath(group.directory, it) }
+      .thenBy { parseAnimeFilename(it.name).episode ?: Double.MAX_VALUE }.thenBy { it.name })) } }
+  val libraryGroups = remember(allFiles, structure) {
+    val latest = allFiles.associateBy { it.path }
+    structure.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }
+  }
   val recent by koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().recentlyPlayedDao().observeRecentlyPlayed(1000).collectAsState(emptyList())
-  val groups = remember(libraryGroups) { libraryGroups.mapValues { (_, group) -> group.files.sortedWith(
-    compareBy<NetworkFile> { isAnimeExtraVideo(it) }
-      .thenBy { parseAnimeFilename(it.name).episode ?: Double.MAX_VALUE }.thenBy { it.name }) } }
+  val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
   LaunchedEffect(connection.id, groups.keys, allFiles.map { it.path to it.lastModified }) {
     kotlinx.coroutines.delay(750)
-    anime.schedule(connection.id, allFiles)
+    if (detailKey == null) anime.schedule(connection.id, allFiles)
   }
 
   val visible = remember(groups, catalog, searchQuery) {
@@ -73,8 +79,9 @@ internal fun AnimeLibraryContent(
         catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
     }.sortedBy { (path, _) -> catalog.subjects[catalog.folders[path]?.subjectId]?.title ?: path }
   }
-  if (detailKey == null) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles, force = true) }, modifier = modifier.fillMaxSize()) {
-  LazyVerticalGrid(columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
+  val retainedGridState = libraryGridState ?: rememberLazyGridState()
+  if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles, force = true) }, modifier = modifier.fillMaxSize()) {
+  LazyVerticalGrid(state = retainedGridState, columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
     val recentKey = recent.firstNotNullOfOrNull { row ->
@@ -95,7 +102,7 @@ internal fun AnimeLibraryContent(
               Text(subject?.let { "${it.date.take(4)}  ·  ${it.score}" }.orEmpty(), style = MaterialTheme.typography.labelLarge)
               Text(subject?.summary.orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
-            if (subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Crop)
+            if (subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Fit)
           }
         }
       }
@@ -109,7 +116,7 @@ internal fun AnimeLibraryContent(
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
             if (subject?.cover?.isNotBlank() == true) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Crop)
+              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit)
             } else {
               Text(fallback, Modifier.align(Alignment.Center).padding(20.dp), style = MaterialTheme.typography.titleMedium)
             }
@@ -140,6 +147,7 @@ internal fun AnimeLibraryContent(
     }
   }
   }
+  if (detailKey == null && visible.isEmpty()) Text(stringResource(R.string.anime_index_loading), modifier.padding(24.dp))
   detailKey?.let { path ->
     val files = groups[path].orEmpty()
     val binding = catalog.folders[path]
@@ -147,18 +155,21 @@ internal fun AnimeLibraryContent(
     val title = subject?.title ?: libraryGroups[path]?.query.orEmpty()
       LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 40.dp)) {
         item {
-          Box(Modifier.fillMaxWidth().height(320.dp).background(MaterialTheme.colorScheme.surfaceContainer)) {
-            if (subject?.cover?.isNotBlank() == true) RemoteImage(subject.cover, null, Modifier.fillMaxSize(), ContentScale.Crop)
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
-            Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
+          Column {
+            if (subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainer)) {
+              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit)
+            }
+            Column(Modifier.padding(24.dp)) {
               Text(title, style = MaterialTheme.typography.headlineMedium)
               Text(listOfNotNull(subject?.date?.take(4), subject?.score?.takeIf { it > 0 }?.let { String.format(java.util.Locale.ROOT, "%.1f", it) },
                 subject?.tags?.take(3)?.joinToString(" · ")).joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium)
             }
           }
         }
+
         item {
-          val regularFiles = files.filterNot(::isAnimeExtraVideo).ifEmpty { files }
+          val directory = libraryGroups[path]?.directory ?: currentPath
+          val regularFiles = files.filter { animeSectionPath(directory, it).isEmpty() && !parseAnimeFilename(it.name).special }.ifEmpty { files }
           val resume = regularFiles.firstOrNull { file ->
             playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.let {
               it.lastPosition > 0 && !it.hasBeenWatched
@@ -183,18 +194,24 @@ internal fun AnimeLibraryContent(
           }
           Text(stringResource(R.string.anime_episodes), Modifier.padding(24.dp, 12.dp), style = MaterialTheme.typography.titleLarge)
         }
-        item { Text(stringResource(R.string.anime_regular_episodes), Modifier.padding(24.dp, 12.dp), style = MaterialTheme.typography.titleMedium) }
-        items(files, key = { it.path }) { file ->
-          val parsed = remember(file.name) { parseAnimeFilename(file.name) }
-          val number = parsed.episode?.minus(binding?.episodeOffset ?: 0)
-          val extra = isAnimeExtraVideo(file)
-          val isFirstExtra = extra && files.firstOrNull(::isAnimeExtraVideo)?.path == file.path
-          val episode = subject?.episodes?.firstOrNull { it.number == number && it.type == parsed.episodeType && (!extra || it.type != 0) }
-          Column(Modifier.padding(horizontal = 16.dp)) {
-            if (isFirstExtra) Text(stringResource(R.string.anime_extras), Modifier.padding(8.dp, 16.dp), style = MaterialTheme.typography.titleMedium)
-            NetworkVideoCard(file, connection, titleOverride = episode?.title?.takeIf { it.isNotBlank() }?.let { "${number?.toInt()} · $it" }, onClick = { onPlay(file, files.filter { isAnimeExtraVideo(it) == extra }) })
+        val directory = libraryGroups[path]?.directory ?: currentPath
+        val sections = files.groupBy { animeSectionPath(directory, it) }.toSortedMap()
+        sections.forEach { (section, sectionFiles) ->
+          item(key = "section:$section") {
+            Text(if (section.isEmpty()) stringResource(R.string.anime_regular_episodes) else section.replace("/", " / "),
+              Modifier.padding(24.dp, 12.dp), style = MaterialTheme.typography.titleMedium)
+          }
+          items(sectionFiles, key = { it.path }) { file ->
+            val parsed = remember(file.name) { parseAnimeFilename(file.name) }
+            val number = parsed.episode?.minus(binding?.episodeOffset ?: 0)
+            val episode = subject?.episodes?.firstOrNull { it.number == number && it.type == parsed.episodeType && (section.isEmpty() || it.type != 0) }
+            val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
+            NetworkVideoCard(file, connection, modifier = Modifier.padding(horizontal = 16.dp),
+              titleOverride = episode?.title?.takeIf { it.isNotBlank() }?.let { "$episodeLabel · $it" },
+              onClick = { onPlay(file, sectionFiles) })
           }
         }
+
       }
   }
 

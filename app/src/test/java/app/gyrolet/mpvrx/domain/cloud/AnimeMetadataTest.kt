@@ -64,18 +64,17 @@ class AnimeMetadataTest {
     groups.forEach { assertEquals(it.files.size, it.files.distinctBy { file -> file.path }.size) }
     assertEquals(2, groups.flatMap { it.files }.distinctBy { it.path }.size)
   }
-  @Test fun manualAssignmentsRespectPathBoundariesAndFileOverrides() {
+  @Test fun releaseFoldersKeepRealNestedSectionsAndSequelNumbers() {
     fun file(name: String, path: String) = app.gyrolet.mpvrx.domain.network.NetworkFile(name, path, 1, false)
-    val a = file("Alpha - 01.mkv", "/Alpha/01.mkv")
-    val b = file("Beta - 01.mkv", "/Beta/01.mkv")
-    val c = file("Beta - 02.mkv", "/Beta/02.mkv")
-    val d = file("Gamma - 01.mkv", "/Beta2/01.mkv")
-    val rows = listOf(a,b,c,d)
-    val groups = regroupAnimeVideos(rows, mapOf("/Beta" to "/Alpha", b.path to "/Beta"))
-    assertEquals(setOf(a.path,c.path), groups.first { it.key == "/Alpha" }.files.map { it.path }.toSet())
-    assertEquals(listOf(b.path), groups.first { it.key == "/Beta" }.files.map { it.path })
-    assertTrue(groups.flatMap { it.files }.any { it.path == d.path })
-    assertEquals(rows.map { it.path }.toSet(), groups.flatMap { it.files }.map { it.path }.toSet())
-    assertEquals(animeVideoGroups(rows), regroupAnimeVideos(rows, mapOf("/Beta" to "/missing")))
+    val release = "/Series/[VCB-Studio] Hibike! Euphonium 2 [Ma10p_1080p]"
+    val regular = file("[VCB-Studio] Hibike! Euphonium 2 [01][Ma10p_1080p].mkv", "$release/01.mkv")
+    val preview = regular.copy(name = "PV.mkv", path = "$release/Previews/PV.mkv")
+    val special = regular.copy(path = "$release/Extra/PV/MV3.mkv")
+    val group = animeVideoGroups(listOf(regular,preview,special)).single()
+    assertEquals("Hibike! Euphonium 2", group.query)
+    assertEquals("Previews", animeSectionPath(group.directory, preview))
+    assertEquals("Extra/PV", animeSectionPath(group.directory, special))
+    assertEquals(3, group.files.size)
+    assertEquals(1.0, parseAnimeFilename("[T.H.X&VCB-Studio] Hyouka [01][Ma10p_1080p][x265_flac_aac].mkv").episode!!, 0.0)
   }
 }

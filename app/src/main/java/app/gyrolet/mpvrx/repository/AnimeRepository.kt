@@ -25,35 +25,39 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
   private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
   private val pending = java.util.concurrent.ConcurrentHashMap<Long, List<NetworkFile>>()
   private val datasetFile = java.io.File(context.filesDir, "anime/bangumi-data.json")
+  private val titleResolver = AnimeTitleResolver(http, java.io.File(context.filesDir, "anime/anilist-native.json"))
+  private val scheduledRevisions = java.util.concurrent.ConcurrentHashMap<Long, Pair<Int, Long>>()
   private val datasetLock = Mutex()
   private var aliases: Map<String, Set<Long>>? = null
   private val requests = Mutex()
   private val associations = Mutex()
 
-  fun observe(id: Long): Flow<AnimeCatalog> = combine(dao.observeFolders(id), dao.observeSubjects()) { folders, subjects ->
+  private val catalogs = java.util.concurrent.ConcurrentHashMap<Long, StateFlow<AnimeCatalog>>()
+  fun observe(id: Long): StateFlow<AnimeCatalog> = catalogs.getOrPut(id) {
+    combine(dao.observeFolders(id), dao.observeSubjects()) { folders, subjects ->
     AnimeCatalog(folders.associateBy { it.path }, subjects.mapNotNull { row ->
       runCatching { row.id to json.decodeFromString<AnimeSubject>(row.payload) }.getOrNull()
     }.toMap())
-  }.flowOn(Dispatchers.Default)
-
-  /** Reserved association rows persist logical grouping without modifying remote paths. */
-  suspend fun assign(id: Long, source: String, target: String?) {
-    val path = "/#assignment" + app.gyrolet.mpvrx.domain.network.NetworkPath.from(source).value
-    if (target == null) dao.removeAssignment(id, path)
-    else dao.putFolder(AnimeFolderEntity(id, path, "#group:$target", null, true, 0, 0))
+  }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeCatalog(emptyMap(), emptyMap()))
   }
 
   fun stop(id: Long) { pending.remove(id); jobs.remove(id)?.cancel() }
 
   @Synchronized
   fun schedule(id: Long, files: List<NetworkFile>, force: Boolean = false) {
+    val revision = files.filterNot { it.isDirectory }.fold(1) { hash, file -> 31 * hash + listOf(file.path, file.size, file.lastModified).hashCode() }
+    val now = System.currentTimeMillis()
+    val scheduled = scheduledRevisions[id]
+    if (!force && scheduled?.first == revision && now - scheduled.second < 5 * 60_000) return
     if (jobs[id]?.isActive == true) { if (force) stop(id) else { pending[id] = files; return } }
-    val groups = animeVideoGroups(files)
+    scheduledRevisions[id] = revision to now
     jobs[id] = scope.launch {
+      dao.clearAssignments(id)
+      val groups = withContext(Dispatchers.Default) { animeVideoGroups(files) }
       groups.forEach { group ->
         ensureActive()
         val path = group.key
-        val query = group.queries.joinToString(" | ")
+        val query = "native-v2 | " + group.queries.joinToString(" | ")
         val previous = dao.getFolder(id, path)
         if (previous?.manual == true) {
           previous.subjectId?.let { runCatching { subject(it, forceRefresh = force) } }
@@ -65,12 +69,22 @@ class AnimeRepository(private val dao: AnimeDao, client: OkHttpClient, context: 
           val aliasId = group.queries.firstNotNullOfOrNull { index[animeNameKey(it)]?.singleOrNull() }
           var match = aliasId?.let { subject(it, forceRefresh = force) }
           if (match == null) {
+            try {
+              val native = titleResolver.nativeName(group.query)
+              if (native != null) {
+                val nativeId = index[animeNameKey(native)]?.singleOrNull()
+                match = nativeId?.let { subject(it, forceRefresh = force) } ?: matchAnimeSubject(native, search(native))
+              }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { CloudTrace.event("anime.alias.failed", id, path, "error=${error.javaClass.simpleName}") }
+          }
+          if (match == null) {
             for (name in group.queries.take(4)) {
               match = matchAnimeSubject(name, search(name))
               if (match != null) break
             }
           }
-          if (aliasId == null) match?.let { subject(it.id, forceRefresh = force) }
+          if (match != null) subject(match.id)
           associations.withLock {
             dao.bindAutomatically(AnimeFolderEntity(id, path, query, match?.id, false, 0, System.currentTimeMillis()))
           }

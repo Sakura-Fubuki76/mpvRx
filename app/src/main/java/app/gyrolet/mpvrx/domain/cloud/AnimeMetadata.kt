@@ -67,6 +67,7 @@ fun animeNameKey(name: String): String = Normalizer.normalize(name, Normalizer.F
   .replace(Regex("second\\s+season|2nd\\s+season"), "season2")
   .replace(Regex("third\\s+season|3rd\\s+season"), "season3")
   .replace(Regex("fourth\\s+season|4th\\s+season"), "season4")
+  .replace(Regex("(?i)\\bha\\b"), "wa")
   .filter { it.isLetterOrDigit() || it == '!' }
 
 /** Ambiguous search results require confirmation; popularity is never an identity signal. */
@@ -77,12 +78,13 @@ fun matchAnimeSubject(query: String, candidates: List<AnimeSubject>): AnimeSubje
     .distinctBy { it.id }.singleOrNull()
 }
 
-private val extraDirectoryNames = setOf("sp", "sps", "special", "specials", "extra", "extras", "bonus", "ncop", "nced", "op", "ed", "pv", "cm", "menu", "menus", "特典", "映像特典")
+private val extraDirectoryNames = setOf("sp", "sps", "special", "specials", "extra", "extras", "bonus", "ncop", "nced", "op", "ed", "pv", "cm", "menu", "menus", "previews", "creditless", "cds", "ova", "次回予告", "特典", "映像特典")
 
 fun isAnimeExtraVideo(file: app.gyrolet.mpvrx.domain.network.NetworkFile): Boolean =
   file.path.substringBeforeLast('/').split('/').any { it.lowercase(java.util.Locale.ROOT) in extraDirectoryNames } || parseAnimeFilename(file.name).special
 
 private fun animeSeason(name: String): Int? {
+  Regex("(?:^|\\s)([2-9])$").find(name)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
   val key = animeNameKey(name)
   return Regex("(?:season|第)([2-9])[季期]?").find(key)?.groupValues?.get(1)?.toIntOrNull()
     ?: Regex("([2-9])(?:nd|rd|th)").find(key)?.groupValues?.get(1)?.toIntOrNull()
@@ -94,43 +96,53 @@ private fun animeSeason(name: String): Int? {
 data class AnimeVideoGroup(val key: String, val directory: String, val query: String,
   val files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>, val queries: List<String> = listOf(query))
 
-/** Specials inherit the release directory; mixed movies still have separate stable bindings. */
-fun animeVideoGroups(files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>): List<AnimeVideoGroup> =
-  files.distinctBy { app.gyrolet.mpvrx.domain.network.NetworkPath.from(it.path).value }.filter { !it.isDirectory && (it.mimeType?.startsWith("video/") == true ||
-    cloudMediaExtension(it.name) in app.gyrolet.mpvrx.utils.storage.FileTypeUtils.VIDEO_EXTENSIONS) }
-    .groupBy { file ->
-      val parent = file.path.substringBeforeLast('/').ifBlank { "/" }
-      val segments = parent.split('/').filter { it.isNotBlank() }
-      val extra = segments.indexOfFirst { it.lowercase(java.util.Locale.ROOT) in extraDirectoryNames }
-      if (extra > 0) "/" + segments.take(extra).joinToString("/") else parent
-    }.flatMap { (directory, videos) ->
-      val folderTitle = parseAnimeFilename(directory.substringAfterLast('/')).title
-      val normal = videos.filterNot(::isAnimeExtraVideo).ifEmpty { videos }
-      val titles = normal.groupBy { parseAnimeFilename(it.name).title }
-      val generic = directory == "/" || Regex("(?i)^(anime|movies?|videos?|BD|BDMV|动画|电影|\\d{4})$").matches(folderTitle)
-      fun queries(title: String): List<String> {
-        val primarySeason = animeSeason(title)
-        val ancestors = directory.split('/').filter { it.isNotBlank() }.dropLast(1).asReversed().map { parseAnimeFilename(it).title }
-        return (listOf(title) + titles.keys + ancestors).filter { it.isNotBlank() &&
-          (primarySeason == null || animeSeason(it) == primarySeason) }.distinct()
-      }
-      if ((generic || titles.size > 1) && titles.keys.none { animeNameKey(it) == animeNameKey(folderTitle) } && titles.keys.all { it.isNotBlank() }) {
-        titles.map { (title, rows) -> AnimeVideoGroup("$directory/#anime=${animeNameKey(title)}", directory, title,
-          (rows + videos.filter(::isAnimeExtraVideo).filter { animeNameKey(parseAnimeFilename(it.name).title) == animeNameKey(title) }).distinctBy { it.path }, listOf(title)) }
-      } else listOf(AnimeVideoGroup(directory, directory, folderTitle.ifBlank { titles.keys.firstOrNull().orEmpty() }, videos,
-        queries(folderTitle.ifBlank { titles.keys.firstOrNull().orEmpty() })))
-    }
+/** Directory titles preserve trailing sequel numbers; they are not episode numbers. */
+fun animeDirectoryTitle(raw: String): String = Normalizer.normalize(raw, Normalizer.Form.NFKC)
+  .replace(Regex("\\[[^]]*]"), " ")
+  .replace(Regex("(?i)\\([^)]*(?:1080|720|2160|1920|HEVC|AVC|FLAC|BDRip)[^)]*\\)"), " ")
+  .replace(Regex("(?i)\\b(?:BDRip|BD-BOX|BluRay|WEB[- ]?DL|WEBRip|HEVC|AVC|FLAC|AAC|10bit|x264|x265|\\d{3,4}[pi])\\b"), " ")
+  .replace(Regex("(?i)\\s*[-+]\\s*(?:TV|SP|OVA)(?:\\s*[-+]\\s*(?:TV|SP|OVA))*$"), "")
+  .replace('_', ' ').replace(Regex("\\s+"), " ").trim(' ', '-', '.')
+  .replace(Regex("^\\d{1,2}\\s*[-.]\\s+"), "")
 
-/** A file override can refine an entire folder assignment. */
-fun regroupAnimeVideos(files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>, assignments: Map<String, String>): List<AnimeVideoGroup> {
-  val initial = animeVideoGroups(files)
-  if (assignments.isEmpty()) return initial
-  val targets = initial.associateBy { it.key }
-  val output = linkedMapOf<String, MutableList<app.gyrolet.mpvrx.domain.network.NetworkFile>>()
-  initial.forEach { group -> group.files.forEach { file ->
-    val target = assignments.entries.filter { (path, key) -> key in targets &&
-      (file.path == path || file.path.startsWith(path.trimEnd('/') + "/")) }.maxByOrNull { it.key.length }?.value ?: group.key
-    output.getOrPut(target) { mutableListOf() }.add(file)
-  } }
-  return output.map { (key, rows) -> targets.getValue(key).copy(files = rows.distinctBy { it.path }) }
+fun animeSectionPath(directory: String, file: app.gyrolet.mpvrx.domain.network.NetworkFile): String {
+  val parent = file.path.substringBeforeLast('/').ifBlank { "/" }
+  return if (parent == directory) "" else parent.removePrefix(directory.trimEnd('/') + "/")
+}
+
+/** Release folders own their descendants. Preserve real section paths instead of guessing types. */
+fun animeVideoGroups(files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>): List<AnimeVideoGroup> {
+  val videos = files.distinctBy { app.gyrolet.mpvrx.domain.network.NetworkPath.from(it.path).value }.filter {
+    !it.isDirectory && (it.mimeType?.startsWith("video/") == true ||
+      cloudMediaExtension(it.name) in app.gyrolet.mpvrx.utils.storage.FileTypeUtils.VIDEO_EXTENSIONS)
+  }
+  val releaseTag = Regex("(?i)Ma\\d+p_|Hi\\d+p_|\\d{3,4}[pi]|\\d{3,4}x\\d{3,4}")
+  val parentPaths = videos.filterNot(::isAnimeExtraVideo).map { it.path.substringBeforeLast('/') }.toSet()
+  return videos.groupBy { file ->
+    val parent = file.path.substringBeforeLast('/').ifBlank { "/" }
+    val segments = parent.split('/').filter { it.isNotBlank() }
+    val extra = segments.indexOfFirst { it.lowercase(java.util.Locale.ROOT) in extraDirectoryNames ||
+      Regex("(?i)^Menu(?: \\(.*\\))?$").matches(it) }
+    val release = segments.take(if (extra >= 0) extra else segments.size).indexOfLast { releaseTag.containsMatchIn(it) }
+    when {
+      release >= 0 -> "/" + segments.take(release + 1).joinToString("/")
+      extra > 0 -> "/" + segments.take(extra).joinToString("/")
+      else -> (1..segments.size).map { "/" + segments.take(it).joinToString("/") }
+        .lastOrNull { it in parentPaths } ?: parent
+    }
+  }.flatMap { (directory, rows) ->
+    val folderTitle = animeDirectoryTitle(directory.substringAfterLast('/'))
+    val normal = rows.filter { animeSectionPath(directory, it).isEmpty() && !parseAnimeFilename(it.name).special }.ifEmpty { rows }
+    val titles = normal.groupBy { parseAnimeFilename(it.name).title }
+    val generic = directory == "/" || Regex("(?i)^(anime|movies?|videos?|BD|BDMV|动画|电影|\\d{4})$").matches(folderTitle)
+    val seasonFolder = Regex("(?i)^S([1-9])$").matchEntire(folderTitle)
+    val title = if (seasonFolder != null) animeDirectoryTitle(directory.substringBeforeLast('/').substringAfterLast('/')) + " Season " + seasonFolder.groupValues[1]
+      else folderTitle.ifBlank { titles.keys.firstOrNull().orEmpty() }
+    val ancestors = directory.split('/').filter { it.isNotBlank() }.dropLast(1).asReversed().map(::animeDirectoryTitle)
+    val season = animeSeason(title)
+    val queries = (listOf(title) + titles.keys + ancestors).filter { it.isNotBlank() && (season == null || animeSeason(it) == season) }.distinct()
+    if (generic && titles.size > 1) titles.map { (name, members) ->
+      AnimeVideoGroup("$directory/#anime=${animeNameKey(name)}", directory, name, members, listOf(name))
+    } else listOf(AnimeVideoGroup(directory, directory, title, rows, queries))
+  }
 }

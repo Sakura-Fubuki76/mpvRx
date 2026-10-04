@@ -11,7 +11,7 @@ abstract class AnimeDao {
   abstract suspend fun clearConnection(id: Long)
   @Query("SELECT * FROM anime_folders WHERE connectionId = :id")
   abstract fun observeFolders(id: Long): Flow<List<AnimeFolderEntity>>
-  @Query("SELECT * FROM anime_folders WHERE connectionId = :id AND manual = 1")
+  @Query("SELECT * FROM anime_folders WHERE connectionId = :id AND manual = 1 AND query NOT LIKE '#group:%'")
   abstract suspend fun getManualFolders(id: Long): List<AnimeFolderEntity>
   @Query("SELECT * FROM anime_subjects")
   abstract fun observeSubjects(): Flow<List<AnimeSubjectEntity>>
@@ -23,8 +23,8 @@ abstract class AnimeDao {
   abstract suspend fun putSubject(subject: AnimeSubjectEntity)
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   abstract suspend fun putFolder(folder: AnimeFolderEntity)
-  @Query("DELETE FROM anime_folders WHERE connectionId = :id AND path = :path AND query LIKE '#group:%'")
-  abstract suspend fun removeAssignment(id: Long, path: String)
+  @Query("DELETE FROM anime_folders WHERE connectionId = :id AND query LIKE '#group:%'")
+  abstract suspend fun clearAssignments(id: Long)
   @Transaction
   open suspend fun bindAutomatically(folder: AnimeFolderEntity) {
     if (getFolder(folder.connectionId, folder.path)?.manual != true) putFolder(folder)

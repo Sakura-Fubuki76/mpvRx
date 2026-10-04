@@ -43,12 +43,12 @@ data class AnimeDetailsScreen(
       key = "AnimeDetails_${connectionId}_$groupKey",
       factory = NetworkBrowserViewModel.factory(context.applicationContext as Application, connectionId, directory),
     )
-    LaunchedEffect(connectionId, directory) { model.loadFiles() }
+    LaunchedEffect(connectionId, directory) { model.loadAnimeConnection() }
     DisposableEffect(model) { onDispose { model.pauseBackgroundWork() } }
     val connection by model.connection.collectAsState()
     val repository = koinInject<AnimeRepository>()
     val catalog by remember(connectionId) { repository.observe(connectionId) }
-      .collectAsState(AnimeCatalog(emptyMap(), emptyMap()))
+      .collectAsState()
     val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
     var editMatch by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {

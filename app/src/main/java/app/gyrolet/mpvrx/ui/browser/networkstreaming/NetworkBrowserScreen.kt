@@ -159,6 +159,13 @@ data class NetworkBrowserScreen(
           ),
       )
 
+    val animeGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(viewModel.animeScrollIndex, viewModel.animeScrollOffset)
+    androidx.compose.runtime.DisposableEffect(viewModel, animeGridState) {
+      onDispose {
+        viewModel.animeScrollIndex = animeGridState.firstVisibleItemIndex
+        viewModel.animeScrollOffset = animeGridState.firstVisibleItemScrollOffset
+      }
+    }
     val directoryFiles by viewModel.files.collectAsState()
     androidx.compose.runtime.DisposableEffect(viewModel) {
       onDispose { viewModel.pauseBackgroundWork() }
@@ -396,7 +403,7 @@ data class NetworkBrowserScreen(
           onPlay = { file, episodes -> viewModel.playAnimeVideo(file, episodes) },
           onBrowse = { folder -> backstack.navigateTo(NetworkBrowserScreen(connectionId, connectionName, folder.path, showAnimeLibrary = false)) },
           onRefresh = { viewModel.loadFiles(forceStorageScan = true) }, modifier = Modifier.padding(padding),
-          isRefreshing = isRefreshing.value,
+          isRefreshing = isRefreshing.value, libraryGridState = animeGridState,
           onOpenDetails = { key, directory, title -> backstack.navigateTo(AnimeDetailsScreen(connectionId, connectionName, key, directory, title)) },
         )
       } else NetworkBrowserContent(
