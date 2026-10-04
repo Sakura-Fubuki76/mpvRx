@@ -48,7 +48,8 @@ private fun parseAnimeFilenameUncached(raw: String): AnimeFilename {
     .replace(Regex("(?i)\\.(mkv|mp4|mov|avi|webm|m4v|ts)$"), "")
   val specialTag = animeSpecialTag(name)
   val special = specialTag != null
-  val episodeMatch = Regex("(?i)S\\d{1,2}E(\\d{1,3}(?:\\.\\d+)?)").find(name)
+  val numberedMovie = Regex("(?i)\\bmovie\\s+\\d+\\s+[A-Za-z]").containsMatchIn(name)
+  val episodeMatch = if (numberedMovie) null else Regex("(?i)S\\d{1,2}E(\\d{1,3}(?:\\.\\d+)?)").find(name)
     ?: Regex("(?i)(?:^|[\\s_\\-\\[\\(])(?:EP?|SP|OVA|OAD|NCOP|NCED|OP|ED)[ ._-]*(\\d{1,3}(?:\\.\\d+)?)").find(name)
     ?: Regex("第\\s*(\\d{1,3}(?:\\.\\d+)?)\\s*[话話集]").find(name)
     ?: Regex("\\[(\\d{1,3}(?:\\.\\d+)?)(?:v\\d+)?\\]", RegexOption.IGNORE_CASE).find(name)
@@ -64,8 +65,8 @@ private fun parseAnimeFilenameUncached(raw: String): AnimeFilename {
   name = name.replace(Regex("\\[[^]]*]|\\([^)]*(?:1080|720|2160|HEVC|AVC|FLAC|BDRip)[^)]*\\)", RegexOption.IGNORE_CASE), " ")
     .replace(Regex("(?i)\\b(?:BDRip|BluRay|WEB[- ]?DL|WEBRip|HEVC|AVC|FLAC|AAC|10bit|10-bit|x264|x265|H[.]?26[45]|\\d{3,4}[pi])\\b"), " ")
     .replace('_', ' ').replace(Regex("\\s+"), " ").trim(' ', '-', '.', '(', ')')
-  val originalTitle = if (episode != null) "" else element(com.github.TraceLTRC.ElementCategory.kElementAnimeTitle)
-  val originalEpisode = if (episode != null) null else element(com.github.TraceLTRC.ElementCategory.kElementEpisodeNumber).toDoubleOrNull()
+  val originalTitle = if (episode != null || numberedMovie) "" else element(com.github.TraceLTRC.ElementCategory.kElementAnimeTitle)
+  val originalEpisode = if (episode != null || numberedMovie) null else element(com.github.TraceLTRC.ElementCategory.kElementEpisodeNumber).toDoubleOrNull()
   val explicitSeasonOrChinese = Regex("(?i)S\\d{1,2}E\\d|第\\s*\\d+[话話集]|Season\\s*\\d|\\d+(?:nd|rd|th)\\s+Season|(?:Second|Third|Fourth|Final)\\s+Season|\\d+(?:nd|rd|th)(?:\\s|$)").containsMatchIn(raw)
   val type = when (specialTag) {
     "NCOP", "OP" -> 2
@@ -77,7 +78,15 @@ private fun parseAnimeFilenameUncached(raw: String): AnimeFilename {
     episode ?: originalEpisode, special, type)
 }
 
-fun animeNameKey(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFKC)
+private fun latinWithoutDiacritics(name: String): String = buildString {
+  name.forEach { char ->
+    if (char.code > 127 && Character.UnicodeScript.of(char.code) == Character.UnicodeScript.LATIN) {
+      append(Normalizer.normalize(char.toString(), Normalizer.Form.NFD).filterNot { Character.getType(it) == Character.NON_SPACING_MARK.toInt() })
+    } else append(char)
+  }
+}
+
+fun animeNameKey(name: String): String = latinWithoutDiacritics(Normalizer.normalize(name, Normalizer.Form.NFKC))
   .lowercase(java.util.Locale.ROOT)
   .replace(Regex("\\s+(iii|ii|iv)$")) { " " + when (it.groupValues[1]) { "ii" -> "2"; "iii" -> "3"; else -> "4" } }
   .replace(Regex("\\b(oad|ova)s\\b"), "$1")
@@ -85,16 +94,24 @@ fun animeNameKey(name: String): String = Normalizer.normalize(name, Normalizer.F
   .replace(Regex("third\\s+season|3rd\\s+season"), "season3")
   .replace(Regex("fourth\\s+season|4th\\s+season"), "season4")
   .replace(Regex("(?i)\\bha\\b"), "wa")
-  .filter { it.isLetterOrDigit() || it == '!' }
+  .map { if (it.code in 0x3041..0x3096) (it.code + 0x60).toChar() else it }.joinToString("")
+  .filter { it.isLetterOrDigit() || it in "!?+♪" }
 
 /** Ambiguous search results require confirmation; popularity is never an identity signal. */
 fun matchAnimeSubject(query: String, candidates: List<AnimeSubject>): AnimeSubject? {
   val key = animeIdentityKey(query)
   if (key.length < 2) return null
   val shortMovie = animeIsMovie(query) && Regex("(?i)\\bmovie$").containsMatchIn(query)
-  return candidates.filter { subject ->
+  val exact = candidates.filter { subject ->
     (listOf(subject.name, subject.chineseName) + subject.aliases).any { it.isNotBlank() && animeIdentityKey(it, if (animeIsMovie(query)) subject.format else "") == key } ||
       (shortMovie && subject.format == "剧场版" && (listOf(subject.name) + subject.aliases).any { animeMovieBase(it) == animeMovieBase(query) })
+  }.distinctBy { it.id }
+  if (exact.isNotEmpty()) return exact.singleOrNull()
+  if (animeSideStoryKey(query).length < 2) return null
+  return candidates.filter { subject -> subject.format in setOf("OVA", "其他", "SPECIAL") &&
+    (listOf(subject.name, subject.chineseName) + subject.aliases).any {
+      animeSideStoryKey(it) == animeSideStoryKey(query)
+    }
   }.distinctBy { it.id }.singleOrNull()
 }
 
@@ -178,6 +195,22 @@ fun animeVideoGroups(files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>):
       animeNameKey(folderTitle) !in directTitles && !releaseTag.containsMatchIn(directory.substringAfterLast('/')))
     val titles = if (mixed) rows.groupBy { parseAnimeFilename(it.name).title } else emptyMap()
     val seasonFolder = animeSeasonDirectory.matchEntire(folderTitle)
+    val films = rows.filter { it.path.substringBeforeLast('/') == directory && !isAnimeExtraVideo(it) }
+      .map { parseAnimeFilename(it.name).title }
+      .filter { Regex("(?i)\\bmovie\\s+\\d+\\s+[A-Za-z]").containsMatchIn(it) &&
+        animeMovieBase(it) == animeMovieBase(folderTitle) }.distinctBy { animeIdentityKey(it) }
+    if (animeIsMovie(folderTitle) && films.size >= 2) {
+      val ordinary = rows.filterNot(::isAnimeExtraVideo).groupBy { parseAnimeFilename(it.name).title }
+      val ordered = ordinary.keys.sortedWith(compareBy<String> { if (it in films) 0 else 1 }.thenBy { it })
+      val extras = rows.filter(::isAnimeExtraVideo).groupBy { extra ->
+        val key = animeIdentityKey(parseAnimeFilename(extra.name).title)
+        ordered.singleOrNull { animeIdentityKey(it) == key } ?: ordered.first()
+      }
+      return@flatMap ordered.map { filenameTitle ->
+        val members = ordinary.getValue(filenameTitle) + extras[filenameTitle].orEmpty()
+        AnimeVideoGroup("$directory#anime:${animeIdentityKey(filenameTitle)}", directory, filenameTitle, members, listOf(filenameTitle))
+      }
+    }
     val title = if (seasonFolder != null) animeDirectoryTitle(directory.substringBeforeLast('/').substringAfterLast('/')) + " Season " + seasonFolder.groupValues[1].toInt()
       else if (generic) titles.keys.singleOrNull().orEmpty() else folderTitle
     val ancestors = directory.split('/').filter { it.isNotBlank() }.dropLast(1).asReversed().map(::animeDirectoryTitle)

@@ -923,6 +923,848 @@
         "format": "SPECIAL",
         "episodes": 2
       }
+    ],
+    "Oomuro-ke dear sisters": [
+      {
+        "id": 167984,
+        "title": {
+          "romaji": "Oomuro-ke: dear sisters",
+          "native": "大室家 dear sisters",
+          "english": null
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      }
+    ],
+    "DanMachi": [
+      {
+        "id": 20920,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうか",
+          "english": "Is It Wrong to Try to Pick Up Girls in a Dungeon?"
+        },
+        "synonyms": [
+          "Danmachi",
+          "Dungeon ni Deai o Motomeru no wa Machigatte Iru Darouka: Familia Myth",
+          "DanMachi: É Errado Tentar Pegar Garotas numa Masmorra?",
+          "DanMachi: Família Myth",
+          "Danmachi: ¿Qué Tiene de Malo Intentar Ligar en una Mazmorra?",
+          "在地下城寻求邂逅是否搞错了什么",
+          "فارسة أحلامي",
+          "มันผิดรึไงถ้าใจอยากจะพบรักในดันเจี้ยน",
+          "DanMachi - È sbagliato cercare di incontrare ragazze in un Dungeon?",
+          "ダンまち"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 170732,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka V: Houjou no Megami-hen",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうかⅤ 豊穣の女神篇",
+          "english": "Is It Wrong To Try To Pick Up Girls in a Dungeon? V"
+        },
+        "synonyms": [
+          "DanMachi V",
+          "Familia Myth V",
+          "ダンまちⅤ",
+          "Is It Wrong to Try to Pick Up Girls in a Dungeon? Season 5",
+          "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka 5th Season",
+          "Is It Wrong to Try to Pick Up Girls in a Dungeon? V: Goddess of Fertility Arc",
+          "Is It Wrong to Try to Pick Up Girls in a Dungeon? V: Goddess of the Harvest Arc"
+        ],
+        "format": "ONA",
+        "episodes": 15
+      },
+      {
+        "id": 129196,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka IV: Shin Shou Meikyuu-hen",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうかⅣ 新章 迷宮篇",
+          "english": "Is It Wrong to Try to Pick Up Girls in a Dungeon? IV"
+        },
+        "synonyms": [
+          "มันผิดรึไงถ้าใจอยากจะพบรักในดันเจี้ยน ภาค 4",
+          "Danmachi IV",
+          "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka 4th Season",
+          "Is It Wrong to Try to Pick Up Girls in a Dungeon? Season 4",
+          "Liệu Có Sai Lầm Khi Tìm Kiếm Cuộc Gặp Gỡ Định Mệnh Trong Hầm Ngục? IV: Chương Mới Phần Mê Cung",
+          "ダンまちⅣ"
+        ],
+        "format": "TV",
+        "episodes": 11
+      },
+      {
+        "id": 112124,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka III",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうかⅢ",
+          "english": "Is It Wrong to Try to Pick Up Girls in a Dungeon? III"
+        },
+        "synonyms": [
+          "ダンジョンに出会いを求めるのは間違っているだろうか FAMILIA MYTH III",
+          "Dungeon ni Deai o Motomeru no wa Machigatte Iru Darouka: Familia Myth III",
+          "Danmachi III",
+          "มันผิดรึไงถ้าใจอยากจะพบรักในดันเจี้ยน ภาค 3",
+          "ダンまちⅢ"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 101167,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka II",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうかⅡ",
+          "english": "Is It Wrong to Try to Pick Up Girls in a Dungeon? II"
+        },
+        "synonyms": [
+          "Danmachi II",
+          "ダンジョンに出会いを求めるのは間違っているだろうか2",
+          "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka 2",
+          "Dungeon ni Deai o Motomeru no wa Machigatte Iru Darouka: Familia Myth II",
+          "มันผิดรึไงถ้าใจอยากจะพบรักในดันเจี้ยน ภาค 2",
+          "ダンまちⅡ"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 207385,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka VI",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうかⅤI",
+          "english": null
+        },
+        "synonyms": [
+          "It Wrong To Try To Pick Up Girls in a Dungeon? VI",
+          "DanMachi 6",
+          "ダンまちⅥ"
+        ],
+        "format": "TV",
+        "episodes": null
+      },
+      {
+        "id": 101166,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka: Orion no Ya",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうか ─ オリオンの矢 ─",
+          "english": "Is It Wrong to Try to Pick Up Girls in a Dungeon?: Arrow of the Orion"
+        },
+        "synonyms": [
+          "DanMachi: Arrow of the Orion"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 21676,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka Gaiden: Sword Oratoria",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうか外伝 ソード・オラトリア",
+          "english": "Sword Oratoria: Is it Wrong to Try to Pick Up Girls in a Dungeon? On the Side"
+        },
+        "synonyms": [
+          "Is It Wrong to Hope to Meet a Girl in a Dungeon? On the Side: Sword Oratoria",
+          "Danmachi Sword Oratoria",
+          "¿Qué tiene de malo ligar en una mazmorra? Sword Oratoria"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 155211,
+        "title": {
+          "romaji": "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka IV: Shin Shou Yakusai-hen",
+          "native": "ダンジョンに出会いを求めるのは間違っているだろうかⅣ 深章 厄災篇",
+          "english": "Is It Wrong to Try to Pick Up Girls in a Dungeon? IV Part 2"
+        },
+        "synonyms": [
+          "มันผิดรึไงถ้าใจอยากจะพบรักในดันเจี้ยน ภาค 4 Part 2",
+          "Dungeon ni Deai wo Motomeru no wa Machigatteiru Darou ka 4th Season Part 2",
+          "Is It Wrong to Try to Pick Up Girls in a Dungeon? Season 4 Part 2",
+          "Danmachi IV Part 2",
+          "ダンまちⅣ"
+        ],
+        "format": "TV",
+        "episodes": 11
+      }
+    ],
+    "Yuuki Yuuna": [
+      {
+        "id": 97856,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha-bu Shozoku",
+          "native": "結城友奈は勇者部所属",
+          "english": null
+        },
+        "synonyms": [
+          "Yuuki Yuuna wa Yuushabu Shozoku",
+          "Yuuki Yuuna is a Hero Club Member"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 20800,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru",
+          "native": "結城友奈は勇者である",
+          "english": "Yuki Yuna is a Hero"
+        },
+        "synonyms": [
+          " YuYuYu",
+          "สาวน้อยชมรมผู้กล้า"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 100981,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha-bu Shozoku 3",
+          "native": "結城友奈は勇者部所属 3",
+          "english": "Yuuki Yuuna wa Yuusha-bu Shozoku 3"
+        },
+        "synonyms": [
+          "Yuuki Yuuna wa Yuushabu Shozoku 3",
+          "Yuuki Yuuna is a Hero Club Member 3"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 100980,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha-bu Shozoku 2",
+          "native": "結城友奈は勇者部所属 2",
+          "english": "Yuuki Yuuna wa Yuusha-bu Shozoku 2"
+        },
+        "synonyms": [
+          "Yuuki Yuuna wa Yuushabu Shozoku 2",
+          "Yuuki Yuuna is a Hero Club Member 2"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 119042,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru Churutto!",
+          "native": "結城友奈は勇者である ちゅるっと！",
+          "english": null
+        },
+        "synonyms": [],
+        "format": "TV_SHORT",
+        "episodes": 12
+      },
+      {
+        "id": 97769,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru: Yuusha no Shou",
+          "native": "結城友奈は勇者である -勇者の章-",
+          "english": "Yuki Yuna is a Hero: The Hero Chapter"
+        },
+        "synonyms": [],
+        "format": "TV",
+        "episodes": 6
+      },
+      {
+        "id": 100791,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru: Washio Sumi no Shou",
+          "native": "結城友奈は勇者である -鷲尾須美の章-",
+          "english": "Yuki Yuna is a Hero: The Washio Sumi Chapter"
+        },
+        "synonyms": [
+          "WaSuYu"
+        ],
+        "format": "TV",
+        "episodes": 6
+      },
+      {
+        "id": 122292,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru: Dai-Mankai no Shou",
+          "native": "結城友奈は勇者である-大満開の章-",
+          "english": "Yuki Yuna is a Hero: The Great Mankai Chapter"
+        },
+        "synonyms": [
+          "Yuki Yuna is a Hero Season 3",
+          "สาวน้อยชมรมผู้กล้า ภาค 3"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 97858,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru: Washio Sumi no Shou 1 - Tomodachi",
+          "native": "結城友奈は勇者である -鷲尾須美の章- 第1章 「ともだち」",
+          "english": null
+        },
+        "synonyms": [
+          "Yuki Yuna Is A Hero: Washio Sumi Chapter 1 - Friends"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 97859,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru: Washio Sumi no Shou 2 - Tamashii",
+          "native": "結城友奈は勇者である -鷲尾須美の章- 第2章 「たましい」",
+          "english": null
+        },
+        "synonyms": [
+          "Yuki Yuna Is A Hero: Washio Sumi Chapter 2 - Spirit"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 97860,
+        "title": {
+          "romaji": "Yuuki Yuuna wa Yuusha de Aru: Washio Sumi no Shou 3 - Yakusoku",
+          "native": "結城友奈は勇者である -鷲尾須美の章- 第3章 「やくそく」",
+          "english": null
+        },
+        "synonyms": [
+          "Yuki Yuna Is A Hero: Washio Sumi Chapter 3 - Promise"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      }
+    ],
+    "Gochuumon": [
+      {
+        "id": 20517,
+        "title": {
+          "romaji": "Gochuumon wa Usagi desu ka?",
+          "native": "ご注文はうさぎですか？",
+          "english": "Is the Order a Rabbit?"
+        },
+        "synonyms": [
+          "Gochiusa",
+          "ごちうさ"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 21034,
+        "title": {
+          "romaji": "Gochuumon wa Usagi desu ka??",
+          "native": "ご注文はうさぎですか？？",
+          "english": "Is the Order a Rabbit?? Season 2"
+        },
+        "synonyms": [
+          "Gochiusa 2",
+          "ごちうさ 2"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 104198,
+        "title": {
+          "romaji": "Gochuumon wa Usagi desu ka? BLOOM",
+          "native": "ご注文はうさぎですか？ BLOOM",
+          "english": "Is the Order a Rabbit? BLOOM"
+        },
+        "synonyms": [
+          "Gochiusa 3",
+          "ごちうさ 3"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 104199,
+        "title": {
+          "romaji": "Gochuumon wa Usagi desu ka?? Sing For You",
+          "native": "ご注文はうさぎですか？？ ~Sing For You~",
+          "english": "Is the Order a Rabbit?? ～Sing For You～"
+        },
+        "synonyms": [
+          "Gochiusa OVA",
+          "ごちうさ OVA"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 21813,
+        "title": {
+          "romaji": "Gochuumon wa Usagi desu ka?? Dear My Sister",
+          "native": "ご注文はうさぎですか?? ~Dear My Sister~",
+          "english": "Is the Order a Rabbit?? ～Dear My Sister～"
+        },
+        "synonyms": [
+          "GochiUsa OVA",
+          "ごちうさ OVA"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 187217,
+        "title": {
+          "romaji": "Gochuumon wa Usagi desu ka? Movie: ～We Are Family!～",
+          "native": "劇場版 ご注文はうさぎですか？ ～We Are Family!～",
+          "english": null
+        },
+        "synonyms": [
+          "Gochiusa",
+          "ごちうさ",
+          "Is the Order a Rabbit? Movie",
+          "劇場版 ご注文はうさぎですか？"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      }
+    ],
+    "YuruYuri": [
+      {
+        "id": 10495,
+        "title": {
+          "romaji": "Yuru Yuri",
+          "native": "ゆるゆり",
+          "english": "YuruYuri"
+        },
+        "synonyms": [
+          "YRYR"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 102090,
+        "title": {
+          "romaji": "Yuru Yuri,",
+          "native": "ゆるゆり、",
+          "english": "Yuru Yuri,"
+        },
+        "synonyms": [
+          "YuruYuri 10",
+          "Yuru Yuri Ten",
+          "Yuru Yuri 10th Anniversary Animation",
+          "YRYR 10th",
+          "ゆるゆり OVA (2019)"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 12403,
+        "title": {
+          "romaji": "Yuru Yuri♪♪",
+          "native": "ゆるゆり♪♪",
+          "english": "YuruYuri Season 2"
+        },
+        "synonyms": [
+          "YRYR 2",
+          "ゆるゆり 第２期"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 21088,
+        "title": {
+          "romaji": "Yuru Yuri San☆Hai!",
+          "native": "ゆるゆり さん☆はい！",
+          "english": "YuruYuri Season 3"
+        },
+        "synonyms": [
+          "YRYR 3",
+          "ゆるゆり 第３期"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 20625,
+        "title": {
+          "romaji": "Yuru Yuri Nachuyachumi!",
+          "native": "ゆるゆり　なちゅやちゅみ！",
+          "english": "YuruYuri Nachuyachumi!"
+        },
+        "synonyms": [
+          "YRYR OVA",
+          "Yuru Yuri OVA (2015)"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 21214,
+        "title": {
+          "romaji": "Yuru Yuri Nachuyachumi!+",
+          "native": "ゆるゆり　なちゅやちゅみ！＋",
+          "english": "YuruYuri Nachuyachumi!+"
+        },
+        "synonyms": [
+          "YRYR",
+          "Yuru Yuri Specials"
+        ],
+        "format": "SPECIAL",
+        "episodes": 2
+      }
+    ],
+    "Puella Magi Madoka Magica": [
+      {
+        "id": 9756,
+        "title": {
+          "romaji": "Mahou Shoujo Madoka☆Magica",
+          "native": "魔法少女まどか☆マギカ",
+          "english": "Puella Magi Madoka Magica"
+        },
+        "synonyms": [
+          "Mahou Shoujo Madoka Magika",
+          "Magical Girl Madoka Magica",
+          "PMMM",
+          "MSMM",
+          "הנערה הקסומה מאדוקה מאגיקה",
+          "Девочка-волшебница Мадока☆Волшебство",
+          "Μάντοκα, το Μαγικό Κορίτσι",
+          "สาวน้อยเวทมนตร์ มาโดกะ",
+          "魔法少女小圓"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 133007,
+        "title": {
+          "romaji": "Mahou Shoujo Madoka☆Magica: Walpurgis no Kaiten",
+          "native": "劇場版 魔法少女まどか☆マギカ〈ワルプルギスの廻天〉",
+          "english": "Puella Magi Madoka Magica the Movie -Walpurgisnacht: Rising-"
+        },
+        "synonyms": [
+          "Magical Girl Madoka Magica Movie 4",
+          "Puella Magi Madoka Magica Movie 4"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 11981,
+        "title": {
+          "romaji": "Mahou Shoujo Madoka☆Magica: Hangyaku no Monogatari",
+          "native": "劇場版 魔法少女まどか☆マギカ 叛逆の物語",
+          "english": "Puella Magi Madoka Magica the Movie -Rebellion-"
+        },
+        "synonyms": [
+          "Mahou Shoujo Madoka Magika Movie 3",
+          "Magical Girl Madoka Magica Movie 3",
+          "Puella Magi Madoka Magica the Movie Part III: Rebellion",
+          "Puella Magi Madoka Magica the Movie: Rebellion"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 101090,
+        "title": {
+          "romaji": "Mahou Shoujo Madoka★Magica: Concept Movie",
+          "native": "魔法少女まどか★マギカ コンセプトムービー",
+          "english": "Puella Magi Madoka Magica Concept Movie"
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 104051,
+        "title": {
+          "romaji": "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden",
+          "native": "マギアレコード 魔法少女まどか☆マギカ外伝",
+          "english": "Magia Record: Puella Magi Madoka Magica Side Story"
+        },
+        "synonyms": [
+          "MagiReco",
+          "Magia Record",
+          "สาวน้อยเวทมนตร์ มาโดกะ",
+          "สาวน้อยเวทมนตร์ มาโดกะ [บันทึกมากิอา]",
+          "Записи о магии: Другая история девочки-волшебницы Мадоки"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 11977,
+        "title": {
+          "romaji": "Mahou Shoujo Madoka☆Magica: Hajimari no Monogatari",
+          "native": "劇場版 魔法少女まどか☆マギカ 始まりの物語",
+          "english": "Puella Magi Madoka Magica the Movie Part 1: Beginnings"
+        },
+        "synonyms": [
+          "Mahou Shoujo Madoka Magika Movie 1",
+          "Magical Girl Madoka Magica Movie 1",
+          "Puella Magi Madoka Magica the Movie Part I: Beginnings"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 11979,
+        "title": {
+          "romaji": "Mahou Shoujo Madoka☆Magica: Eien no Monogatari",
+          "native": "劇場版 魔法少女まどか☆マギカ 永遠の物語",
+          "english": "Puella Magi Madoka Magica the Movie Part 2: Eternal"
+        },
+        "synonyms": [
+          "Mahou Shoujo Madoka Magika Movie 2",
+          "Magical Girl Madoka Magica Movie 2",
+          "Puella Magi Madoka Magica the Movie Part II: Eternal"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 117002,
+        "title": {
+          "romaji": "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden 2nd SEASON - Kakusei Zenya",
+          "native": "マギアレコード 魔法少女まどか☆マギカ外伝 2nd SEASON -覚醒前夜-",
+          "english": "Magia Record: Puella Magi Madoka Magica Side Story Season 2 -The Eve of Awakening-"
+        },
+        "synonyms": [
+          "MagiReco 2",
+          "สาวน้อยเวทมนตร์ มาโดกะ [บันทึกมากิอา] ภาค 2",
+          " สาวน้อยเวทมนตร์ มาโดกะ บทเสริม ภาค 2",
+          "Записи о магии: Другая история девочки-волшебницы Мадоки. Последний сезон: Канун пробуждения"
+        ],
+        "format": "TV",
+        "episodes": 8
+      },
+      {
+        "id": 136080,
+        "title": {
+          "romaji": "Magia Record: Mahou Shoujo Madoka☆Magica Gaiden Final SEASON - Asaki Yume no Akatsuki",
+          "native": "マギアレコード 魔法少女まどか☆マギカ外伝 Final SEASON ‐浅き夢の暁‐",
+          "english": "Magia Record: Puella Magi Madoka Magica Side Story Final Season -Dawn of a Shallow Dream-"
+        },
+        "synonyms": [
+          "マギレコ Final SEASON-浅き夢の暁-",
+          "สาวน้อยเวทมนตร์ มาโดกะ ภาคนอกตำนาน [มากิอา เรคคอร์ด] ภาคอวสาน - รุ่งอรุณฝันสาง -",
+          "Записи о магии: Другая история девочки-волшебницы Мадоки. Последний сезон: Рассвет эфемерной мечты"
+        ],
+        "format": "TV",
+        "episodes": 4
+      }
+    ],
+    "Non Non Biyori": [
+      {
+        "id": 17549,
+        "title": {
+          "romaji": "Non Non Biyori",
+          "native": "のんのんびより",
+          "english": "Non Non Biyori"
+        },
+        "synonyms": [
+          "悠哉日常大王"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 20497,
+        "title": {
+          "romaji": "Non Non Biyori: Okinawa e Ikukoto ni Natta",
+          "native": "のんのんびより 沖縄へ行くことになった",
+          "english": null
+        },
+        "synonyms": [
+          "Non Non Biyori OVA"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 109403,
+        "title": {
+          "romaji": "Non Non Biyori: Nonstop",
+          "native": "のんのんびより のんすとっぷ",
+          "english": "Non Non Biyori Nonstop"
+        },
+        "synonyms": [
+          "สาวใสหัวใจบ้านทุ่ง ภาค 3"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 98779,
+        "title": {
+          "romaji": "Non Non Biyori: Vacation",
+          "native": "劇場版 のんのんびより ばけーしょん",
+          "english": "Non Non Biyori Vacation"
+        },
+        "synonyms": [
+          "สาวใสหัวใจบ้านทุ่ง เดอะมูฟวี่"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 20694,
+        "title": {
+          "romaji": "Non Non Biyori: Repeat",
+          "native": "のんのんびより りぴーと",
+          "english": "Non Non Biyori Repeat"
+        },
+        "synonyms": [],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 21585,
+        "title": {
+          "romaji": "Non Non Biyori: Repeat - Hotaru ga Tanoshinda",
+          "native": "のんのんびより りぴーと 蛍が楽しんだ",
+          "english": null
+        },
+        "synonyms": [
+          "Non Non Biyori: Repeat OVA"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      },
+      {
+        "id": 137337,
+        "title": {
+          "romaji": "Non Non Biyori: Nonstop - Bukatsu wo Ganbatta",
+          "native": "のんのんびより のんすとっぷ 部活をがんばった",
+          "english": "Non Non Biyori Nonstop: Our Club Worked Hard"
+        },
+        "synonyms": [
+          "Non Non Biyori: Nonstop OVA",
+          "のんのんびより のんすとっぷ OAD"
+        ],
+        "format": "OVA",
+        "episodes": 1
+      }
+    ],
+    "Higurashi Nekogoroshi": [
+      {
+        "id": 2899,
+        "title": {
+          "romaji": "Higurashi no Naku Koro ni: Nekogoroshi-hen",
+          "native": "ひぐらしのなく頃に 猫殺し編",
+          "english": null
+        },
+        "synonyms": [
+          "When They Cry: Cat-Killing Arc"
+        ],
+        "format": "SPECIAL",
+        "episodes": 1
+      }
+    ],
+    "Made in Abyss": [
+      {
+        "id": 97986,
+        "title": {
+          "romaji": "Made in Abyss",
+          "native": "メイドインアビス",
+          "english": "Made in Abyss"
+        },
+        "synonyms": [
+          "صنع في الهاوية",
+          "Созданный в Бездне",
+          "ผ่าเหวนรก",
+          "นักบุกเบิกหลุมยักษ์",
+          "Đến từ Abyss"
+        ],
+        "format": "TV",
+        "episodes": 13
+      },
+      {
+        "id": 160275,
+        "title": {
+          "romaji": "Made in Abyss: Mezameru Shinpi",
+          "native": "メイドインアビス 目覚める神秘",
+          "english": null
+        },
+        "synonyms": [
+          "Made In Abyss 3",
+          "Made in Abyss: Awakening Mystery"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 114745,
+        "title": {
+          "romaji": "Made in Abyss: Retsujitsu no Ougonkyou",
+          "native": "メイドインアビス 烈日の黄金郷",
+          "english": "Made in Abyss: The Golden City of the Scorching Sun"
+        },
+        "synonyms": [
+          "Made in Abyss Season 2",
+          "ผ่าเหวนรก ภาค 2",
+          "นักบุกเบิกหลุมยักษ์ ภาค 2",
+          "صنع في الهاوية 2",
+          "ผ่าเหวนรก นครทองคำแห่งอาทิตย์ที่เจิดจ้า",
+          "Đến từ Vực Thẳm Mùa 2"
+        ],
+        "format": "TV",
+        "episodes": 12
+      },
+      {
+        "id": 101343,
+        "title": {
+          "romaji": "Made in Abyss: Tabidachi no Yoake",
+          "native": "メイドインアビス 旅立ちの夜明け",
+          "english": "Made in Abyss: Journey's Dawn"
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 101344,
+        "title": {
+          "romaji": "Made in Abyss: Hourou Suru Tasogare",
+          "native": "メイドインアビス 放浪する黄昏",
+          "english": "Made in Abyss: Wandering Twilight"
+        },
+        "synonyms": [],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 100643,
+        "title": {
+          "romaji": "Made in Abyss: Fukaki Tamashii no Reimei",
+          "native": "メイドインアビス 深き魂の黎明",
+          "english": "Made in Abyss: Dawn of the Deep Soul"
+        },
+        "synonyms": [
+          "Made in Abyss: Dawn of a Deep Soul"
+        ],
+        "format": "MOVIE",
+        "episodes": 1
+      },
+      {
+        "id": 153791,
+        "title": {
+          "romaji": "Made in Abyss: Retsujitsu no Ougonkyou - Papa to Issho",
+          "native": "メイドインアビス 烈日の黄金郷「パパといっしょ」",
+          "english": null
+        },
+        "synonyms": [
+          "Made in Abyss: The Golden City of the Scorching Sun Mini Anime",
+          "メイドインアビス 烈日の黄金郷 ミニアニメ",
+          "Made in Abyss: Retsujitsu no Ougonkyou Mini Anime",
+          "Made in Abyss: The Golden City of the Scorching Sun: Together with Papa"
+        ],
+        "format": "SPECIAL",
+        "episodes": 1
+      }
     ]
   },
   "bangumi": {
@@ -1173,6 +2015,70 @@
       "name_cn": "侦探歌剧 少女福尔摩斯 Alternative TWO",
       "platform": "TV",
       "infobox": []
+    },
+    "37870": {
+      "id": 37870,
+      "name": "ひぐらしのなく頃に外伝 猫殺し編",
+      "name_cn": "寒蝉鸣泣之时外传 猫杀篇",
+      "platform": "OVA",
+      "infobox": []
+    },
+    "127573": {
+      "id": 127573,
+      "name": "ゆるゆり さん☆ハイ！",
+      "name_cn": "摇曳百合 3☆High!",
+      "platform": "TV",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "摇曳百合 第三季"
+            }
+          ]
+        }
+      ]
+    },
+    "240798": {
+      "id": 240798,
+      "name": "劇場版総集編 メイドインアビス【前編】 旅立ちの夜明け",
+      "name_cn": "来自深渊 启程之拂晓",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "来自深渊 启程的黎明"
+            },
+            {
+              "v": "Made in Abyss: Journey's Dawn"
+            }
+          ]
+        }
+      ]
+    },
+    "240799": {
+      "id": 240799,
+      "name": "劇場版総集編 メイドインアビス【後編】 放浪する黄昏",
+      "name_cn": "来自深渊 漂泊之黄昏",
+      "platform": "剧场版",
+      "infobox": [
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "来自深渊 漂泊的黄昏"
+            },
+            {
+              "v": "来自深渊 放浪的黄昏"
+            },
+            {
+              "v": "Made in Abyss: Wandering Twilight"
+            }
+          ]
+        }
+      ]
     }
   }
 }

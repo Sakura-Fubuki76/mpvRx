@@ -80,6 +80,90 @@ class AnimeProviderIdentityTest {
     assertTrue(animeNeedsMatching(query.replace("v3","v2"),null,false,now,query,now))
     assertTrue(animeNeedsMatching(null,null,false,0,query,now))
     assertFalse(animeNeedsMatching(null,1,true,0,query,now))
+    assertTrue(animeNeedsMatching(query,null,false,now,query,now,retryUnmatched = true))
+    assertFalse(animeNeedsMatching(query,1,false,now,query,now,retryUnmatched = true))
+    assertFalse(animeNeedsMatching(query,1,true,now,query,now,retryUnmatched = true))
+  }
+  @Test fun cafeAccentsSeasonShorthandAndLongVowelSpellingsRetainIdentity() {
+    val first = AnimeTitleCandidate(154412, "女神のカフェテラス", "Megami no Café Terrace", format = "TV")
+    val second = AnimeTitleCandidate(0, "女神のカフェテラス 第2期", "Megami no Café Terrace 2nd Season", format = "TV")
+    assertEquals(listOf(first.native), animeNativeQueries("Megami no Cafe Terrace", listOf(first, second)))
+    assertEquals(listOf(second.native), animeNativeQueries("Megami no Cafe Terrace S2", listOf(first, second)))
+    val sisters = AnimeTitleCandidate(167984, "大室家 dear sisters", "Oomuro-ke: dear sisters", format = "MOVIE")
+    val friends = sisters.copy(id = 1, native = "大室家 dear friends", romaji = "Oomuro-ke: dear friends")
+    assertEquals(listOf(sisters.native), animeNativeQueries("Ohmuro-ke - dear sisters", listOf(sisters, friends)))
+    assertTrue(animeNativeQueries("Ohmuro-ke - dear sisters", listOf(sisters, sisters.copy(id = 2))).isEmpty())
+    assertNotEquals(animeNameKey("が"), animeNameKey("か"))
+  }
+  @Test fun realProviderDiscoveryBridgesLongVowelsAndMixedMovieAliases() {
+    assertTrue(animeDiscoveryTerms("Ohmuro-ke - dear sisters").take(4).contains("Oomuro-ke - dear sisters"))
+    assertEquals(listOf("大室家 dear sisters"), animeNativeQueries("Ohmuro-ke - dear sisters", candidates("Oomuro-ke dear sisters")))
+    val query = "Gekijouban DanMachi Orion no Ya"
+    assertTrue(animeDiscoveryTerms(query).take(4).contains("DanMachi"))
+    val native = animeNativeQueries(query, candidates("DanMachi"))
+    assertEquals(listOf("劇場版 ダンジョンに出会いを求めるのは間違っているだろうか ─ オリオンの矢 ─"), native)
+    val bangumi = AnimeSubject(238005, "劇場版 ダンジョンに出会いを求めるのは間違っているだろうか －オリオンの矢－")
+    assertEquals(bangumi, matchAnimeSubject(native.single(), listOf(bangumi)))
+    assertTrue(animeNativeQueries("Gekijouban DanMachi Unknown Subtitle", candidates("DanMachi")).isEmpty())
+  }
+  @Test fun sequelPunctuationAndMoviePartNumbersAreIdentityEvidence() {
+    assertNotEquals(animeIdentityKey("Gochuumon wa Usagi Desuka?"), animeIdentityKey("Gochuumon wa Usagi Desuka??"))
+    assertNotEquals(animeIdentityKey("Yuru Yuri Nachuyachumi!"), animeIdentityKey("Yuru Yuri Nachuyachumi!+"))
+    assertNotEquals(animeIdentityKey("Yuru Yuri"), animeIdentityKey("Yuru Yuri♪♪"))
+    assertEquals(animeIdentityKey("Gekijoban Non Non Biyori Vacation"), animeIdentityKey("Gekijouban Non Non Biyori Vacation"))
+    assertEquals(animeIdentityKey("Gekijōban Non Non Biyori Vacation"), animeIdentityKey("Gekijouban Non Non Biyori Vacation"))
+    assertEquals(animeIdentityKey("Puella Magi Madoka Magica Movie 1 Beginnings"), animeIdentityKey("Puella Magi Madoka Magica the Movie Part I: Beginnings"))
+    assertNotEquals(animeIdentityKey("Example Movie 1"), animeIdentityKey("Example Movie 2"))
+    assertTrue(animeDiscoveryTerms("Yuru Yuri 2").take(4).contains("Yuru Yuri"))
+  }
+  @Test fun providerAliasesDistinguishSeasonsAndExpandVerifiedFranchiseAbbreviations() {
+    for (suffix in listOf("?", "??")) {
+      val rows = candidates("Gochuumon")
+      val expected = rows.single { animeIdentityKey(it.romaji) == animeIdentityKey("Gochuumon wa Usagi Desuka$suffix") }.native
+      assertEquals(listOf(expected), animeNativeQueries("Gochuumon wa Usagi Desuka$suffix", rows))
+    }
+    val yuru = candidates("YuruYuri")
+    assertEquals(listOf(yuru.single { it.id == 12403L }.native), animeNativeQueries("Yuru Yuri 2", yuru))
+    assertEquals(listOf(yuru.single { it.id == 21088L }.native), animeNativeQueries("Yuru Yuri 3", yuru))
+    val yuuna = candidates("Yuuki Yuuna")
+    assertEquals(listOf("Yuuki Yuuna wa Yuusha de Aru"), animeFranchiseDiscoveryTerms("YuYuYu - Dai Mankai no Shou", yuuna))
+    assertEquals(listOf(yuuna.single { it.id == 122292L }.native), animeNativeQueries("YuYuYu - Dai Mankai no Shou", yuuna))
+    assertEquals(listOf(yuuna.single { it.id == 97769L }.native), animeNativeQueries("YuYuYu - Yuusha no Shou", yuuna))
+    assertTrue(animeNativeQueries("YuYuYu - Unknown no Shou", yuuna).isEmpty())
+    assertTrue(animeFranchiseDiscoveryTerms("YuYuYu - Dai Mankai no Shou", yuuna + yuuna.single { it.id == 20800L }.copy(id = -1)).isEmpty())
+  }
+  @Test fun providerKanaAndSideStoryDescriptorsBridgeWithoutDroppingSubtitles() {
+    val native = animeNativeQueries("Yuru Yuri 3", candidates("YuruYuri")).single()
+    assertEquals(127573L, matchAnimeSubject(native, listOf(subject(127573)))?.id)
+    val sideStory = animeNativeQueries("Higurashi no Naku Koro ni Gaiden Nekogoroshi-hen", candidates("Higurashi Nekogoroshi")).single()
+    assertEquals(37870L, matchAnimeSubject(sideStory, listOf(subject(37870)))?.id)
+    assertNull(matchAnimeSubject("Gaiden", listOf(subject(37870))))
+    assertTrue(animeNativeQueries("Higurashi no Naku Koro ni Gaiden Unknown-hen", candidates("Higurashi Nekogoroshi")).isEmpty())
+    assertNull(matchAnimeSubject(sideStory, listOf(subject(37870), subject(37870).copy(id = -1))))
+  }
+  @Test fun explicitMovieCollectionsKeepFilmNumbersAndEveryFile() {
+    val first = "Made in Abyss Movie 1 Tabidachi no Yoake"
+    val second = "Made in Abyss Movie 2 Hourou Suru Tasogare"
+    val root = "/[Group] Made in Abyss Movie [Ma10p_1080p]"
+    fun file(title: String, sub: String = "") = app.gyrolet.mpvrx.domain.network.NetworkFile("[Group] $title [1080p].mkv", "$root/$sub[Group] $title [1080p].mkv", 1, false)
+    val secondMenu = file("$second [Menu]", "SPs/")
+    val files = listOf(file(first), file(second), file("Marulk-chan no Nichijou - 01"), file("Marulk-chan no Nichijou - 02"), file("PV01", "SPs/"), secondMenu)
+    assertEquals(first, parseAnimeFilename(files.first().name).title)
+    assertNull(parseAnimeFilename(files.first().name).episode)
+    val groups = animeVideoGroups(files)
+    assertEquals(3, groups.size)
+    assertEquals(files.toSet(), groups.flatMap { it.files }.toSet())
+    assertEquals(files.size, groups.sumOf { it.files.size })
+    assertEquals(first, groups.first().query)
+    assertTrue(secondMenu in groups.single { it.query == second }.files)
+    assertEquals(listOf("劇場版 メイドインアビス 旅立ちの夜明け"), animeNativeQueries(first, candidates("Made in Abyss")))
+    assertEquals(listOf("劇場版 メイドインアビス 放浪する黄昏"), animeNativeQueries(second, candidates("Made in Abyss")))
+    val firstNative = animeNativeQueries(first, candidates("Made in Abyss")).single()
+    val secondNative = animeNativeQueries(second, candidates("Made in Abyss")).single()
+    assertEquals(240798L, matchAnimeSubject(firstNative, listOf(subject(240798), subject(240799)))?.id)
+    assertEquals(240799L, matchAnimeSubject(secondNative, listOf(subject(240798), subject(240799)))?.id)
+    assertNotEquals(animeIdentityKey("劇場版 Example【前編】"), animeIdentityKey("劇場版 Example【後編】"))
+    assertTrue(animeNativeQueries("Made in Abyss Movie 1 Unknown Subtitle", candidates("Made in Abyss")).isEmpty())
   }
   @Test fun explicitNumberedBangumiPartsSplitFilesWithoutMovingThem() {
     val parts = animeNumberedSubjects("探偵オペラ ミルキィホームズ Alternative", listOf(subject(54728),subject(47464)))

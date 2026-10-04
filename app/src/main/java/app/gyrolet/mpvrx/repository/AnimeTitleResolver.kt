@@ -27,10 +27,15 @@ internal class AnimeTitleResolver(private val http: OkHttpClient, private val ca
       rows[key]?.jsonObject?.let { row ->
         val saved = row["nativeQueries"]?.jsonArray?.map { it.jsonPrimitive.content }
         val ttl = if (!saved.isNullOrEmpty()) 30L * 24 * 60 * 60_000 else 24L * 60 * 60_000
-        if (!force && saved != null && now - (row["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0) < ttl) return@withLock saved
+        val compatible = !saved.isNullOrEmpty() || row["identityVersion"]?.jsonPrimitive?.intOrNull == 4
+        if (!force && compatible && saved != null && now - (row["updatedAt"]?.jsonPrimitive?.longOrNull ?: 0) < ttl) return@withLock saved
       }
       var resolved = emptyList<String>()
-      for (term in animeDiscoveryTerms(query).take(4)) {
+      val terms = animeDiscoveryTerms(query).take(4).toMutableList()
+      val discovered = mutableListOf<AnimeTitleCandidate>()
+      var index = 0
+      while (index < terms.size && index < 5) {
+        val term = terms[index++]
         val response = request(term)
         val candidates = response["data"]?.jsonObject?.get("Page")?.jsonObject?.get("media")?.jsonArray.orEmpty().map { value ->
           val row = value.jsonObject
@@ -40,10 +45,12 @@ internal class AnimeTitleResolver(private val http: OkHttpClient, private val ca
             row["synonyms"]?.jsonArray.orEmpty().mapNotNull { it.jsonPrimitive.contentOrNull },
             row["format"]?.jsonPrimitive?.contentOrNull.orEmpty(), row["episodes"]?.jsonPrimitive?.intOrNull ?: 0)
         }
-        resolved = animeNativeQueries(query, candidates)
+        discovered.addAll(candidates.filter { candidate -> discovered.none { it.id == candidate.id } })
+        resolved = animeNativeQueries(query, discovered)
         if (resolved.isNotEmpty()) break
+        animeFranchiseDiscoveryTerms(query, discovered).filterNot { it in terms }.forEach { terms.add(index, it) }
       }
-      rows[key] = buildJsonObject { put("nativeQueries", JsonArray(resolved.map(::JsonPrimitive))); put("updatedAt", now) }
+      rows[key] = buildJsonObject { put("nativeQueries", JsonArray(resolved.map(::JsonPrimitive))); put("updatedAt", now); put("identityVersion", 4) }
       cacheFile.parentFile?.mkdirs()
       val temp = File(cacheFile.parentFile, "anilist-native.tmp")
       temp.writeText(JsonObject(rows).toString())

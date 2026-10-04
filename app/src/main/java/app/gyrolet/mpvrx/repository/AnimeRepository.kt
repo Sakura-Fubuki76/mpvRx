@@ -28,7 +28,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val recentHistory = recentDao.observeRecentlyPlayed(1000).shareIn(scope, SharingStarted.Eagerly, replay = 1)
   private val jobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
-  private val pending = java.util.concurrent.ConcurrentHashMap<Long, List<NetworkFile>>()
+  private data class PendingMatch(val files: List<NetworkFile>, val retryUnmatched: Boolean)
+  private val pending = java.util.concurrent.ConcurrentHashMap<Long, PendingMatch>()
   private val datasetFile = java.io.File(context.filesDir, "anime/bangumi-data.json")
   private val searchFile = java.io.File(context.filesDir, "anime/bangumi-search.json")
   private val searchLock = Mutex()
@@ -102,12 +103,16 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   }
 
   @Synchronized
-  fun schedule(id: Long, files: List<NetworkFile>) {
+  fun schedule(id: Long, files: List<NetworkFile>, retryUnmatched: Boolean = false) {
     val revision = files.filterNot { it.isDirectory }.fold(1) { hash, file -> 31 * hash + listOf(file.path, file.size, file.lastModified).hashCode() }
     val now = System.currentTimeMillis()
     val scheduled = scheduledRevisions[id]
-    if (scheduled?.first == revision && now - scheduled.second < 5 * 60_000) return
-    if (jobs[id]?.isActive == true) { pending[id] = files; return }
+    if (jobs[id]?.isActive == true) {
+      if (retryUnmatched) CloudTrace.event("anime.retry.queued", id, "/", "videos=${files.size}")
+      pending[id] = PendingMatch(files, retryUnmatched || pending[id]?.retryUnmatched == true)
+      return
+    }
+    if (!retryUnmatched && scheduled?.first == revision && now - scheduled.second < 5 * 60_000) return
     scheduledRevisions[id] = revision to now
     jobs[id] = scope.launch {
       dao.clearAssignments(id)
@@ -116,8 +121,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       val upgrades = mutableListOf<AnimeFolderEntity>()
       for (group in groups) {
         val previous = saved[group.key] ?: continue
-        val base = animeMatchQuery(group).removeSuffix(" | aliases-v5")
-        if (!previous.manual && previous.subjectId != null && previous.query in listOf(base, base + " | aliases-v2", base + " | aliases-v3", base + " | aliases-v4")) {
+        val base = animeMatchQuery(group).removeSuffix(" | aliases-v9")
+        if (!previous.manual && previous.subjectId != null && previous.query in listOf(base, base + " | aliases-v2", base + " | aliases-v3", base + " | aliases-v4", base + " | aliases-v5", base + " | aliases-v6", base + " | aliases-v7", base + " | aliases-v8")) {
           val updated = previous.copy(query = animeMatchQuery(group))
           upgrades.add(updated)
           saved[group.key] = updated
@@ -131,9 +136,9 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
         if (previous?.manual == true && previous.subjectId != null && animePartRegularFiles(group).size in 2..4 && observe(id).value.subjects[previous.subjectId]?.name?.let(::animePartBase) != null) return@filter true
         if (previous?.query?.endsWith(" | split") == true) return@filter true
         animeNeedsMatching(previous?.query, previous?.subjectId, previous?.manual == true,
-          previous?.attemptedAt ?: 0, animeMatchQuery(group), System.currentTimeMillis())
+          previous?.attemptedAt ?: 0, animeMatchQuery(group), System.currentTimeMillis(), retryUnmatched)
       }
-      CloudTrace.event("anime.queue", id, "/", "groups=${groups.size} pending=${work.size}")
+      CloudTrace.event("anime.queue", id, "/", "groups=${groups.size} pending=${work.size} retryUnmatched=$retryUnmatched")
       if (work.isEmpty()) { publishProgress(id, AnimeMatchProgress()); return@launch }
       publishProgress(id, AnimeMatchProgress(running = true, total = work.size))
       work.forEachIndexed { position, group ->
@@ -142,6 +147,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
         val path = group.key
         val query = animeMatchQuery(group)
         val previous = saved[path]
+        val forceLookup = retryUnmatched && previous?.subjectId == null && previous?.manual != true
         try {
           val index = aliasIndex()
           val aliasId = index[animeNameKey(group.query)]?.singleOrNull()
@@ -158,16 +164,16 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
           if (match == null) {
             for (name in group.queries.take(4)) {
               match = index[animeNameKey(name)]?.singleOrNull()?.let { subject(it, forceRefresh = false) }
-                ?: matchBangumi(name, false)
+                ?: matchBangumi(name, forceLookup)
               if (match != null) break
-              parts = matchSplitSubjects(name, group)
+              parts = matchSplitSubjects(name, group, forceLookup)
               if (parts.isNotEmpty()) break
               try {
-                for (native in titleResolver.nativeQueries(name, false)) {
+                for (native in titleResolver.nativeQueries(name, forceLookup)) {
                   match = index[animeNameKey(native)]?.singleOrNull()?.let { subject(it, forceRefresh = false) }
-                    ?: matchBangumi(native, false)
+                    ?: matchBangumi(native, forceLookup)
                   if (match != null) break
-                  parts = matchSplitSubjects(native, group)
+                  parts = matchSplitSubjects(native, group, forceLookup)
                   if (parts.isNotEmpty()) break
                 }
               } catch (cancelled: CancellationException) { throw cancelled }
@@ -198,7 +204,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       job.invokeOnCompletion {
         if (jobs.remove(id, job)) {
           progress[id]?.update { it.copy(running = false, current = null) }
-          pending.remove(id)?.let { schedule(id, it) }
+          pending.remove(id)?.let { schedule(id, it.files, it.retryUnmatched) }
         }
       }
     }
@@ -209,10 +215,10 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
     else row.path to AnimePartBinding(row.parentPath, row.partNumber, row.query)
   }.toMap()
 
-  private suspend fun matchSplitSubjects(query: String, group: AnimeVideoGroup): Map<Int, AnimeSubject> {
+  private suspend fun matchSplitSubjects(query: String, group: AnimeVideoGroup, force: Boolean = false): Map<Int, AnimeSubject> {
     val regular = animePartRegularFiles(group)
     if (regular.size !in 2..4) return emptyMap()
-    val candidates = search(query).map { candidateCores[it.id] ?: it }
+    val candidates = search(query, force).map { candidateCores[it.id] ?: it }
     val parts = animeNumberedSubjects(query, candidates)
     if (parts.isEmpty()) return emptyMap()
     val byNumber = regular.map { parseAnimeFilename(it.name).takeIf { parsed -> !parsed.special }?.episode }

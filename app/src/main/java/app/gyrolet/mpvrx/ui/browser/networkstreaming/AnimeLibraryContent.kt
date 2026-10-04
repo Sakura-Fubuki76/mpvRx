@@ -92,7 +92,7 @@ internal fun AnimeLibraryContent(
     }
   }
   val retainedGridState = libraryGridState ?: rememberLazyGridState()
-  if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles) }, modifier = modifier.fillMaxSize()) {
+  if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles, retryUnmatched = true) }, modifier = modifier.fillMaxSize()) {
   LazyVerticalGrid(state = retainedGridState, columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
