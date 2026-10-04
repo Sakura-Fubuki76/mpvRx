@@ -28,6 +28,7 @@ import okhttp3.OkHttpClient
 
 class YumeSpriteSheetGenerator(
     private val sharedOkHttpClient: OkHttpClient,
+    private val thumbnailMaxDimension: Int = 320,
 ) {
 
     companion object {
@@ -49,7 +50,7 @@ class YumeSpriteSheetGenerator(
 
         private const val DECODE_TIMEOUT_MS = 3000L
 
-        private const val MAX_CONCURRENT_DOWNLOADS = 8
+        private const val MAX_CONCURRENT_DOWNLOADS = 4
 
         private const val FRAME_CANDIDATE_RADIUS = 2
 
@@ -127,7 +128,7 @@ class YumeSpriteSheetGenerator(
 
             if (spriteFile.exists() && spriteFile.length() > 0 && metaFile.exists()) {
                 val meta = readMetadata(metaFile)
-                if (meta != null && meta.durationMs == durationMs) {
+                if (meta != null && meta.durationMs == durationMs && meta.isComplete()) {
                     CloudTrace.event("sprite.cache.hit", detail = "frames=${meta.frameCount}")
                     return@withContext YumeSpriteResult(spriteFile, meta)
                 }
@@ -227,7 +228,7 @@ class YumeSpriteSheetGenerator(
         val gridCols = findBestGrid(actualFrameCount).first
         val gridRows = findBestGrid(actualFrameCount).second
         val intervalMs = durationMs.toDouble() / actualFrameCount
-        val metadata = YumeSpriteMetadata(
+        var metadata = YumeSpriteMetadata(
             cols = gridCols,
             rows = gridRows,
             frameCount = actualFrameCount,
@@ -343,6 +344,7 @@ class YumeSpriteSheetGenerator(
         }
         spriteSheet.recycle()
 
+        metadata = metadata.copy(validCells = targets.map { it.gridIndex }.filter { it !in pendingGridIndices })
         metadata.saveTo(metaFile)
         CloudTrace.event("sprite.saved", detail = "frames=${metadata.frameCount} bytes=${spriteFile.length()}")
 
@@ -415,7 +417,7 @@ class YumeSpriteSheetGenerator(
         val gridCols = findBestGrid(actualFrameCount).first
         val gridRows = findBestGrid(actualFrameCount).second
         val intervalMs = durationMs.toDouble() / actualFrameCount
-        val metadata = YumeSpriteMetadata(
+        var metadata = YumeSpriteMetadata(
             cols = gridCols,
             rows = gridRows,
             frameCount = actualFrameCount,
@@ -532,6 +534,7 @@ class YumeSpriteSheetGenerator(
         }
         spriteSheet.recycle()
 
+        metadata = metadata.copy(validCells = targets.map { it.gridIndex }.filter { it !in pendingGridIndices })
         metadata.saveTo(metaFile)
         CloudTrace.event("sprite.saved", detail = "frames=${metadata.frameCount} bytes=${spriteFile.length()}")
 
@@ -842,7 +845,7 @@ class YumeSpriteSheetGenerator(
         val (thumbW, thumbH) = computeThumbDimensions(displayW, displayH)
         val (scaleW, scaleH) = computeThumbDimensions(encodedW, encodedH)
 
-        val metadata = YumeSpriteMetadata(
+        var metadata = YumeSpriteMetadata(
             cols = gridCols,
             rows = gridRows,
             frameCount = actualFrameCount,
@@ -863,18 +866,24 @@ class YumeSpriteSheetGenerator(
         codec.start()
 
         try {
-            val processedPts = HashSet<Long>()
+            val processedPts = HashMap<Long, Int>()
+            val validCells = LinkedHashSet<Int>()
 
             for (i in 0 until actualFrameCount) {
                 val targetTimeUs = (i * intervalMs * 1000).toLong()
                 extractor.seekTo(targetTimeUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
 
                 val sampleTime = extractor.sampleTime
-                if (sampleTime in processedPts && sampleTime >= 0) {
-                    extractor.advance()
+                val previousCell = processedPts[sampleTime]
+                if (previousCell != null && sampleTime >= 0) {
+                    val previous = Bitmap.createBitmap(spriteSheet,
+                        previousCell % gridCols * thumbW, previousCell / gridCols * thumbH, thumbW, thumbH)
+                    if (YuvToBitmapBridge.compositeToSheet(previous, spriteSheet, i % gridCols, i / gridCols, thumbW, thumbH, gridCols)) {
+                        validCells.add(i)
+                    }
+                    previous.recycle()
                     continue
                 }
-                if (sampleTime >= 0) processedPts.add(sampleTime)
 
                 val col = i % gridCols
                 val row = i / gridCols
@@ -933,16 +942,24 @@ class YumeSpriteSheetGenerator(
                         }
                     }
 
-                    YuvToBitmapBridge.compositeToSheet(bitmap, spriteSheet, col, row, thumbW, thumbH, gridCols)
+                    if (YuvToBitmapBridge.compositeToSheet(bitmap, spriteSheet, col, row, thumbW, thumbH, gridCols)) {
+                        validCells.add(i)
+                        if (sampleTime >= 0) processedPts[sampleTime] = i
+                    }
                     bitmap.recycle()
                 }
             }
 
+            if (validCells.isEmpty()) {
+                spriteSheet.recycle()
+                return null
+            }
             FileOutputStream(spriteFile).use { out ->
                 spriteSheet.compress((if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP), WEBP_QUALITY, out)
             }
             spriteSheet.recycle()
 
+            metadata = metadata.copy(validCells = validCells.toList())
             metadata.saveTo(metaFile)
         CloudTrace.event("sprite.saved", detail = "frames=${metadata.frameCount} bytes=${spriteFile.length()}")
 
@@ -957,7 +974,7 @@ class YumeSpriteSheetGenerator(
 
     private fun computeThumbDimensions(videoWidth: Int, videoHeight: Int): Pair<Int, Int> {
         if (videoWidth <= 0 || videoHeight <= 0) return THUMB_WIDTH to THUMB_HEIGHT
-        val maxDim = 160
+        val maxDim = thumbnailMaxDimension.coerceIn(160, 480)
         return if (videoWidth >= videoHeight) {
             maxDim to maxOf(1, (maxDim * videoHeight) / videoWidth)
         } else {
@@ -1073,7 +1090,11 @@ data class YumeSpriteMetadata(
     val thumbHeight: Int,
     val intervalMs: Double,
     val durationMs: Long,
+    val validCells: List<Int>? = null,
 ) {
+    fun isComplete(): Boolean = frameCount in 1..(cols * rows) &&
+        validCells?.size == frameCount && validCells?.toSet() == (0 until frameCount).toSet()
+
     fun toJson(): String = buildString {
         append("{")
         append("\"cols\":$cols,")
@@ -1082,7 +1103,8 @@ data class YumeSpriteMetadata(
         append("\"thumbWidth\":$thumbWidth,")
         append("\"thumbHeight\":$thumbHeight,")
         append("\"intervalMs\":$intervalMs,")
-        append("\"durationMs\":$durationMs")
+        append("\"durationMs\":$durationMs,")
+        append("\"validCells\":\"${validCells?.joinToString(";").orEmpty()}\"")
         append("}")
     }
 
@@ -1104,6 +1126,7 @@ data class YumeSpriteMetadata(
                 thumbHeight = map["thumbHeight"]?.toInt() ?: YumeSpriteSheetGenerator.THUMB_HEIGHT,
                 intervalMs = map["intervalMs"]?.toDouble() ?: 0.0,
                 durationMs = map["durationMs"]?.toLong() ?: 0L,
+                validCells = map["validCells"]?.trim('"')?.split(';')?.mapNotNull { it.toIntOrNull() },
             )
         }
     }

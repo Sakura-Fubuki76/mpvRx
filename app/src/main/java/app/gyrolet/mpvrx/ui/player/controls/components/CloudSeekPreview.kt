@@ -26,10 +26,12 @@ internal fun CloudSeekPreview(position: Float, modifier: Modifier = Modifier) {
   val current = sheet?.takeIf { it.mediaId == session.currentItem?.stableId } ?: return
   val meta = current.metadata
   val index = meta.frameIndex((position * 1000).toLong())
+  if (!meta.hasFrame((position * 1000).toLong())) return
   val image = remember(current.bitmap) { current.bitmap.asImageBitmap() }
   Column(modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainer),
     horizontalAlignment = Alignment.CenterHorizontally) {
-    Canvas(Modifier.requiredSize(meta.cellWidth.dp, meta.cellHeight.dp)) {
+    val displayScale = 160f / maxOf(meta.cellWidth, meta.cellHeight)
+    Canvas(Modifier.requiredSize((meta.cellWidth * displayScale).dp, (meta.cellHeight * displayScale).dp)) {
       drawImage(image, srcOffset = IntOffset(index % meta.columns * meta.cellWidth, index / meta.columns * meta.cellHeight),
         srcSize = IntSize(meta.cellWidth, meta.cellHeight), dstSize = IntSize(size.width.toInt(), size.height.toInt()))
     }

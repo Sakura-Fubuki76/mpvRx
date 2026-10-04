@@ -26,7 +26,8 @@ class CloudSpriteRepository(
   private val keyframes: CloudKeyframeExtractor,
 ) {
   private val directory = File(context.filesDir, "cloud_sprites").apply { mkdirs() }
-  private val generator = YumeSpriteSheetGenerator(SharedHttpClient.derive {})
+  private val thumbnailPixels = (160 * context.resources.displayMetrics.density).toInt().coerceIn(160, 480)
+  private val generator = YumeSpriteSheetGenerator(SharedHttpClient.derive {}, thumbnailPixels)
   private val _current = MutableStateFlow<CloudSpriteSheet?>(null)
   val current = _current.asStateFlow()
   @Volatile private var wantedId: String? = null
@@ -42,7 +43,7 @@ class CloudSpriteRepository(
     val path = source?.relativePath ?: item.originalUri
     val local = if (source == null && !path.contains("://")) File(path)
       else if (path.startsWith("file://")) File(android.net.Uri.parse(path).path.orEmpty()) else null
-    val identity = "sprite-yume-v1|" + cloudMediaKey(connection, path, entry?.size ?: local?.length() ?: -1, entry?.lastModified ?: local?.lastModified() ?: 0)
+    val identity = "sprite-yume-v2-$thumbnailPixels|" + cloudMediaKey(connection, path, entry?.size ?: local?.length() ?: -1, entry?.lastModified ?: local?.lastModified() ?: 0)
     val key = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray()).joinToString("") { "%02x".format(it) }
     val proxy = NetworkStreamingProxy.getInstance()
     val streamId = "sprite_${UUID.randomUUID()}"
@@ -59,7 +60,7 @@ class CloudSpriteRepository(
     _current.value = CloudSpriteSheet(item.stableId, bitmap, SpriteSheetMetadata(
       columns = meta.cols, rows = meta.rows, cellWidth = meta.thumbWidth, cellHeight = meta.thumbHeight,
       timesMs = List(meta.frameCount) { (it * meta.intervalMs).toLong() }, durationMs = meta.durationMs,
-      intervalMs = meta.intervalMs))
+      intervalMs = meta.intervalMs, validCells = meta.validCells))
     CloudTrace.event("sprite.ready", source?.connectionId ?: 0, detail = "frames=${meta.frameCount} size=${meta.thumbWidth}x${meta.thumbHeight}")
   }
 }
