@@ -59,7 +59,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
         CloudTrace.event("anime.structure", id, path, "videos=${files.size} groups=${structure.size} elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}")
       }
       val latest = files.associateBy { it.path }
-      val presented = animeSplitGroups(structure, splitBindings(folders))
+      val presented = animeMergeSubjectGroups(animeSplitGroups(structure, splitBindings(folders)),
+        folders.associate { it.path to it.subjectId }, folders.associate { it.path to it.episodeOffset })
       val recentPaths = recent.mapNotNull { app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(it.filePath)?.takeIf { reference -> reference.connectionId == id }?.path?.value }
       AnimeLibrarySnapshot(files, presented.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities, loaded = true, featuredKey = animeFeaturedGroup(presented, recentPaths))
     }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeLibrarySnapshot())
@@ -121,8 +122,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       val upgrades = mutableListOf<AnimeFolderEntity>()
       for (group in groups) {
         val previous = saved[group.key] ?: continue
-        val base = animeMatchQuery(group).removeSuffix(" | aliases-v9")
-        if (!previous.manual && previous.subjectId != null && previous.query in listOf(base, base + " | aliases-v2", base + " | aliases-v3", base + " | aliases-v4", base + " | aliases-v5", base + " | aliases-v6", base + " | aliases-v7", base + " | aliases-v8")) {
+        val base = animeMatchQuery(group).removeSuffix(" | aliases-v10")
+        if (!previous.manual && previous.subjectId != null && previous.query in listOf(base, base + " | aliases-v2", base + " | aliases-v3", base + " | aliases-v4", base + " | aliases-v5", base + " | aliases-v6", base + " | aliases-v7", base + " | aliases-v8", base + " | aliases-v9")) {
           val updated = previous.copy(query = animeMatchQuery(group))
           upgrades.add(updated)
           saved[group.key] = updated
@@ -139,7 +140,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
           previous?.attemptedAt ?: 0, animeMatchQuery(group), System.currentTimeMillis(), retryUnmatched)
       }
       CloudTrace.event("anime.queue", id, "/", "groups=${groups.size} pending=${work.size} retryUnmatched=$retryUnmatched")
-      if (work.isEmpty()) { publishProgress(id, AnimeMatchProgress()); return@launch }
+      if (work.isEmpty()) { reconcileSourceOffsets(id, groups, saved); publishProgress(id, AnimeMatchProgress()); return@launch }
       publishProgress(id, AnimeMatchProgress(running = true, total = work.size))
       work.forEachIndexed { position, group ->
         publishProgress(id, AnimeMatchProgress(true, group.key, position, work.size))
@@ -152,6 +153,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
           val index = aliasIndex()
           val aliasId = index[animeNameKey(group.query)]?.singleOrNull()
           var parts = emptyMap<Int, AnimeSubject>()
+          var matchedNative: String? = null
+          var mappedOffset: Int? = null
           var aliasError: Exception? = null
           var match = previous?.takeIf { it.manual }?.subjectId?.let { subject(it) } ?: aliasId?.let { subject(it, forceRefresh = false) }
           if (previous?.manual == true && match != null) {
@@ -169,7 +172,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
               parts = matchSplitSubjects(name, group, forceLookup)
               if (parts.isNotEmpty()) break
               try {
-                for (native in titleResolver.nativeQueries(name, forceLookup)) {
+                for (native in titleResolver.nativeQueries(name, forceLookup, animePartRegularFiles(group).size)) {
+                  matchedNative = native
                   match = index[animeNameKey(native)]?.singleOrNull()?.let { subject(it, forceRefresh = false) }
                     ?: matchBangumi(native, forceLookup)
                   if (match != null) break
@@ -181,10 +185,33 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
               if (match != null || parts.isNotEmpty()) break
             }
           }
+          if (match == null && parts.isEmpty()) {
+            for (term in animeEventTerms(group.query)) {
+              val event = matchAnimeEvent(group.query, search(term, forceLookup, 6))
+              if (event != null) { match = event; break }
+            }
+          }
+          if (match == null && parts.isEmpty() && animeEventTerms(group.query).isEmpty()) {
+            for (source in titleResolver.sourceQueries(group.query, forceLookup)) {
+              val adapted = matchAdaptation(source, group, forceLookup) ?: continue
+              match = adapted.first; mappedOffset = adapted.second; break
+            }
+          }
           if (match == null && parts.isEmpty() && aliasError != null) throw aliasError
-          if (match != null) subject(match.id)
+          if (match != null) {
+            match = subject(match!!.id)
+            matchedNative?.let { native ->
+              if (animeCompoundChapters(match!!.name).any { animeIdentityKey(it) == animeIdentityKey(native) }) {
+                mappedOffset = animeChapterEpisodeOffset(native, group, match!!)
+                if (mappedOffset == null) match = null
+              }
+            }
+          }
           associations.withLock {
-            if (parts.isEmpty()) dao.bindAutomatically(AnimeFolderEntity(id, path, query, match?.id, false, 0, System.currentTimeMillis()))
+            if (parts.isEmpty()) {
+              val row = AnimeFolderEntity(id, path, query, match?.id, false, mappedOffset ?: 0, System.currentTimeMillis())
+              dao.bindAutomatically(row); saved[path] = row
+            }
             else {
               val rows = parts.map { (number, subject) ->
                 AnimeFolderEntity(id, "$path#bangumi:${subject.id}", subject.title, subject.id, false, requireNotNull(animePartEpisodeOffset(number, subject)), System.currentTimeMillis(), parentPath = path, partNumber = number)
@@ -199,6 +226,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
           CloudTrace.event("anime.failed", id, path, "error=${error.javaClass.simpleName}")
         }
       }
+      reconcileSourceOffsets(id, groups, saved)
       publishProgress(id, AnimeMatchProgress(completed = work.size, total = work.size))
     }.also { job ->
       job.invokeOnCompletion {
@@ -218,7 +246,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   private suspend fun matchSplitSubjects(query: String, group: AnimeVideoGroup, force: Boolean = false): Map<Int, AnimeSubject> {
     val regular = animePartRegularFiles(group)
     if (regular.size !in 2..4) return emptyMap()
-    val candidates = search(query, force).map { candidateCores[it.id] ?: it }
+    val candidates = animeDiscoveryTerms(query).take(3).flatMap { term -> search(term, force).map { candidateCores[it.id] ?: it } }.distinctBy { it.id }
     val parts = animeNumberedSubjects(query, candidates)
     if (parts.isEmpty()) return emptyMap()
     val byNumber = regular.map { parseAnimeFilename(it.name).takeIf { parsed -> !parsed.special }?.episode }
@@ -241,9 +269,44 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
         } ?: decodeSubject(request("/v0/subjects/${candidate.id}")).also { candidateCores[candidate.id] = it }
         candidates[detailed.id] = detailed
       }
-      matchAnimeSubject(query, candidates.values.toList())?.let { return it }
+      (matchAnimeSubject(query, candidates.values.toList()) ?: matchAnimeChapter(query, candidates.values.toList()))?.let { return it }
     }
     return null
+  }
+
+  private val sourceAdaptations = java.util.concurrent.ConcurrentHashMap<Long, List<Long>>()
+  private suspend fun matchAdaptation(source: String, group: AnimeVideoGroup, force: Boolean): Pair<AnimeSubject, Int>? {
+    val book = matchAnimeSubject(source, search(source, force, 1).filter { it.subjectType == 1 }) ?: return null
+    val targets = sourceAdaptations[book.id] ?: requestJson("/v0/subjects/${book.id}/subjects").jsonArray.mapNotNull { value ->
+      val row = value.jsonObject
+      row.long("id").takeIf { row.long("type") == 2L && row.string("relation") == "动画" }
+    }.distinct().also { sourceAdaptations[book.id] = it }
+    val target = targets.singleOrNull()?.let { subject(it) } ?: return null
+    val offset = animeSourceEpisodeOffset(source, group, target) ?: return null
+    return target to offset
+  }
+
+  private suspend fun reconcileSourceOffsets(id: Long, groups: List<AnimeVideoGroup>, saved: MutableMap<String, AnimeFolderEntity>) {
+    val shared = groups.mapNotNull { saved[it.key]?.subjectId }.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+    for (group in groups) {
+      val row = saved[group.key]?.takeIf { !it.manual && it.subjectId in shared } ?: continue
+      try {
+        val selected = subject(requireNotNull(row.subjectId))
+        val sourceTitles = selected.episodes.mapNotNull { episode -> episode.originalTitle.substringBefore(" 第", "").takeIf { it.isNotBlank() } }.distinct()
+        if (sourceTitles.size < 2) continue
+        for (source in titleResolver.sourceQueries(group.query)) {
+          if (sourceTitles.none { animeNameKey(it) == animeNameKey(source) }) continue
+          val offset = animeSourceEpisodeOffset(source, group, selected) ?: continue
+          if (offset != row.episodeOffset) {
+            val updated = row.copy(episodeOffset = offset)
+            associations.withLock { dao.bindAutomatically(updated) }; saved[group.key] = updated
+            CloudTrace.event("anime.source.offset", id, group.key, "subject=${selected.id} offset=$offset")
+          }
+          break
+        }
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (error: Exception) { CloudTrace.event("anime.mapping.failed", id, group.key, "error=${error.javaClass.simpleName}") }
+    }
   }
 
   /** Multilingual exact aliases from bangumi-data (CC BY 4.0), cached independently of API results. */
@@ -275,12 +338,12 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
     index.mapValues { it.value.toSet() }.also { aliases = it }
   }
 
-  suspend fun search(query: String, force: Boolean = false): List<AnimeSubject> = withContext(Dispatchers.IO) {
+  suspend fun search(query: String, force: Boolean = false, subjectType: Int = 2): List<AnimeSubject> = withContext(Dispatchers.IO) {
     if (query.isBlank()) return@withContext emptyList()
     searchLock.withLock {
       val rows = searchCache ?: runCatching { json.parseToJsonElement(searchFile.readText()).jsonObject.toMutableMap() }
         .getOrDefault(mutableMapOf()).also { searchCache = it }
-      val key = animeNameKey(query)
+      val key = if (subjectType == 2) animeNameKey(query) else "$subjectType|${animeNameKey(query)}"
       val now = System.currentTimeMillis()
       rows[key]?.jsonObject?.let { cached ->
         val data = cached["data"]?.jsonArray.orEmpty()
@@ -289,7 +352,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       }
       val body = buildJsonObject {
         put("keyword", query); put("sort", "match")
-        putJsonObject("filter") { putJsonArray("type") { add(2) } }
+        putJsonObject("filter") { putJsonArray("type") { add(subjectType) } }
       }.toString()
       val data = request("/v0/search/subjects?limit=12", body)["data"]?.jsonArray ?: JsonArray(emptyList())
       rows[key] = buildJsonObject { put("updatedAt", now); put("data", data) }
@@ -330,7 +393,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   private suspend fun fetchSubject(id: Long, forceRefresh: Boolean): AnimeSubject {
     val cached = dao.getSubject(id)
     if (!forceRefresh && cached != null && System.currentTimeMillis() - cached.fetchedAt < 7 * 24 * 60 * 60_000L) {
-      runCatching { json.decodeFromString<AnimeSubject>(cached.payload) }.getOrNull()?.let { return it }
+      runCatching { json.decodeFromString<AnimeSubject>(cached.payload) }.getOrNull()?.takeIf { it.episodeSchemaVersion >= 1 }?.let { return it }
     }
     return try {
       val item = decodeSubject(request("/v0/subjects/$id"))
@@ -342,12 +405,12 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
         rows.forEach { value ->
           val row = value.jsonObject
           episodes.add(AnimeEpisode(row.long("id"), row["sort"]?.jsonPrimitive?.doubleOrNull ?: 0.0,
-            row.long("type").toInt(), row.string("name_cn").ifBlank { row.string("name") }))
+            row.long("type").toInt(), row.string("name_cn").ifBlank { row.string("name") }, row.string("name")))
         }
         offset += rows.size
       } while (rows.isNotEmpty() && offset < page.long("total") && offset < 2000)
       val previous = cached?.let { runCatching { json.decodeFromString<AnimeSubject>(it.payload) }.getOrNull() }
-      val result = item.copy(episodes = episodes, cast = previous?.cast.orEmpty(), staff = previous?.staff.orEmpty(), creditsFetchedAt = previous?.creditsFetchedAt ?: 0)
+      val result = item.copy(episodes = episodes, cast = previous?.cast.orEmpty(), staff = previous?.staff.orEmpty(), creditsFetchedAt = previous?.creditsFetchedAt ?: 0, episodeSchemaVersion = 1)
       dao.putSubject(AnimeSubjectEntity(id, json.encodeToString(AnimeSubject.serializer(), result), System.currentTimeMillis()))
       result
     } catch (cancelled: CancellationException) { throw cancelled }
@@ -393,7 +456,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
         is JsonPrimitive -> listOfNotNull(value.contentOrNull)
         else -> emptyList()
       }
-    }, format = row.string("platform"))
+    }, format = row.string("platform"), subjectType = row.long("type").toInt().takeIf { it > 0 } ?: 2)
   private fun JsonObject.string(key: String) = get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
   private fun JsonObject.long(key: String) = get(key)?.jsonPrimitive?.longOrNull ?: 0L
 }

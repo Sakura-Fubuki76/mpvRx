@@ -34,7 +34,9 @@ fun animeDiscoveryTerms(raw: String): List<String> {
   val shortMovieBase = if (animeIsMovie(raw)) base.substringBefore(' ').takeIf { it.length >= 4 }.orEmpty() else ""
   val numberedBase = base.replace(Regex("\\s+[0-9]+$"), "")
   val franchise = raw.split(Regex("\\s+[-:]\\s+"), limit = 2).first()
-  return listOf(raw, special, movieFree, base, longVowel, numberedBase, franchise, base.split(' ').take(3).joinToString(" "), shortMovieBase)
+  val chapter = Regex("\\s+-([^-]+)(?:-|$)").find(movieFree)
+  val chapterBase = chapter?.let { movieFree.substring(0, it.range.first).trim() }.orEmpty()
+  return listOf(raw, special, movieFree, chapterBase, chapter?.groupValues?.get(1).orEmpty(), base, longVowel, numberedBase, franchise, base.split(' ').take(3).joinToString(" "), shortMovieBase)
     .filter { it.isNotBlank() }.distinct()
 }
 
@@ -59,7 +61,7 @@ fun animeFranchiseDiscoveryTerms(query: String, candidates: List<AnimeTitleCandi
 }
 
 /** AniList is an identity bridge; do not choose by search order or popularity. */
-fun animeNativeQueries(query: String, candidates: List<AnimeTitleCandidate>): List<String> {
+fun animeNativeQueries(query: String, candidates: List<AnimeTitleCandidate>, episodeCount: Int = 0): List<String> {
   val variants = listOf(query, query.replace(Regex("(?i)\\s+SS$"), " Summer Special"))
   val keys = variants.map { animeIdentityKey(it) }.toSet()
   val season = animeExplicitSeason(query)
@@ -97,7 +99,22 @@ fun animeNativeQueries(query: String, candidates: List<AnimeTitleCandidate>): Li
     candidates.filter { it.romaji.isNotBlank() && romanizedKey(query) == romanizedKey(it.romaji) }
       .distinctBy { it.id }
   } else emptyList()
-  val candidate = matches.singleOrNull() ?: fallback.singleOrNull() ?: return emptyList()
+  val initialChapter = if (matches.isEmpty() && fallback.isEmpty() && episodeCount > 0) candidates.filter { row ->
+    val pieces = query.split(Regex("\\s+-\\s+"), limit = 2)
+    pieces.size == 2 && row.format == "TV" && row.episodes == episodeCount && ':' !in row.romaji && " wa " in row.romaji &&
+      row.names.any { animeIdentityKey(it) == animeIdentityKey(pieces[0]) } &&
+      animeIdentityKey(pieces[1]) == animeIdentityKey(row.romaji.substringBefore(" wa ") + " no Shou")
+  }.distinctBy { it.id } else emptyList()
+  val candidate = matches.singleOrNull() ?: fallback.singleOrNull() ?: initialChapter.singleOrNull()
+  if (candidate == null) {
+    if (matches.isNotEmpty() || fallback.isNotEmpty() || !abbreviatedMovie || episodeCount !in 2..4) return emptyList()
+    val base = animeMovieBase(query) ?: return emptyList()
+    val seed = candidates.filter { row -> row.names.any { animeNameKey(it) == base } }.singleOrNull() ?: return emptyList()
+    val parts = candidates.filter { it.format == "MOVIE" && it.episodes == 1 && it.romaji.startsWith(seed.romaji + ":") }
+      .mapNotNull { row -> Regex("^(.*?)\\s+第([1-4])章(?:\\s|$)").find(row.native)?.let { it.groupValues[1] to it.groupValues[2].toInt() } }
+    if (parts.size != episodeCount || parts.map { it.first }.distinct().size != 1 || parts.map { it.second }.sorted() != (1..episodeCount).toList()) return emptyList()
+    return listOf("劇場版 " + parts.first().first)
+  }
   val japanese = candidate.names.filter { name -> name.any { it.code in 0x3040..0x30ff || it.code in 0x4e00..0x9fff } }.distinct()
   // A provider may combine multiple OVAs. Prefer the specific native alias with the same subtitle.
   val specific = japanese.filter { name ->
@@ -111,7 +128,7 @@ fun animeNativeQueries(query: String, candidates: List<AnimeTitleCandidate>): Li
   }
 }
 
-fun animeMatchQuery(group: AnimeVideoGroup): String = "directory-v3 | " + group.queries.joinToString(" | ") + " | aliases-v9"
+fun animeMatchQuery(group: AnimeVideoGroup): String = "directory-v3 | " + group.queries.joinToString(" | ") + " | aliases-v10"
 
 /** Progress counts actual matching work. Saved identities do not expire with a page refresh. */
 fun animeNeedsMatching(savedQuery: String?, subjectId: Long?, manual: Boolean, attemptedAt: Long,
@@ -129,12 +146,12 @@ data class AnimePartBinding(val parent: String, val number: Int, val title: Stri
 
 /** Explicit ONE/TWO (or roman/numeric) subjects only; never split by result ordering. */
 fun animeNumberedSubjects(query: String, candidates: List<AnimeSubject>): Map<Int, AnimeSubject> {
-  val ordinal = Regex("(?i)^(.*?)\\s+(ONE|TWO|THREE|FOUR|IV|III|II|I|[1-4])(?=[\\s~～〜:：—-]|$)")
+  val ordinal = Regex("(?i)^(.*?)\\s+(?:第([1-4])章|(ONE|TWO|THREE|FOUR|IV|III|II|I|[1-4])(?=[\\s~～〜:：—-]|$))")
   val rows = candidates.mapNotNull { subject ->
     val numbers = (listOf(subject.name, subject.chineseName) + subject.aliases).mapNotNull { name ->
       val match = ordinal.find(name) ?: return@mapNotNull null
-      if (animeIdentityKey(match.groupValues[1]) != animeIdentityKey(query)) return@mapNotNull null
-      when (match.groupValues[2].uppercase()) { "ONE", "I", "1" -> 1; "TWO", "II", "2" -> 2; "THREE", "III", "3" -> 3; else -> 4 }
+      if (animeIdentityKey(match.groupValues[1], if (animeIsMovie(query)) subject.format else "") != animeIdentityKey(query)) return@mapNotNull null
+      when (match.groupValues[2].ifBlank { match.groupValues[3] }.uppercase()) { "ONE", "I", "1" -> 1; "TWO", "II", "2" -> 2; "THREE", "III", "3" -> 3; else -> 4 }
     }.distinct()
     numbers.singleOrNull()?.let { it to subject }
   }.distinctBy { it.second.id }
@@ -142,7 +159,7 @@ fun animeNumberedSubjects(query: String, candidates: List<AnimeSubject>): Map<In
   return rows.toMap().toSortedMap()
 }
 
-fun animePartBase(name: String): String? = Regex("(?i)^(.*?)\\s+(?:ONE|TWO|THREE|FOUR|IV|III|II|I|[1-4])(?=[\\s~～〜:：—-]|$)").find(name)?.groupValues?.get(1)
+fun animePartBase(name: String): String? = Regex("(?i)^(.*?)\\s+(?:第[1-4]章|(?:ONE|TWO|THREE|FOUR|IV|III|II|I|[1-4])(?=[\\s~～〜:：—-]|$))").find(name)?.groupValues?.get(1)
 fun animePartRegularFiles(group: AnimeVideoGroup) = group.files.filter { animeSectionPath(group.directory, it).isEmpty() && !isAnimeExtraVideo(it) }
 
 /** Numbered main videos select their subject; extras belong to the first subject. */

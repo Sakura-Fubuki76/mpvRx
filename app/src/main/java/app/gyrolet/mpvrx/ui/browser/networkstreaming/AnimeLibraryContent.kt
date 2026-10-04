@@ -57,9 +57,9 @@ internal fun AnimeLibraryContent(
   val catalog by remember(connection.id) { anime.observe(connection.id) }.collectAsState()
   val matchProgress by remember(connection.id) { anime.observeProgress(connection.id) }.collectAsState()
   val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
-  val identities = remember(snapshot.playbackIdentities, detailKey) {
+  val identities = remember(snapshot.playbackIdentities, libraryGroups, detailKey) {
     if (detailKey == null) snapshot.playbackIdentities.values.toList()
-    else libraryGroups[detailKey]?.files.orEmpty().mapNotNull { snapshot.playbackIdentities[it.path] }
+    else libraryGroups.values.firstOrNull { it.key == detailKey || detailKey in it.sourceKeys }?.files.orEmpty().mapNotNull { snapshot.playbackIdentities[it.path] }
   }
   val playback by remember(identities) {
     if (identities.isEmpty()) kotlinx.coroutines.flow.flowOf(emptyMap<String, app.gyrolet.mpvrx.database.entities.PlaybackStateEntity>())
@@ -183,7 +183,8 @@ internal fun AnimeLibraryContent(
     }))
   }
 
-  detailKey?.let { path ->
+  detailKey?.let { requested ->
+    val path = libraryGroups.entries.firstOrNull { it.key == requested || requested in it.value.sourceKeys }?.key ?: requested
     val files = groups[path].orEmpty()
     val binding = catalog.folders[path]
     val subject = catalog.subjects[binding?.subjectId]
@@ -207,7 +208,7 @@ internal fun AnimeLibraryContent(
 
         item {
           val directory = libraryGroups[path]?.directory ?: currentPath
-          val regularFiles = files.filter { animeSectionPath(directory, it).isEmpty() && !parseAnimeFilename(it.name).special }.ifEmpty { files }
+          val regularFiles = files.filter { (it.path in libraryGroups[path]?.regularPaths.orEmpty() || animeSectionPath(directory, it).isEmpty()) && !parseAnimeFilename(it.name).special }.ifEmpty { files }
           val resume = regularFiles.firstOrNull { file ->
             playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.let {
               it.lastPosition > 0 && !it.hasBeenWatched
@@ -241,8 +242,9 @@ internal fun AnimeLibraryContent(
           }
           items(sectionFiles, key = { it.path }) { file ->
             val parsed = remember(file.name) { parseAnimeFilename(file.name) }
-            val number = parsed.episode?.minus(binding?.episodeOffset ?: 0)
-            val episode = subject?.episodes?.firstOrNull { it.number == number && it.type == parsed.episodeType && (section.isEmpty() || it.type != 0) }
+            val offset = libraryGroups[path]?.episodeOffsets?.get(file.path) ?: binding?.episodeOffset ?: 0
+            val episode = subject?.let { animeMappedEpisode(it, file.name, offset, section.isEmpty() || file.path in libraryGroups[path]?.regularPaths.orEmpty()) }
+            val number = episode?.number ?: parsed.episode?.minus(offset)
             val episodeTitle = episode?.title?.takeIf { it.isNotBlank() } ?: subject?.takeIf { episode != null && it.episodes.count { row -> row.type == episode.type } == 1 }?.title
             val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
             NetworkVideoCard(file, connection, modifier = Modifier.padding(horizontal = 16.dp),

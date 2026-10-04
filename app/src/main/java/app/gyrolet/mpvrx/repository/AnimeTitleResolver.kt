@@ -18,11 +18,14 @@ internal class AnimeTitleResolver(private val http: OkHttpClient, private val ca
   private var cache: MutableMap<String, JsonElement>? = null
   private var nextRequestAt = 0L
 
-  suspend fun nativeQueries(query: String, force: Boolean = false): List<String> = withContext(Dispatchers.IO) {
+  suspend fun nativeQueries(query: String, force: Boolean = false, episodeCount: Int = 0): List<String> = resolveQueries(query, force, "ANIME", episodeCount)
+  suspend fun sourceQueries(query: String, force: Boolean = false): List<String> = resolveQueries(query, force, "MANGA", 0)
+
+  private suspend fun resolveQueries(query: String, force: Boolean, sourceType: String, episodeCount: Int): List<String> = withContext(Dispatchers.IO) {
     lock.withLock {
       val rows = cache ?: runCatching { json.parseToJsonElement(cacheFile.readText()).jsonObject.toMutableMap() }
         .getOrDefault(mutableMapOf()).also { cache = it }
-      val key = animeIdentityKey(query)
+      val key = "$sourceType|$episodeCount|${animeIdentityKey(query)}"
       val now = System.currentTimeMillis()
       rows[key]?.jsonObject?.let { row ->
         val saved = row["nativeQueries"]?.jsonArray?.map { it.jsonPrimitive.content }
@@ -36,7 +39,7 @@ internal class AnimeTitleResolver(private val http: OkHttpClient, private val ca
       var index = 0
       while (index < terms.size && index < 5) {
         val term = terms[index++]
-        val response = request(term)
+        val response = request(term, sourceType)
         val candidates = response["data"]?.jsonObject?.get("Page")?.jsonObject?.get("media")?.jsonArray.orEmpty().map { value ->
           val row = value.jsonObject
           val title = row["title"]?.jsonObject.orEmpty()
@@ -46,7 +49,8 @@ internal class AnimeTitleResolver(private val http: OkHttpClient, private val ca
             row["format"]?.jsonPrimitive?.contentOrNull.orEmpty(), row["episodes"]?.jsonPrimitive?.intOrNull ?: 0)
         }
         discovered.addAll(candidates.filter { candidate -> discovered.none { it.id == candidate.id } })
-        resolved = animeNativeQueries(query, discovered)
+        val evidence = if (sourceType == "MANGA" && discovered.any { it.format == "NOVEL" }) discovered.filter { it.format == "NOVEL" } else discovered
+        resolved = animeNativeQueries(query, evidence, episodeCount)
         if (resolved.isNotEmpty()) break
         animeFranchiseDiscoveryTerms(query, discovered).filterNot { it in terms }.forEach { terms.add(index, it) }
       }
@@ -59,12 +63,12 @@ internal class AnimeTitleResolver(private val http: OkHttpClient, private val ca
     }
   }
 
-  private suspend fun request(term: String): JsonObject {
+  private suspend fun request(term: String, sourceType: String = "ANIME"): JsonObject {
     for (attempt in 0..1) {
       delay((nextRequestAt - System.currentTimeMillis()).coerceAtLeast(0))
       currentCoroutineContext().ensureActive()
       val body = buildJsonObject {
-        put("query", "query (\$search: String) { Page(page: 1, perPage: 25) { media(search: \$search, type: ANIME) { id format episodes title { romaji english native } synonyms } } }")
+        put("query", "query (\$search: String) { Page(page: 1, perPage: 25) { media(search: \$search, type: $sourceType) { id format episodes title { romaji english native } synonyms } } }")
         putJsonObject("variables") { put("search", term) }
       }.toString()
       val request = Request.Builder().url("https://graphql.anilist.co")

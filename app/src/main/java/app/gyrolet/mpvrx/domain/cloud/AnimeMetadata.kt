@@ -11,12 +11,13 @@ data class AnimeSubject(
   val cast: List<AnimeCast> = emptyList(), val staff: List<AnimePerson> = emptyList(),
   val creditsFetchedAt: Long = 0,
   val aliases: List<String> = emptyList(), val format: String = "",
+  val subjectType: Int = 2, val episodeSchemaVersion: Int = 0,
 ) {
   val title: String get() = chineseName.ifBlank { name }
 }
 
 @Serializable
-data class AnimeEpisode(val id: Long, val number: Double, val type: Int, val title: String)
+data class AnimeEpisode(val id: Long, val number: Double, val type: Int, val title: String, val originalTitle: String = "")
 
 @Serializable
 data class AnimePerson(val id: Long, val name: String, val image: String = "", val role: String = "")
@@ -131,7 +132,8 @@ private fun animeSeason(name: String): Int? {
 }
 
 data class AnimeVideoGroup(val key: String, val directory: String, val query: String,
-  val files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>, val queries: List<String> = listOf(query))
+  val files: List<app.gyrolet.mpvrx.domain.network.NetworkFile>, val queries: List<String> = listOf(query),
+  val sourceKeys: Set<String> = emptySet(), val episodeOffsets: Map<String, Int> = emptyMap(), val regularPaths: Set<String> = emptySet())
 
 /** Directory titles preserve trailing sequel numbers; they are not episode numbers. */
 fun animeDirectoryTitle(raw: String): String = Normalizer.normalize(raw, Normalizer.Form.NFKC)
