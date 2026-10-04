@@ -52,6 +52,7 @@ fun RemoteImage(
   contentScale: ContentScale = ContentScale.Fit,
   alignment: Alignment = Alignment.Center,
   alpha: Float = 1f,
+  onAspectRatio: ((Float) -> Unit)? = null,
 ) {
   val context = LocalContext.current
   val client = koinInject<OkHttpClient>()
@@ -63,6 +64,9 @@ fun RemoteImage(
     }
   }
 
+  LaunchedEffect(bitmap) {
+    bitmap?.let { onAspectRatio?.invoke(it.width.toFloat() / it.height.coerceAtLeast(1)) }
+  }
   val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
   if (imageBitmap != null) {
     Image(

@@ -153,11 +153,12 @@ internal fun AnimeLibraryContent(
     val binding = catalog.folders[path]
     val subject = catalog.subjects[binding?.subjectId]
     val title = subject?.title ?: libraryGroups[path]?.query.orEmpty()
+    var coverRatio by remember(subject?.cover) { mutableFloatStateOf(2f / 3f) }
       LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 40.dp)) {
         item {
           Column {
-            if (subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainer)) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopCenter)
+            if (subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(MaterialTheme.colorScheme.surfaceContainer)) {
+              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
               Box(Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter).background(
                 Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
             }
