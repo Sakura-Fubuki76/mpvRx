@@ -1,12 +1,9 @@
 package app.gyrolet.mpvrx.ui.player.controls.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
@@ -28,14 +25,9 @@ internal fun CloudSeekPreview(position: Float, modifier: Modifier = Modifier) {
   val index = meta.frameIndex((position * 1000).toLong())
   if (!meta.hasFrame((position * 1000).toLong())) return
   val image = remember(current.bitmap) { current.bitmap.asImageBitmap() }
-  Column(modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainer),
-    horizontalAlignment = Alignment.CenterHorizontally) {
-    val displayScale = 160f / maxOf(meta.cellWidth, meta.cellHeight)
-    Canvas(Modifier.requiredSize((meta.cellWidth * displayScale).dp, (meta.cellHeight * displayScale).dp)) {
+  val displayScale = 160f / maxOf(meta.cellWidth, meta.cellHeight)
+  Canvas(modifier.clip(MaterialTheme.shapes.small).requiredSize((meta.cellWidth * displayScale).dp, (meta.cellHeight * displayScale).dp)) {
       drawImage(image, srcOffset = IntOffset(index % meta.columns * meta.cellWidth, index / meta.columns * meta.cellHeight),
         srcSize = IntSize(meta.cellWidth, meta.cellHeight), dstSize = IntSize(size.width.toInt(), size.height.toInt()))
-    }
-    val seconds = position.toInt().coerceAtLeast(0)
-    Text("%d:%02d".format(seconds / 60, seconds % 60), modifier = Modifier.padding(4.dp), style = MaterialTheme.typography.labelSmall)
   }
 }
