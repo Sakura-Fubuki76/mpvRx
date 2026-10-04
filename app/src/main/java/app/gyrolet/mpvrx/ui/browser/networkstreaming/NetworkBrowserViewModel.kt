@@ -118,14 +118,14 @@ class NetworkBrowserViewModel(
   /**
    * Load files in the current directory
    */
-  private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>) {
+  private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>, forceStorageScan: Boolean = false) {
     thumbnailBatch?.cancel()
     thumbnailBatch = viewModelScope.launch {
       kotlinx.coroutines.flow.combine(appearance.showNetworkThumbnails.changes(), browserPreferences.showVideoThumbnails.changes()) { network, video -> network && video }
         .collectLatest { enabled ->
           Log.d("CloudBatch", "directory connection=${connection.id} files=${files.size} enabled=$enabled")
           cloudMetadata.scanStorage(connection, repository, enabled,
-            "true|true")
+            "true|true", force = forceStorageScan)
           cloudMetadata.cacheMissingMetadata(connection, files,
             app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND, enabled)
 
@@ -152,7 +152,7 @@ class NetworkBrowserViewModel(
             ?: throw Exception("Connection not found")
         _connection.value = connection
 
-        suspend fun publish(fileList: List<NetworkFile>) {
+        suspend fun publish(fileList: List<NetworkFile>, startWork: Boolean = true) {
           if (generation != loadGeneration) return
           metadataObserver?.cancel()
           metadataProbe?.cancel()
@@ -177,10 +177,22 @@ class NetworkBrowserViewModel(
               }
             }
           }
-          scheduleThumbnails(connection, sorted)
+          if (startWork) scheduleThumbnails(connection, sorted, forceStorageScan)
         }
 
-        cloudMetadata.cachedDirectory(connectionId, currentPath)?.let { publish(it) }
+        val isCloud = connection.protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)
+        val cached = cloudMetadata.cachedDirectory(connectionId, currentPath)
+        if (cached != null) {
+          publish(cached, startWork = !forceStorageScan)
+          // A cached listing, including an empty directory, is immediately usable.
+          _isLoading.value = false
+          app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.cache", connectionId, currentPath, "items=${cached.size}")
+          if (isCloud && !forceStorageScan && cloudMetadata.cachedDirectory(connectionId, currentPath, freshOnly = true) != null) {
+            app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.skip", connectionId, currentPath, "reason=fresh_persistent_directory")
+            if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery)
+            return@launch
+          }
+        }
 
         repository
           .listFiles(connection, currentPath)

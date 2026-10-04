@@ -87,7 +87,7 @@ class CloudMetadataRepository(
             warm.forEach { discovered.add(revision(it)) }
             submit(warm)
             CloudTrace.event("storage.warm", connection.id, detail = "cachedVideos=${warm.size}")
-            val complete = scanFolders(connection, listOf("/"), network) { listed ->
+            val complete = scanFolders(connection, listOf("/"), network, forceRefresh = force) { listed ->
               val videos = listed.filter { video(it) && discovered.add(revision(it)) }
               submit(videos)
             }
@@ -130,9 +130,10 @@ class CloudMetadataRepository(
 
   fun cancelStorage(connectionId: Long) { storageScans.remove(connectionId)?.job?.cancel() }
 
-  suspend fun cachedDirectory(connectionId: Long, rawPath: String): List<NetworkFile>? = withContext(Dispatchers.IO) {
+  suspend fun cachedDirectory(connectionId: Long, rawPath: String, freshOnly: Boolean = false): List<NetworkFile>? = withContext(Dispatchers.IO) {
     val path = NetworkPath.from(rawPath).value
-    dao.getDirectoryState(connectionId, path) ?: return@withContext null
+    val state = dao.getDirectoryState(connectionId, path) ?: return@withContext null
+    if (freshOnly && !app.gyrolet.mpvrx.domain.cloud.isCloudDirectoryFresh(state.scannedAt)) return@withContext null
     dao.getDirectory(connectionId, path).map {
       NetworkFile(it.name, it.path, it.size, it.isDirectory, it.lastModified, it.mimeType)
     }
@@ -209,12 +210,19 @@ class CloudMetadataRepository(
     enrichVideos(connectionId, resolved)
   }
 
-  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository,
+  suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository, forceRefresh: Boolean = false,
     onListed: suspend (List<NetworkFile>) -> Unit = {}): Boolean {
     val scanner = app.gyrolet.mpvrx.domain.cloud.CloudFolderScanner(connection.id, { path ->
       val current = network.getConnectionById(connection.id)
       if (current == null || current.isDeleted || current.copy(lastConnected = 0, name = "", autoConnect = false) !=
         connection.copy(lastConnected = 0, name = "", autoConnect = false)) throw CancellationException("Storage settings changed")
+      if (!forceRefresh) {
+        cachedDirectory(connection.id, path, freshOnly = true)?.let { cached ->
+          CloudTrace.event("directory.cache", connection.id, path, "items=${cached.size} fresh=true")
+          onListed(cached)
+          return@CloudFolderScanner Result.success(cached)
+        }
+      }
       CloudTrace.event("directory.begin", connection.id, path)
       network.listFiles(connection, path).also { result ->
         CloudTrace.event("directory.result", connection.id, path,
