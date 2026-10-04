@@ -52,3 +52,11 @@ data class CloudFolderMetadataEntity(
   val scanComplete: Boolean,
   val updatedAt: Long,
 )
+
+/** A read-only projection; no additional table or database migration is required. */
+data class CloudLibraryItem(
+  @androidx.room.Embedded val item: CloudDirectoryItemEntity,
+  val durationMs: Long,
+  val width: Int,
+  val height: Int,
+)

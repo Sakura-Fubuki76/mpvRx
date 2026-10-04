@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -177,6 +178,18 @@ class CloudMetadataRepository(
       else file
     }
   }
+
+  fun observeLibrary(connectionId: Long, rawPath: String): Flow<List<NetworkFile>> =
+    combine(dao.observeLibrary(connectionId, NetworkPath.from(rawPath).value), observeFolders(connectionId)) { rows, folders ->
+      val summaries = folders.associateBy { it.path }
+      rows.map { row ->
+        val item = row.item
+        val summary = summaries[item.path]?.takeIf { item.isDirectory }
+        NetworkFile(item.name, item.path, summary?.totalSize ?: item.size, item.isDirectory,
+          item.lastModified, item.mimeType, summary?.totalDurationMs ?: row.durationMs, row.width, row.height,
+          summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false)
+      }
+    }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
   fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId).distinctUntilChanged()
 

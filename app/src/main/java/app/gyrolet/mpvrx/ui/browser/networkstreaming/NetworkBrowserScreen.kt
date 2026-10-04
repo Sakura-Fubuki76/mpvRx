@@ -165,12 +165,8 @@ data class NetworkBrowserScreen(
     val indexResults by viewModel.searchResults.collectAsState()
     val files = (indexResults ?: directoryFiles).filterNot { it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
     val connection by viewModel.connection.collectAsState()
-    val libraryFolderLayout by browserPreferences.folderViewFolderLayoutMode.collectAsState()
-    val libraryVideoLayout by browserPreferences.folderViewVideoLayoutMode.collectAsState()
     val isCloudLibrary = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)
-    val effectiveLayout = if (isCloudLibrary) {
-      if (files.any { it.isDirectory }) libraryFolderLayout else libraryVideoLayout
-    } else networkLayoutMode
+    val effectiveLayout = networkLayoutMode
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
 
@@ -201,7 +197,7 @@ data class NetworkBrowserScreen(
     // following its include-audio preference.
     fun isSelectable(file: NetworkFile): Boolean =
       when (targetPlaylistIsAudio) {
-        null -> file.isPlayableNetworkMedia(includeAudioInBrowser)
+        null -> file.isPlayableNetworkMedia(includeAudioInBrowser && !isCloudLibrary)
         true -> file.isPlayableNetworkAudio()
         false -> file.isPlayableNetworkVideo()
       }
@@ -406,7 +402,7 @@ data class NetworkBrowserScreen(
         videoGridColumnsPortrait = videoGridColumnsPortrait,
         videoGridColumnsLandscape = videoGridColumnsLandscape,
         // Upstream added the manual-grid columns; the picker keeps overriding include-audio.
-        includeAudio = targetPlaylistIsAudio ?: includeAudioInBrowser,
+        includeAudio = targetPlaylistIsAudio ?: (includeAudioInBrowser && !isCloudLibrary),
         searchQuery = if (indexResults != null) "" else searchQuery,
         onRefresh = { viewModel.loadFiles(forceStorageScan = true) },
         onFolderClick = { folder ->
@@ -433,7 +429,7 @@ data class NetworkBrowserScreen(
           if (video.path in selectablePaths) selectionManager.handleLongClick(video)
         },
         isVideoSelected = { video -> selectionManager.isSelected(video) },
-        includeImages = includeImagesInBrowser,
+        includeImages = includeImagesInBrowser && !isCloudLibrary,
         onImageClick = { image, visibleImages ->
           val index = visibleImages.indexOfFirst { it.path == image.path }
           if (index >= 0) {
@@ -473,6 +469,7 @@ data class NetworkBrowserScreen(
       }
 
       NetworkSortDialog(
+        isCloudLibrary = isCloudLibrary,
         isOpen = sortDialogOpen.value,
         onDismiss = { sortDialogOpen.value = false },
       )
@@ -498,6 +495,7 @@ private inline fun LazyGridScope.browserSection(
   items: List<NetworkFile>,
   headerText: String?,
   topPadding: Dp = 16.dp,
+  itemSpan: Int = 1,
   crossinline itemContent: @Composable LazyGridItemScope.(NetworkFile) -> Unit,
 ) {
   if (items.isNotEmpty()) {
@@ -506,7 +504,7 @@ private inline fun LazyGridScope.browserSection(
         BrowserSectionHeader(header, topPadding)
       }
     }
-    items(items, key = { it.path }) { itemContent(it) }
+    items(items, key = { it.path }, span = { GridItemSpan(itemSpan) }) { itemContent(it) }
   }
 }
 
@@ -676,14 +674,18 @@ private fun NetworkBrowserContent(
       val configuration = LocalConfiguration.current
       val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
       val isTablet = configuration.smallestScreenWidthDp >= 600
-      val dynamicVideos = if (isTablet || isLandscape) 4 else 2
-      val gridColumns =
-        if (manualGridColumnsEnabled) {
-          val pref = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
-          pref.coerceIn(1, dynamicVideos + 4)
-        } else {
-          dynamicVideos
-        }
+      val isTelevision = app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(LocalContext.current)
+      val minWidth = if (isTelevision) 240.dp else 130.dp
+      val dynamicVideos = ((configuration.screenWidthDp.dp - 18.dp) / minWidth).toInt().coerceAtLeast(1)
+      val maxColumns = maxOf(if (isTablet || isLandscape) 8 else 4, dynamicVideos + 3).coerceIn(4, 16)
+      val preferredColumns = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
+      val gridColumns = if (manualGridColumnsEnabled && preferredColumns > 0)
+        preferredColumns.coerceIn(1, maxColumns) else dynamicVideos
+
+      val isCloudLibrary = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)
+      val spansInfo = if (isCloudLibrary) app.gyrolet.mpvrx.ui.utils.calculateResponsiveGridSpans(
+        maxWidth = configuration.screenWidthDp.dp, isGridMode = isGrid,
+      ) else app.gyrolet.mpvrx.ui.utils.ResponsiveGridSpans(gridColumns, 1, 1)
 
       val listState = rememberLazyListState()
       val gridState = rememberLazyGridState()
@@ -729,7 +731,7 @@ private fun NetworkBrowserContent(
 
           if (isGrid) {
             LazyVerticalGrid(
-              columns = GridCells.Fixed(gridColumns),
+              columns = GridCells.Fixed(spansInfo.spans),
               state = gridState,
               modifier = Modifier.fillMaxSize(),
               contentPadding =
@@ -742,7 +744,7 @@ private fun NetworkBrowserContent(
               horizontalArrangement = Arrangement.spacedBy(2.dp),
               verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-              browserSection(gridColumns, folders, folderHeaderText, topPadding = 8.dp) { folder ->
+              browserSection(spansInfo.spans, folders, folderHeaderText, topPadding = 8.dp, itemSpan = spansInfo.folderSpan) { folder ->
                 NetworkFolderCard(
                   file = folder,
                   useLibraryStyle = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST),
@@ -751,7 +753,7 @@ private fun NetworkBrowserContent(
                   isGridMode = true,
                 )
               }
-              browserSection(gridColumns, videos, null) { video ->
+              browserSection(spansInfo.spans, videos, null, itemSpan = spansInfo.videoSpan) { video ->
                 connection?.let { conn ->
                   NetworkVideoCard(
                     file = video,
@@ -764,7 +766,7 @@ private fun NetworkBrowserContent(
                   )
                 }
               }
-              browserSection(gridColumns, images, null) { image ->
+              browserSection(spansInfo.spans, images, null, itemSpan = spansInfo.videoSpan) { image ->
                 connection?.let { conn ->
                   NetworkImageCard(
                     file = image,

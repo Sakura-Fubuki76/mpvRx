@@ -88,6 +88,7 @@ fun NetworkVideoCard(
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showDuration by browserPreferences.showDurationField.collectAsState()
   val showExtensionField by browserPreferences.showExtensionField.collectAsState()
+  val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
   val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
   val showNetworkThumbs by appearancePreferences.showNetworkThumbnails.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
@@ -209,7 +210,7 @@ fun NetworkVideoCard(
       progressPercentage = progress, isWatched = playbackInfo.isWatched, isOldAndUnplayed = playbackInfo.isOldAndUnplayed, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig().copy(showThumbnails = displayThumb),
-      showSubtitleIndicator = false)
+      showSubtitleIndicator = showSubtitleIndicator)
     return
   }
 

@@ -106,6 +106,7 @@ class BrowserPreferences(
   // Network sorting preferences
   val networkSortType = preferenceStore.getEnum("network_sort_type", NetworkSortType.Title)
   val networkSortOrder = preferenceStore.getEnum("network_sort_order", SortOrder.Ascending)
+  val cloudViewMode = preferenceStore.getEnum("cloud_view_mode", FolderViewMode.FileManager)
   val networkLayoutMode = preferenceStore.getEnum("network_layout_mode", MediaLayoutMode.LIST)
   val jellyfinLayoutMode = preferenceStore.getEnum("jellyfin_layout_mode", MediaLayoutMode.GRID)
   val jellyfinMusicViewMode = preferenceStore.getEnum("jellyfin_music_view_mode", MusicViewMode.GRID)

@@ -1221,13 +1221,64 @@ fun FileSystemSortDialog(
     videoGridColumnSelector = videoGridColumnSelector,
     enableViewModeOptions = isAtRoot,
     enableLayoutModeOptions = true, // Enabled layout selection
-    visibilityToggles =
-      buildList {
+    visibilityToggles = treeBrowserFields(mediaLayoutMode),
+    manualGridToggle =
+      VisibilityToggle(
+        label = "Manual Grid",
+        checked = manualGridColumnsEnabled,
+        onCheckedChange = { enabled ->
+          if (enabled) {
+            if (isLandscape) {
+              browserPreferences.folderGridColumnsLandscape.set(dynamicFolderColumns)
+              browserPreferences.videoGridColumnsLandscape.set(dynamicVideoColumns)
+            } else {
+              browserPreferences.folderGridColumnsPortrait.set(dynamicFolderColumns)
+              browserPreferences.videoGridColumnsPortrait.set(dynamicVideoColumns)
+            }
+          } else {
+            browserPreferences.folderGridColumnsPortrait.set(0)
+            browserPreferences.folderGridColumnsLandscape.set(0)
+            browserPreferences.videoGridColumnsPortrait.set(0)
+            browserPreferences.videoGridColumnsLandscape.set(0)
+            browserPreferences.folderGridColumnsDualPanePortrait.set(0)
+            browserPreferences.folderGridColumnsDualPaneLandscape.set(0)
+            browserPreferences.videoGridColumnsDualPanePortrait.set(0)
+            browserPreferences.videoGridColumnsDualPaneLandscape.set(0)
+          }
+          browserPreferences.manualGridColumnsEnabled.set(enabled)
+        },
+      ),
+  )
+}
+
+@Composable
+private fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = false): List<VisibilityToggle> {
+  val browserPreferences = koinInject<BrowserPreferences>()
+  val appearancePreferences = koinInject<AppearancePreferences>()
+  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
+  val showTotalVideosChip by browserPreferences.showTotalVideosChip.collectAsState()
+  val showTotalSizeChip by browserPreferences.showTotalSizeChip.collectAsState()
+  val showFolderPath by browserPreferences.showFolderPath.collectAsState()
+  val showSizeChip by browserPreferences.showSizeChip.collectAsState()
+  val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
+  val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
+  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
+  val showProgressBar by browserPreferences.showProgressBar.collectAsState()
+  val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
+  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
+  val showDurationField by browserPreferences.showDurationField.collectAsState()
+  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
+  val showTotalDurationChip by browserPreferences.showTotalDurationChip.collectAsState()
+  val showDateChip by browserPreferences.showDateChip.collectAsState()
+  val showFolderThumbnails by browserPreferences.showFolderThumbnails.collectAsState()
+  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
+  return buildList {
         add(
           VisibilityToggle(
             label = "Video Thumbnails",
-            checked = showVideoThumbnails,
-            onCheckedChange = { browserPreferences.showVideoThumbnails.set(it) },
+            checked = showVideoThumbnails && (!cloud || showNetworkThumbnails),
+            onCheckedChange = { browserPreferences.showVideoThumbnails.set(it); if (cloud) appearancePreferences.showNetworkThumbnails.set(it) },
           ),
         )
         add(
@@ -1256,7 +1307,7 @@ fun FileSystemSortDialog(
             label = "Path",
             checked = showFolderPath,
             onCheckedChange = { browserPreferences.showFolderPath.set(it) },
-            enabled = mediaLayoutMode == MediaLayoutMode.LIST,
+            enabled = layoutMode == MediaLayoutMode.LIST,
           ),
         )
         add(
@@ -1271,7 +1322,7 @@ fun FileSystemSortDialog(
             label = "Folder Size",
             checked = showTotalSizeChip,
             onCheckedChange = { browserPreferences.showTotalSizeChip.set(it) },
-            enabled = mediaLayoutMode == MediaLayoutMode.LIST,
+            enabled = layoutMode == MediaLayoutMode.LIST,
           ),
         )
         add(
@@ -1316,48 +1367,26 @@ fun FileSystemSortDialog(
             onCheckedChange = { browserPreferences.showProgressBar.set(it) },
           ),
         )
-        if (mediaLayoutMode == MediaLayoutMode.GRID) {
-          // Additional grid-specific fields if any
+        add(VisibilityToggle("Total Duration", showTotalDurationChip, browserPreferences.showTotalDurationChip::set))
+        add(VisibilityToggle("Date", showDateChip, browserPreferences.showDateChip::set))
+        if (layoutMode == MediaLayoutMode.GRID) {
+          add(VisibilityToggle("Folder Thumbnails", showFolderThumbnails, browserPreferences.showFolderThumbnails::set))
+          add(VisibilityToggle("Center Titles", centerGridTitles, browserPreferences.centerGridTitles::set))
         }
-      },
-    manualGridToggle =
-      VisibilityToggle(
-        label = "Manual Grid",
-        checked = manualGridColumnsEnabled,
-        onCheckedChange = { enabled ->
-          if (enabled) {
-            if (isLandscape) {
-              browserPreferences.folderGridColumnsLandscape.set(dynamicFolderColumns)
-              browserPreferences.videoGridColumnsLandscape.set(dynamicVideoColumns)
-            } else {
-              browserPreferences.folderGridColumnsPortrait.set(dynamicFolderColumns)
-              browserPreferences.videoGridColumnsPortrait.set(dynamicVideoColumns)
-            }
-          } else {
-            browserPreferences.folderGridColumnsPortrait.set(0)
-            browserPreferences.folderGridColumnsLandscape.set(0)
-            browserPreferences.videoGridColumnsPortrait.set(0)
-            browserPreferences.videoGridColumnsLandscape.set(0)
-            browserPreferences.folderGridColumnsDualPanePortrait.set(0)
-            browserPreferences.folderGridColumnsDualPaneLandscape.set(0)
-            browserPreferences.videoGridColumnsDualPanePortrait.set(0)
-            browserPreferences.videoGridColumnsDualPaneLandscape.set(0)
-          }
-          browserPreferences.manualGridColumnsEnabled.set(enabled)
-        },
-      ),
-  )
+      }
 }
 
 @Composable
 fun NetworkSortDialog(
   isOpen: Boolean,
   onDismiss: () -> Unit,
+  isCloudLibrary: Boolean = false,
 ) {
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val networkSortType by browserPreferences.networkSortType.collectAsState()
   val networkSortOrder by browserPreferences.networkSortOrder.collectAsState()
+  val cloudViewMode by browserPreferences.cloudViewMode.collectAsState()
   val networkLayoutMode by browserPreferences.networkLayoutMode.collectAsState()
   val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
@@ -1367,6 +1396,8 @@ fun NetworkSortDialog(
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
   val includeImages by browserPreferences.includeImagesInBrowser.collectAsState()
   val manualGridColumnsEnabled by browserPreferences.manualGridColumnsEnabled.collectAsState()
+  val folderGridColumnsPortrait by browserPreferences.folderGridColumnsPortrait.collectAsState()
+  val folderGridColumnsLandscape by browserPreferences.folderGridColumnsLandscape.collectAsState()
   val videoGridColumnsPortrait by browserPreferences.videoGridColumnsPortrait.collectAsState()
   val videoGridColumnsLandscape by browserPreferences.videoGridColumnsLandscape.collectAsState()
 
@@ -1383,7 +1414,18 @@ fun NetworkSortDialog(
   val videoMinWidth = if (isTelevision) 240.dp else 130.dp
   val dynamicVideoColumns = (usableWidth / videoMinWidth).toInt().coerceAtLeast(1)
 
-  val maxVideoColumns = maxOf(if (isTablet || isLandscape) 8 else 4, dynamicVideoColumns + 3).coerceIn(4, 16)
+  val maxVideoColumns = if (isCloudLibrary) maxOf(dynamicVideoColumns + 3, (usableWidth / 90.dp).toInt()).coerceAtLeast(1)
+    else maxOf(if (isTablet || isLandscape) 8 else 4, dynamicVideoColumns + 3).coerceIn(4, 16)
+  val folderMinWidth = if (isTelevision) 160.dp else 90.dp
+  val dynamicFolderColumns = (usableWidth / folderMinWidth).toInt().coerceAtLeast(1)
+  val maxFolderColumns = maxOf(dynamicFolderColumns + 3, (usableWidth / 70.dp).toInt()).coerceAtLeast(1)
+  val folderPref = if (isLandscape) folderGridColumnsLandscape else folderGridColumnsPortrait
+  val folderGridColumnSelector = if (isCloudLibrary && networkLayoutMode == MediaLayoutMode.GRID && manualGridColumnsEnabled && maxFolderColumns > 1) {
+    GridColumnSelector("Folder (${if (isLandscape) "Landscape" else "Portrait"})",
+      (folderPref.takeIf { it > 0 } ?: dynamicFolderColumns).coerceIn(1, maxFolderColumns),
+      { if (isLandscape) browserPreferences.folderGridColumnsLandscape.set(it) else browserPreferences.folderGridColumnsPortrait.set(it) },
+      1f..maxFolderColumns.toFloat(), maxFolderColumns - 2)
+  } else null
 
   val videoPref = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
   val videoGridColumns = if (videoPref > 0) videoPref else dynamicVideoColumns
@@ -1391,7 +1433,7 @@ fun NetworkSortDialog(
   val videoGridColumnSelector =
     if (networkLayoutMode == MediaLayoutMode.GRID && manualGridColumnsEnabled) {
       GridColumnSelector(
-        label = "Grid Columns (${if (isLandscape) "Landscape" else "Portrait"})",
+        label = "${if (isCloudLibrary) "Video" else "Grid Columns"} (${if (isLandscape) "Landscape" else "Portrait"})",
         currentValue = videoGridColumns.coerceIn(1, maxVideoColumns),
         onValueChange = {
           if (isLandscape) {
@@ -1444,6 +1486,15 @@ fun NetworkSortDialog(
       }
     },
     showSortOptions = true,
+    viewModeSelector = if (isCloudLibrary) MultiViewModeSelector("View Mode", listOf(
+      ViewModeOption("Folder", Icons.RoundedFilled.ViewModule, cloudViewMode == FolderViewMode.AlbumView,
+        { browserPreferences.cloudViewMode.set(FolderViewMode.AlbumView) }),
+      ViewModeOption("Tree", Icons.RoundedFilled.AccountTree, cloudViewMode == FolderViewMode.FileManager,
+        { browserPreferences.cloudViewMode.set(FolderViewMode.FileManager) }),
+      ViewModeOption("Library", Icons.RoundedFilled.VideoLibrary, cloudViewMode == FolderViewMode.MediaLibrary,
+        { browserPreferences.cloudViewMode.set(FolderViewMode.MediaLibrary) }),
+    )) else null,
+    enableViewModeOptions = isCloudLibrary,
     layoutModeSelector =
       ViewModeSelector(
         label = "Layout",
@@ -1458,9 +1509,10 @@ fun NetworkSortDialog(
           )
         },
       ),
+    folderGridColumnSelector = folderGridColumnSelector,
     videoGridColumnSelector = videoGridColumnSelector,
     enableLayoutModeOptions = true,
-    mediaTypeToggles =
+    mediaTypeToggles = if (isCloudLibrary) emptyList() else
       listOf(
         VisibilityToggle(
           label = "Videos",
@@ -1474,7 +1526,7 @@ fun NetworkSortDialog(
           onCheckedChange = { browserPreferences.includeImagesInBrowser.set(it) },
         ),
       ),
-    visibilityToggles =
+    visibilityToggles = if (isCloudLibrary) treeBrowserFields(networkLayoutMode, cloud = true) else
       buildList {
         add(
           VisibilityToggle(
@@ -1528,9 +1580,11 @@ fun NetworkSortDialog(
         onCheckedChange = { enabled ->
           if (enabled) {
             if (isLandscape) {
-              browserPreferences.videoGridColumnsLandscape.set(dynamicVideoColumns)
+              if (isCloudLibrary) browserPreferences.folderGridColumnsLandscape.set(dynamicFolderColumns)
+            browserPreferences.videoGridColumnsLandscape.set(dynamicVideoColumns)
             } else {
-              browserPreferences.videoGridColumnsPortrait.set(dynamicVideoColumns)
+              if (isCloudLibrary) browserPreferences.folderGridColumnsPortrait.set(dynamicFolderColumns)
+            browserPreferences.videoGridColumnsPortrait.set(dynamicVideoColumns)
             }
           } else {
             browserPreferences.folderGridColumnsPortrait.set(0)

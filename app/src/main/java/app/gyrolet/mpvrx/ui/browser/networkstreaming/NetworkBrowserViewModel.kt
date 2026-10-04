@@ -41,6 +41,10 @@ import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -86,10 +90,21 @@ class NetworkBrowserViewModel(
   private val playerPreferences: PlayerPreferences by inject()
 
   private val _files = MutableStateFlow<List<NetworkFile>>(emptyList())
-  val files: StateFlow<List<NetworkFile>> = _files.asStateFlow()
+
 
   private val _connection = MutableStateFlow<NetworkConnection?>(null)
   val connection: StateFlow<NetworkConnection?> = _connection.asStateFlow()
+
+  @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+  val files: StateFlow<List<NetworkFile>> = kotlinx.coroutines.flow.combine(
+    _connection, browserPreferences.cloudViewMode.changes(),
+  ) { connection, mode -> connection to mode }
+    .flatMapLatest { (connection, mode) ->
+      if (connection?.protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) &&
+        mode != app.gyrolet.mpvrx.preferences.FolderViewMode.FileManager) {
+        cloudMetadata.observeLibrary(connectionId, currentPath).map { all -> cloudFilesForViewMode(all, currentPath, mode) }.flowOn(kotlinx.coroutines.Dispatchers.Default)
+      } else _files
+    }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), emptyList())
 
   private val _isLoading = MutableStateFlow(false)
   val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -374,13 +389,14 @@ class NetworkBrowserViewModel(
   }
 
   private fun currentDirectoryPlayableFiles(clickedFile: NetworkFile): List<NetworkFile> {
-    val includeAudio = browserPreferences.includeAudioBrowser.get()
+    val includeAudio = browserPreferences.includeAudioBrowser.get() &&
+      _connection.value?.protocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)
     if (!playerPreferences.playlistMode.get() || !clickedFile.isPlayableNetworkMedia(includeAudio)) {
       return listOf(clickedFile)
     }
 
     val files =
-      (_searchResults.value ?: _files.value)
+      (_searchResults.value ?: this.files.value)
         .filter { it.isPlayableNetworkMedia(includeAudio) }
         .sortedForNetworkBrowser(
           sortType = browserPreferences.networkSortType.get(),

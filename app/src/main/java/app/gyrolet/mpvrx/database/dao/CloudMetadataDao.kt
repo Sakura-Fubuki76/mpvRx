@@ -61,6 +61,16 @@ abstract class CloudMetadataDao {
     mergeVideo(connectionId, path, size, modified, duration, width, height, updatedAt)
   }
 
+  @Query("""SELECT d.*, COALESCE(v.durationMs, 0) AS durationMs,
+    COALESCE(v.width, 0) AS width, COALESCE(v.height, 0) AS height
+    FROM cloud_directory_items d LEFT JOIN cloud_video_metadata v
+    ON d.connectionId = v.connectionId AND d.path = v.path
+      AND d.size = v.size AND d.lastModified = v.lastModified
+    WHERE d.connectionId = :connectionId
+      AND (:path = '/' OR substr(d.path, 1, length(:path) + 1) = :path || '/')
+    ORDER BY d.path""")
+  abstract fun observeLibrary(connectionId: Long, path: String): Flow<List<app.gyrolet.mpvrx.database.entities.CloudLibraryItem>>
+
   @Query("SELECT * FROM cloud_directory_state WHERE connectionId = :connectionId AND path = :path")
   abstract suspend fun getDirectoryState(connectionId: Long, path: String): CloudDirectoryStateEntity?
 
