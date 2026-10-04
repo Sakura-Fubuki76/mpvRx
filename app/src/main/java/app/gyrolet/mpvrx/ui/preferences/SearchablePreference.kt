@@ -70,6 +70,13 @@ private fun MutableList<SearchablePreference>.addSearchEntries(
 object SearchablePreferences {
   private val staticPreferences: List<SearchablePreference> =
     buildList {
+      add(SearchablePreference(
+        titleRes = R.string.pref_anime_cover_colors,
+        summaryRes = R.string.pref_anime_cover_colors_summary,
+        keywords = listOf("anime", "cover", "colour", "color", "动画", "封面", "取色"),
+        category = "Appearance",
+        screen = AppearancePreferencesScreen,
+      ))
       // Appearance preferences
       add(
         SearchablePreference(

@@ -2928,4 +2928,6 @@
   <string name="anime_regular_episodes">正片</string>
   <string name="anime_extras">特典 / OP / ED</string>
 
+  <string name="pref_anime_cover_colors">动画详情封面取色</string>
+  <string name="pref_anime_cover_colors_summary">根据各部动画的封面生成详情页配色</string>
 </resources>

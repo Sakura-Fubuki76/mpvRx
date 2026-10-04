@@ -13,6 +13,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.gyrolet.mpvrx.presentation.Screen
@@ -51,7 +53,10 @@ data class AnimeDetailsScreen(
       .collectAsState()
     val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
     var editMatch by remember { mutableStateOf(false) }
-    Box(Modifier.fillMaxSize()) {
+    val useCoverColors by koinInject<AppearancePreferences>().animeCoverColors.collectAsState()
+    val cover = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.cover
+    AnimeCoverTheme(cover, useCoverColors) {
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
       connection?.let { server ->
         AnimeLibraryContent(server, "/", "",
           onPlay = { file, queue -> model.playAnimeVideo(file, queue) },
@@ -65,5 +70,6 @@ data class AnimeDetailsScreen(
     }
     if (editMatch) AnimeMatchDialog(connectionId, groupKey, initialTitle,
       catalog.folders[groupKey]?.episodeOffset ?: 0, repository) { editMatch = false }
+    }
   }
 }

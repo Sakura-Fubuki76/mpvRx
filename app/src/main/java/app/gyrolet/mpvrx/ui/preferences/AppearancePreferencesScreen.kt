@@ -347,6 +347,16 @@ object AppearancePreferencesScreen : Screen {
 
                   PreferenceDivider()
 
+                  val animeCoverColors by preferences.animeCoverColors.collectAsState()
+                  SwitchPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_anime_cover_colors),
+                    value = animeCoverColors,
+                    onValueChange = { preferences.animeCoverColors.set(it) },
+                    title = { Text(stringResource(R.string.pref_anime_cover_colors)) },
+                    summary = { Text(stringResource(R.string.pref_anime_cover_colors_summary), color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                  )
+                  PreferenceDivider()
+
                   WallpaperPreferenceCard(
                     wallpaperUri = customWallpaperUri,
                     onClick = { backstack.navigateTo(WallpaperEditorScreen()) },

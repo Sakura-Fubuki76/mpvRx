@@ -2971,4 +2971,6 @@
   <string name="anime_regular_episodes">Main episodes</string>
   <string name="anime_extras">Extras / OP / ED</string>
 
+  <string name="pref_anime_cover_colors">Anime detail cover colours</string>
+  <string name="pref_anime_cover_colors_summary">Use each anime cover to colour its detail page</string>
 </resources>
