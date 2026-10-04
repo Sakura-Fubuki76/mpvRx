@@ -15,6 +15,10 @@ These notes are written in plain English and focus on what changed for real use.
 - Increased the gap between image-only seek previews and the progress bar.
 - Integrated upstream player startup, local thumbnail reuse, ASS styling, browser rendering and bottom navigation blur improvements.
 - Reduced library scrolling work and moved debug trace writes off the UI thread.
+- Fixed whole-storage scan stalls caused by repeated duration aggregation, and revalidate legacy directory trees once after upgrading without losing manual matches.
+- Improved verified title aliases, retried unmatched works on pull-to-refresh, and mapped novel adaptations, live events, compound TV chapters and numbered film collections to their actual Bangumi subjects.
+- Combine folders belonging to the same Bangumi work while retaining each file's episode numbering, including chapter recap episodes.
+- Show separate voice actor, character artwork and production staff sections, with stable card heights while scrolling.
 
 ## 2.7.3 - WebDAV, Cloud Metadata, and Restore-only Anime4K
 
