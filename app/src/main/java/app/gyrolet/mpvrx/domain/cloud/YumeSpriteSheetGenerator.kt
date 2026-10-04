@@ -50,7 +50,7 @@ class YumeSpriteSheetGenerator(
 
         private const val DECODE_TIMEOUT_MS = 3000L
 
-        private const val MAX_CONCURRENT_DOWNLOADS = 4
+        private const val MAX_CONCURRENT_DOWNLOADS = 8
 
         private const val FRAME_CANDIDATE_RADIUS = 2
 
