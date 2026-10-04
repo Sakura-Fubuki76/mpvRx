@@ -11,6 +11,9 @@ These notes are written in plain English and focus on what changed for real use.
 - Persist cloud directories, library snapshots and metadata associations; prewarm saved Anime libraries and avoid restarting matching on ordinary refresh.
 - Show matching progress only for due work, preserve successful matches, and distinguish provider failures from missing matches.
 - Fill poster cards without top or bottom letterboxing while keeping full artwork on detail pages.
+- Preload recent playback with Anime library snapshots to avoid a temporary first-card selection or blank featured card.
+- Increased the gap between image-only seek previews and the progress bar.
+- Integrated upstream player startup, local thumbnail reuse, ASS styling, browser rendering and bottom navigation blur improvements.
 - Reduced library scrolling work and moved debug trace writes off the UI thread.
 
 ## 2.7.3 - WebDAV, Cloud Metadata, and Restore-only Anime4K
