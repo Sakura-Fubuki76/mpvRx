@@ -34,11 +34,11 @@ class AnimeMetadataTest {
     assertEquals(3, parseAnimeFilename("Anime NCED01.mkv").episodeType)
     assertEquals(1, parseAnimeFilename("Anime SP01.mkv").episodeType)
   }
-  @Test fun genericFoldersDoNotCreateCardsForEveryFile() {
+  @Test fun mixedFoldersGroupByWorkRatherThanFileOrDirectory() {
     fun file(name: String) = app.gyrolet.mpvrx.domain.network.NetworkFile(name, "/Movies/$name", 100, false)
     val groups = animeVideoGroups(listOf(file("[A] Alpha.mkv"), file("[B] Alpha.mkv"), file("Beta.mkv")))
-    assertEquals(1, groups.size)
-    assertEquals(3, groups.single().files.size)
+    assertEquals(2, groups.size)
+    assertEquals(2, groups.single { it.query == "Alpha" }.files.size)
     assertEquals(groups.map { it.key }, animeVideoGroups(listOf(file("[A] Alpha.mkv"), file("[B] Alpha.mkv"), file("Beta.mkv"))).map { it.key })
   }
   @Test fun specialsInheritSeriesAndKeepChineseAncestorForMatching() {
@@ -95,5 +95,62 @@ class AnimeMetadataTest {
     val groups = animeVideoGroups(listOf(file("Motto To LOVE-Ru"), file("To LOVE-Ru Darkness")))
     assertEquals(2, groups.size)
     assertTrue(groups.all { it.queries == listOf(it.query) })
+  }
+  @Test fun revisedEpisodesRetainSeriesAndEpisodeIdentity() {
+    val base = "[VCB-Studio] Hibike! Euphonium 2"
+    for (suffix in listOf("[10]", "[10v2]", "[10V3]", "- 10v2")) {
+      val parsed = parseAnimeFilename("$base $suffix[Ma10p_1080p][x265_flac_2aac].mkv")
+      assertEquals("Hibike! Euphonium 2", parsed.title)
+      assertEquals(10.0, parsed.episode!!, 0.0)
+      assertFalse(parsed.special)
+    }
+    fun file(number: String) = app.gyrolet.mpvrx.domain.network.NetworkFile(
+      "$base [$number][Ma10p_1080p].mkv", "/Anime/$number.mkv", 1, false)
+    val group = animeVideoGroups(listOf(file("09"), file("10v2"), file("11"))).single()
+    assertEquals("Hibike! Euphonium 2", group.query)
+    assertEquals(3, group.files.size)
+  }
+
+  @Test fun mixedDirectoryKeysAreStableAndDoNotMergeSeasons() {
+    fun file(name: String) = app.gyrolet.mpvrx.domain.network.NetworkFile(name, "/Videos/$name", 1, false)
+    val files = listOf(file("Alpha - 01.mkv"), file("Alpha - 02v2.mkv"),
+      file("Alpha Season 2 - 01.mkv"), file("Beta - 01.mkv"))
+    val groups = animeVideoGroups(files)
+    assertEquals(3, groups.size)
+    assertEquals(4, groups.flatMap { it.files }.size)
+    assertEquals(groups.map { it.key }.toSet(), animeVideoGroups(files.reversed()).map { it.key }.toSet())
+    assertTrue(groups.all { it.directory == "/Videos" })
+  }
+
+  @Test fun seasonSubdirectoriesDoNotCollapseIntoParentWithLooseEpisodes() {
+    fun file(path: String) = app.gyrolet.mpvrx.domain.network.NetworkFile(path.substringAfterLast('/'), path, 1, false)
+    val groups = animeVideoGroups(listOf(file("/Alpha/Alpha - 01.mkv"),
+      file("/Alpha/Season 02/Alpha - 01.mkv"), file("/Alpha/Season 02/SPs/NCOP01.mkv")))
+    assertEquals(2, groups.size)
+    val season = groups.single { it.directory.endsWith("Season 02") }
+    assertEquals("Alpha Season 2", season.query)
+    assertEquals(2, season.files.size)
+  }
+  @Test fun arbitraryContainerNameDoesNotMergeTwoEpisodeSequences() {
+    fun file(title: String, episode: Int) = app.gyrolet.mpvrx.domain.network.NetworkFile(
+      "$title - 0$episode.mkv", "/Downloads Tonight/$title-0$episode.mkv", 1, false)
+    val files = listOf(file("Alpha", 1), file("Alpha", 2), file("Beta", 1), file("Beta", 2))
+    val groups = animeVideoGroups(files)
+    assertEquals(setOf("Alpha", "Beta"), groups.map { it.query }.toSet())
+    assertTrue(groups.all { it.files.size == 2 })
+  }
+  @Test fun namedReleaseEvidenceKeepsRepeatedBonusClipsWithTheirShow() {
+    val directory = "/[VCB-Studio] Yuru Camp Season 2 [Ma10p_1080p]"
+    val names = listOf("Yuru Camp Season 2 [01].mkv", "Yuru Camp Season 2 [02].mkv",
+      "Yuru Camp Season 2 [Mystery Camp].mkv", "Yuru Camp Season 2 [Tabisuru Shima Rin].mkv")
+    val files = names.map { app.gyrolet.mpvrx.domain.network.NetworkFile(it, "$directory/$it", 1, false) }
+    val group = animeVideoGroups(files).single()
+    assertEquals("Yuru Camp Season 2", group.query)
+    assertEquals(4, group.files.size)
+  }
+  @Test fun revisedCopiesDoNotCountAsIndependentSequenceEvidence() {
+    val names = listOf("Alpha - 10.mkv", "Alpha - 10v2.mkv", "Beta - 01.mkv", "Beta - 01v2.mkv")
+    val files = names.map { app.gyrolet.mpvrx.domain.network.NetworkFile(it, "/Uncertain Batch/$it", 1, false) }
+    assertEquals(1, animeVideoGroups(files).size)
   }
 }
