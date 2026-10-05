@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -27,6 +28,9 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   private val http = client.newBuilder().callTimeout(15, TimeUnit.SECONDS).build()
   private val artwork = app.gyrolet.mpvrx.domain.cloud.TmdbArtworkClient(http)
   private val artworkAttempts = java.util.concurrent.ConcurrentHashMap<Pair<Long, Int>, Long>()
+  private val artworkJobs = java.util.concurrent.ConcurrentHashMap<Long, Job>()
+  private val artworkSlots = kotlinx.coroutines.sync.Semaphore(2)
+  private var libraryArtworkJob: Job? = null
   private val json = Json { ignoreUnknownKeys = true }
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val recentHistory = recentDao.observeRecentlyPlayed(1000).shareIn(scope, SharingStarted.Eagerly, replay = 1)
@@ -379,36 +383,53 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   /** Only enrich the opened work; successful credits survive restarts in the same Room payload. */
   fun scheduleCredits(id: Long) { scope.launch { ensureCredits(id) } }
 
+  fun scheduleLibraryArtwork(ids: List<Long>) {
+    libraryArtworkJob?.cancel()
+    libraryArtworkJob = scope.launch {
+      for (id in ids) {
+        scheduleArtwork(id)
+        artworkJobs[id]?.join()
+      }
+    }
+  }
+
   fun scheduleArtwork(id: Long) {
     val credential = preferences.tmdbArtworkToken.get().trim().ifBlank { preferences.tmdbArtworkApiKey.get().trim() }
     if (credential.isBlank()) return
-    scope.launch {
-      val lock = subjectLocks.getOrPut(id) { Mutex() }
-      val item = lock.withLock {
-        val cached = dao.getSubject(id) ?: return@withLock null
-        val item = json.decodeFromString<AnimeSubject>(cached.payload)
-        val now = System.currentTimeMillis()
-        val ttl = if (item.titleLogo.isNotBlank()) 30L * 24 * 60 * 60_000 else 24 * 60 * 60_000L
-        if (item.artworkSchemaVersion == 1 && now - item.artworkFetchedAt < ttl) return@withLock null
-        val attempt = id to credential.hashCode()
-        if (now - (artworkAttempts[attempt] ?: 0) < 5 * 60_000L) return@withLock null
-        artworkAttempts[attempt] = now
-        item
-      } ?: return@launch
-      try {
-        val result = artwork.fetch(item, credential)
-        lock.withLock {
-          val cached = dao.getSubject(id) ?: return@withLock
-          val latest = json.decodeFromString<AnimeSubject>(cached.payload)
-          val enriched = latest.copy(titleLogo = result?.logo.orEmpty(),
-            tmdbId = result?.id ?: 0, artworkFetchedAt = System.currentTimeMillis(),
-            artworkCover = result?.cover.orEmpty(), artworkBackdrop = result?.backdrop.orEmpty(), artworkSchemaVersion = 1)
-          dao.putSubject(cached.copy(payload = json.encodeToString(AnimeSubject.serializer(), enriched)))
-          CloudTrace.event("anime.artwork", 0, id.toString(), "tmdb=${enriched.tmdbId} logo=${enriched.titleLogo.isNotBlank()}")
-        }
-      } catch (cancelled: CancellationException) { throw cancelled }
-      catch (error: Exception) { CloudTrace.event("anime.artwork.failed", 0, id.toString(), "error=${error.javaClass.simpleName}") }
+    val job = scope.launch(start = CoroutineStart.LAZY) {
+      artworkSlots.withPermit {
+        val lock = subjectLocks.getOrPut(id) { Mutex() }
+        val item = lock.withLock {
+          val cached = dao.getSubject(id) ?: return@withLock null
+          val item = json.decodeFromString<AnimeSubject>(cached.payload)
+          val now = System.currentTimeMillis()
+          val ttl = if (item.titleLogo.isNotBlank()) 30L * 24 * 60 * 60_000 else 24 * 60 * 60_000L
+          if (item.artworkSchemaVersion == 2 && now - item.artworkFetchedAt < ttl) return@withLock null
+          val attempt = id to credential.hashCode()
+          if (now - (artworkAttempts[attempt] ?: 0) < 5 * 60_000L) return@withLock null
+          artworkAttempts[attempt] = now
+          item
+        } ?: return@launch
+        try {
+          val result = artwork.fetch(item, credential)
+          lock.withLock {
+            val cached = dao.getSubject(id) ?: return@withLock
+            val latest = json.decodeFromString<AnimeSubject>(cached.payload)
+            val enriched = latest.copy(titleLogo = result?.logo.orEmpty(),
+              tmdbId = result?.id ?: 0, artworkFetchedAt = System.currentTimeMillis(),
+              artworkCover = result?.cover.orEmpty(), artworkBackdrop = result?.backdrop.orEmpty(),
+              artworkPoster = result?.poster.orEmpty(), artworkSchemaVersion = 2)
+            dao.putSubject(cached.copy(payload = json.encodeToString(AnimeSubject.serializer(), enriched)))
+            CloudTrace.event("anime.artwork", 0, id.toString(), "tmdb=${enriched.tmdbId} logo=${enriched.titleLogo.isNotBlank()}")
+          }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (error: Exception) { CloudTrace.event("anime.artwork.failed", 0, id.toString(), "error=${error.javaClass.simpleName}") }
+      }
     }
+    if (artworkJobs.putIfAbsent(id, job) == null) {
+      job.invokeOnCompletion { artworkJobs.remove(id, job) }
+      job.start()
+    } else job.cancel()
   }
 
   private suspend fun ensureCredits(id: Long) = withContext(Dispatchers.IO) {
@@ -451,7 +472,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       val result = item.copy(episodes = episodes, cast = previous?.cast.orEmpty(), staff = previous?.staff.orEmpty(), creditsFetchedAt = previous?.creditsFetchedAt ?: 0, episodeSchemaVersion = 1,
         titleLogo = previous?.titleLogo.orEmpty(), tmdbId = previous?.tmdbId ?: 0, artworkFetchedAt = previous?.artworkFetchedAt ?: 0,
         artworkCover = previous?.artworkCover.orEmpty(), artworkBackdrop = previous?.artworkBackdrop.orEmpty(),
-        artworkSchemaVersion = previous?.artworkSchemaVersion ?: 0)
+        artworkPoster = previous?.artworkPoster.orEmpty(), artworkSchemaVersion = previous?.artworkSchemaVersion ?: 0)
       dao.putSubject(AnimeSubjectEntity(id, json.encodeToString(AnimeSubject.serializer(), result), System.currentTimeMillis()))
       result
     } catch (cancelled: CancellationException) { throw cancelled }

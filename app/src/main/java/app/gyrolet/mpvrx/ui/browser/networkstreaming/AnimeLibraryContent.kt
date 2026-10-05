@@ -73,6 +73,15 @@ internal fun AnimeLibraryContent(
   val allFiles = snapshot.files
   val libraryGroups = snapshot.groups
   val catalog by remember(connection.id) { anime.observe(connection.id) }.collectAsState()
+  val artworkIds = remember(libraryGroups, catalog.folders) {
+    libraryGroups.keys.mapNotNull { catalog.folders[it]?.subjectId }.distinct().sorted()
+  }
+  val advanced = koinInject<app.gyrolet.mpvrx.preferences.AdvancedPreferences>()
+  val artworkToken by advanced.tmdbArtworkToken.collectAsState()
+  val artworkKey by advanced.tmdbArtworkApiKey.collectAsState()
+  LaunchedEffect(artworkIds, artworkToken, artworkKey, detailKey, showPoster) {
+    if (detailKey == null && showPoster) anime.scheduleLibraryArtwork(artworkIds)
+  }
   val matchProgress by remember(connection.id) { anime.observeProgress(connection.id) }.collectAsState()
   val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
   val identities = remember(snapshot.playbackIdentities, libraryGroups, detailKey) {
@@ -146,7 +155,7 @@ internal fun AnimeLibraryContent(
       val featuredTitle = subject?.title ?: libraryGroups[featured.key]?.query.orEmpty()
       Card(onClick = { onOpenDetails(featured.key, libraryGroups.getValue(featured.key).directory, featuredTitle) }, shape = RoundedCornerShape(24.dp)) {
         Box(Modifier.fillMaxWidth().height(280.dp)) {
-          if (showPoster && subject != null) RemoteImage(subject.cover, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = .25f)
+            if (showPoster && subject != null) RemoteImage(subject.libraryCover, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = .25f)
           Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.surfaceContainer, Color.Transparent))))
           Row(Modifier.fillMaxSize().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -158,7 +167,7 @@ internal fun AnimeLibraryContent(
               if (featuredFields.isNotEmpty()) Text(featuredFields, style = MaterialTheme.typography.labelLarge)
               Text(subject?.summary.orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
-            if (showPoster && subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Crop)
+            if (showPoster && subject != null) RemoteImage(subject.libraryCover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Crop)
           }
         }
       }
@@ -172,7 +181,7 @@ internal fun AnimeLibraryContent(
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
             if (showPoster && subject?.cover?.isNotBlank() == true) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Crop)
+              RemoteImage(subject.libraryCover, subject.title, Modifier.fillMaxSize(), ContentScale.Crop)
             } else {
               Text(fallback, Modifier.align(Alignment.Center).padding(20.dp), style = MaterialTheme.typography.titleMedium)
             }

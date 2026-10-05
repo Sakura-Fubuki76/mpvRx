@@ -6,6 +6,13 @@ import org.junit.Test
 
 class TmdbArtworkClientTest {
   private fun row(value: String) = Json.parseToJsonElement(value).jsonObject
+  @Test fun highResolutionArtworkWinsOverPopularLowResolutionImages() {
+    val images = row("""{"posters":[{"file_path":"/low.jpg","iso_639_1":null,"width":550,"vote_count":100},{"file_path":"/high.jpg","iso_639_1":null,"width":1668,"vote_count":0},{"file_path":"/title.jpg","iso_639_1":"ja","width":1668}]}""")
+    assertTrue(selectTmdbTextlessImage(images,"posters").endsWith("/high.jpg"))
+    assertTrue(selectTmdbPoster(images).endsWith("/title.jpg"))
+    assertEquals("tmdb", AnimeSubject(1,"Test",cover="bangumi",artworkPoster="tmdb").libraryCover)
+    assertEquals("bangumi", AnimeSubject(1,"Test",cover="bangumi").libraryCover)
+  }
   @Test fun detailCoverUsesNeutralPosterThenBangumiThenNeutralBackdrop() {
     val subject = AnimeSubject(1, "Test", cover = "bangumi", artworkCover = "poster", artworkBackdrop = "backdrop")
     assertEquals("poster", subject.detailCover)

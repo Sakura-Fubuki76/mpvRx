@@ -2972,6 +2972,6 @@
     <string name="tmdb_artwork_key">TMDB API 密钥（Key）</string>
     <string name="tmdb_artwork_unset">尚未配置</string>
     <string name="tmdb_artwork_saved">已配置</string>
-    <string name="tmdb_artwork_summary">为动画详情获取标题 Logo 和无语言海报。头图依次使用 TMDB 无语言海报、Bangumi 封面、TMDB 无语言背景图。优先使用 Token。</string>
+    <string name="tmdb_artwork_summary">媒体库使用 TMDB 带标题海报，详情使用标题 Logo 和高清无语言海报。头图依次回退到 Bangumi 封面、TMDB 无语言背景图。优先使用 Token。</string>
     <string name="tmdb_artwork_attribution">本产品使用 TMDB API，但未获得 TMDB 的认可或认证。</string>
 </resources>
