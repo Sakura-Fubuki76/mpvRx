@@ -16,10 +16,13 @@ data class AnimeSubject(
   val artworkFetchedAt: Long = 0,
   val artworkCover: String = "", val artworkBackdrop: String = "", val artworkSchemaVersion: Int = 0,
   val artworkPoster: String = "",
+  val artworkBinding: AnimeArtworkBinding? = null,
+  val manualArtworkCover: String? = null, val manualArtworkPoster: String? = null, val manualArtworkLogo: String? = null,
 ) {
+  val displayLogo: String get() = manualArtworkLogo ?: titleLogo
   val title: String get() = chineseName.ifBlank { name }
-  val detailCover: String get() = artworkCover.ifBlank { cover }.ifBlank { artworkBackdrop }
-  val libraryCover: String get() = artworkPoster.ifBlank { cover }
+  val detailCover: String get() = manualArtworkCover ?: artworkCover.ifBlank { cover }.ifBlank { artworkBackdrop }
+  val libraryCover: String get() = manualArtworkPoster ?: artworkPoster.ifBlank { cover }
 }
 
 @Serializable

@@ -1,5 +1,6 @@
 package app.gyrolet.mpvrx.repository
 
+import app.gyrolet.mpvrx.network.awaitResponse as appAwaitResponse
 import app.gyrolet.mpvrx.database.dao.AnimeDao
 import app.gyrolet.mpvrx.database.entities.*
 import app.gyrolet.mpvrx.domain.cloud.*
@@ -403,24 +404,24 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
           val cached = dao.getSubject(id) ?: return@withLock null
           val item = json.decodeFromString<AnimeSubject>(cached.payload)
           val now = System.currentTimeMillis()
-          val ttl = if (item.titleLogo.isNotBlank()) 30L * 24 * 60 * 60_000 else 24 * 60 * 60_000L
-          if (item.artworkSchemaVersion == 2 && now - item.artworkFetchedAt < ttl) return@withLock null
+          val ttl = if (item.artworkBinding != null) 30L * 24 * 60 * 60_000 else 24 * 60 * 60_000L
+          if (item.artworkSchemaVersion == 4 && now - item.artworkFetchedAt < ttl) return@withLock null
           val attempt = id to credential.hashCode()
           if (now - (artworkAttempts[attempt] ?: 0) < 5 * 60_000L) return@withLock null
           artworkAttempts[attempt] = now
           item
         } ?: return@launch
         try {
-          val result = artwork.fetch(item, credential)
+          val result = artwork.fetch(item, credential, ::artworkRelatedSubjects)
           lock.withLock {
             val cached = dao.getSubject(id) ?: return@withLock
             val latest = json.decodeFromString<AnimeSubject>(cached.payload)
             val enriched = latest.copy(titleLogo = result?.logo.orEmpty(),
               tmdbId = result?.id ?: 0, artworkFetchedAt = System.currentTimeMillis(),
               artworkCover = result?.cover.orEmpty(), artworkBackdrop = result?.backdrop.orEmpty(),
-              artworkPoster = result?.poster.orEmpty(), artworkSchemaVersion = 2)
+              artworkPoster = result?.poster.orEmpty(), artworkBinding = result?.binding, artworkSchemaVersion = 4)
             dao.putSubject(cached.copy(payload = json.encodeToString(AnimeSubject.serializer(), enriched)))
-            CloudTrace.event("anime.artwork", 0, id.toString(), "tmdb=${enriched.tmdbId} logo=${enriched.titleLogo.isNotBlank()}")
+            CloudTrace.event("anime.artwork", 0, id.toString(), "tmdb=${enriched.tmdbId} scope=${enriched.artworkBinding?.scope} season=${enriched.artworkBinding?.season} episodes=${enriched.artworkBinding?.episodes?.size ?: 0} logo=${enriched.titleLogo.isNotBlank()}")
           }
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (error: Exception) { CloudTrace.event("anime.artwork.failed", 0, id.toString(), "error=${error.javaClass.simpleName}") }
@@ -430,6 +431,99 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       job.invokeOnCompletion { artworkJobs.remove(id, job) }
       job.start()
     } else job.cancel()
+  }
+
+  private val artworkRelations = java.util.Collections.synchronizedMap(
+    object : LinkedHashMap<Long, List<AnimeSubject>>(128, .75f, true) {
+      override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, List<AnimeSubject>>?): Boolean = size > 128
+    })
+
+  /** Artwork relations use cancellable requests outside the metadata scrape request mutex. */
+  private suspend fun artworkJson(path: String): JsonElement {
+    for (attempt in 0..1) {
+      val request = Request.Builder().url("https://api.bgm.tv$path")
+        .header("User-Agent", "Sakura-Fubuki76/mpvRx (https://github.com/Sakura-Fubuki76/mpvRx)").build()
+      http.newCall(request).appAwaitResponse().use { response ->
+        if (response.code == 429 && attempt == 0) {
+          delay((response.header("Retry-After")?.toLongOrNull() ?: 30).coerceIn(1, 60) * 1000)
+        } else {
+          check(response.isSuccessful) { "Bangumi artwork HTTP ${response.code}" }
+          return json.parseToJsonElement(response.body?.string() ?: error("Empty response"))
+        }
+      }
+    }
+    error("Bangumi artwork rate limited")
+  }
+
+  private suspend fun artworkRelatedSubjects(parentId: Long): List<AnimeSubject> {
+    artworkRelations[parentId]?.let { return it }
+    val result = artworkJson("/v0/subjects/$parentId/subjects").jsonArray.map { it.jsonObject }
+      .filter { it.long("type") == 2L && it.string("relation") in listOf("前传", "续集", "主线故事", "母系列", "全集", "相同世界观") }
+      .distinctBy { it.long("id") }.take(12).map { row ->
+        val relatedId = row.long("id")
+        dao.getSubject(relatedId)?.let { json.decodeFromString<AnimeSubject>(it.payload) }
+          ?: candidateCores[relatedId] ?: decodeSubject(artworkJson("/v0/subjects/$relatedId").jsonObject).also { candidateCores[relatedId] = it }
+      }
+    artworkRelations[parentId] = result
+    return result
+  }
+
+  suspend fun searchArtwork(query: String, kind: AnimeArtworkQueryKind, target: AnimeArtworkTarget, tmdbType: String = "tv"): AnimeArtworkSearchPage {
+    val logo = target == AnimeArtworkTarget.LOGO
+    val hits = mutableListOf<AnimeArtworkHit>()
+    val failed = mutableListOf<String>()
+    val credential = preferences.tmdbArtworkToken.get().trim().ifBlank { preferences.tmdbArtworkApiKey.get().trim() }
+    when (kind) {
+      AnimeArtworkQueryKind.NAME -> {
+        if (!logo) try {
+          val found = search(query).toMutableList()
+          if (query.any { it.isLetter() } && query.none { Character.UnicodeScript.of(it.code) in listOf(Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA) } && matchAnimeSubject(query, found) == null) {
+            try { for (native in titleResolver.nativeQueries(query).take(3)) found += search(native) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { /* Keep the primary Bangumi results when the optional title bridge is unavailable. */ }
+          }
+          hits += found.distinctBy { it.id }.filter { it.cover.isNotBlank() }.map { AnimeArtworkHit("Bangumi", it.id, "subject", "${it.title} · #${it.id}", it.cover) }
+        } catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { failed += "Bangumi" }
+        if (credential.isNotBlank()) try { hits += artwork.searchImages(query, credential) }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (_: Exception) { failed += "TMDB" }
+      }
+      AnimeArtworkQueryKind.BANGUMI_ID -> try {
+        val item = subject(query.toLong().also { require(it > 0) })
+        if (!logo) hits += AnimeArtworkHit("Bangumi", item.id, "subject", "${item.title} · #${item.id}", item.cover)
+        else if (credential.isNotBlank()) {
+          val binding = item.artworkBinding ?: artwork.fetch(item, credential, ::artworkRelatedSubjects)?.binding
+          binding?.let { hits += AnimeArtworkHit("TMDB", it.id, it.type, item.title, "") }
+        }
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (_: Exception) { failed += "Bangumi" }
+      AnimeArtworkQueryKind.TMDB_ID -> if (credential.isNotBlank()) try {
+        hits += artwork.lookupImages(query.toLong().also { require(it > 0) }, tmdbType, credential)
+      } catch (cancelled: CancellationException) { throw cancelled }
+      catch (_: Exception) { failed += "TMDB" }
+    }
+    return AnimeArtworkSearchPage(hits, credential.isNotBlank(), failed)
+  }
+
+  suspend fun artworkChoices(hit: AnimeArtworkHit, target: AnimeArtworkTarget): List<AnimeArtworkChoice> {
+    if (hit.provider == "Bangumi") return listOf(AnimeArtworkChoice(hit.preview, hit.preview, hit.title))
+    val credential = preferences.tmdbArtworkToken.get().trim().ifBlank { preferences.tmdbArtworkApiKey.get().trim() }
+    check(credential.isNotBlank()) { "TMDB credential unavailable" }
+    return artwork.imageChoices(hit, credential, target)
+  }
+
+  suspend fun setArtwork(id: Long, url: String?, target: AnimeArtworkTarget) {
+    subjectLocks.getOrPut(id) { Mutex() }.withLock {
+      val cached = dao.getSubject(id) ?: error("Anime subject unavailable")
+      val latest = json.decodeFromString<AnimeSubject>(cached.payload)
+      val updated = when (target) {
+        AnimeArtworkTarget.LOGO -> latest.copy(manualArtworkLogo = url)
+        AnimeArtworkTarget.DETAIL_POSTER -> latest.copy(manualArtworkCover = url)
+        AnimeArtworkTarget.LIBRARY_POSTER -> latest.copy(manualArtworkPoster = url)
+      }
+      dao.putSubject(cached.copy(payload = json.encodeToString(AnimeSubject.serializer(), updated)))
+    }
   }
 
   private suspend fun ensureCredits(id: Long) = withContext(Dispatchers.IO) {
@@ -472,7 +566,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       val result = item.copy(episodes = episodes, cast = previous?.cast.orEmpty(), staff = previous?.staff.orEmpty(), creditsFetchedAt = previous?.creditsFetchedAt ?: 0, episodeSchemaVersion = 1,
         titleLogo = previous?.titleLogo.orEmpty(), tmdbId = previous?.tmdbId ?: 0, artworkFetchedAt = previous?.artworkFetchedAt ?: 0,
         artworkCover = previous?.artworkCover.orEmpty(), artworkBackdrop = previous?.artworkBackdrop.orEmpty(),
-        artworkPoster = previous?.artworkPoster.orEmpty(), artworkSchemaVersion = previous?.artworkSchemaVersion ?: 0)
+        artworkPoster = previous?.artworkPoster.orEmpty(), artworkSchemaVersion = previous?.artworkSchemaVersion ?: 0,
+        artworkBinding = previous?.artworkBinding, manualArtworkCover = previous?.manualArtworkCover, manualArtworkPoster = previous?.manualArtworkPoster, manualArtworkLogo = previous?.manualArtworkLogo)
       dao.putSubject(AnimeSubjectEntity(id, json.encodeToString(AnimeSubject.serializer(), result), System.currentTimeMillis()))
       result
     } catch (cancelled: CancellationException) { throw cancelled }
