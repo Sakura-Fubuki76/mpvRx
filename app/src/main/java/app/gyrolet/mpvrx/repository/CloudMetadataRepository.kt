@@ -65,7 +65,7 @@ class CloudMetadataRepository(
     if (connection.protocol !in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) return
     val revision = "${connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode()}|$includeThumbnails|$strategy"
     val indexKey = "completeTree.v2.${connection.id}"
-    val indexIdentity = listOf(connection.protocol, connection.host, connection.port, connection.useHttps, connection.path, connection.username).hashCode().toString()
+    val indexIdentity = app.gyrolet.mpvrx.domain.cloud.cloudIndexIdentity(connection)
     val revalidateTree = indexVersions.getString(indexKey, null) != indexIdentity
     val previous = storageScans[connection.id]
     if (!force && previous?.revision == revision && (previous.job.isActive ||
