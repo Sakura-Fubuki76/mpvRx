@@ -54,6 +54,10 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
 
   private val decodedSubjects = java.util.concurrent.ConcurrentHashMap<Long, Pair<String, AnimeSubject>>()
   private val libraries = java.util.concurrent.ConcurrentHashMap<Pair<Long, String>, StateFlow<AnimeLibrarySnapshot>>()
+  private val playbackSnapshots = java.util.concurrent.ConcurrentHashMap<Pair<Long, String>, StateFlow<Map<String, PlaybackStateEntity>>>()
+  internal fun observePlayback(id: Long, path: String, library: StateFlow<AnimeLibrarySnapshot>,
+    playbackDao: app.gyrolet.mpvrx.database.dao.PlaybackStateDao): StateFlow<Map<String, PlaybackStateEntity>> =
+    playbackSnapshots.getOrPut(id to path) { animePlaybackSnapshot(scope, library, playbackDao::observeVideoStates) }
   fun observeLibrary(id: Long, path: String, source: Flow<List<NetworkFile>>): StateFlow<AnimeLibrarySnapshot> = libraries.getOrPut(id to path) {
     var structureKey: List<Pair<String, String>>? = null
     var structure = emptyList<AnimeVideoGroup>()

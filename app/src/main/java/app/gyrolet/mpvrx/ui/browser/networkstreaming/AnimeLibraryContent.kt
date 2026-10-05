@@ -66,9 +66,10 @@ internal fun AnimeLibraryContent(
   val sortOrder by preferences.animeSortOrder.collectAsState()
   val cloud = koinInject<CloudMetadataRepository>()
   val anime = koinInject<AnimeRepository>()
-  val snapshot by remember(connection.id, currentPath) {
+  val library = remember(connection.id, currentPath) {
     anime.observeLibrary(connection.id, currentPath, cloud.observeLibraryData(connection.id, currentPath, videosOnly = true))
-  }.collectAsState()
+  }
+  val snapshot by library.collectAsState()
   LaunchedEffect(snapshot.loaded) {
     if (snapshot.loaded) CloudTrace.event("anime.library.ready", connection.id, currentPath, "videos=${snapshot.files.size} groups=${snapshot.groups.size}")
   }
@@ -86,16 +87,9 @@ internal fun AnimeLibraryContent(
   }
   val matchProgress by remember(connection.id) { anime.observeProgress(connection.id) }.collectAsState()
   val playbackDao = koinInject<app.gyrolet.mpvrx.database.MpvRxDatabase>().videoDataDao()
-  val identities = remember(snapshot.playbackIdentities, libraryGroups, detailKey) {
-    if (detailKey == null) snapshot.playbackIdentities.values.toList()
-    else libraryGroups.values.firstOrNull { it.key == detailKey || detailKey in it.sourceKeys }?.files.orEmpty().mapNotNull { snapshot.playbackIdentities[it.path] }
-  }
-  val playback by remember(identities) {
-    if (identities.isEmpty()) kotlinx.coroutines.flow.flowOf(emptyMap<String, app.gyrolet.mpvrx.database.entities.PlaybackStateEntity>())
-    else kotlinx.coroutines.flow.combine(identities.chunked(400).map { playbackDao.observeVideoStates(it) }) { rows ->
-      rows.flatMap { it }.associateBy { it.mediaTitle }
-    }
-  }.collectAsState(emptyMap())
+  val playback by remember(connection.id, currentPath) {
+    anime.observePlayback(connection.id, currentPath, library, playbackDao)
+  }.collectAsState()
   val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
   val cloudMetadata = koinInject<app.gyrolet.mpvrx.repository.CloudMetadataRepository>()
   val showVideoThumbnails by fields.showVideoThumbnails.collectAsState()
@@ -129,12 +123,15 @@ internal fun AnimeLibraryContent(
       })
     }
   }
-  val watchedCounts by produceState(initialValue = emptyMap<String, Pair<Int, Int>>(), snapshot, playback) {
-    value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-      libraryGroups.mapValues { (_, group) ->
-        val episodes = group.files.filterNot(::isAnimeExtraVideo)
-        episodes.count { playback[snapshot.playbackIdentities[it.path]]?.hasBeenWatched == true } to episodes.size
-      }
+  // Structure work is independent of artwork/metadata updates. Never render an empty
+  // asynchronous count map when this composition is recreated after a details page.
+  val episodeIdentities = remember(libraryGroups, snapshot.playbackIdentities) {
+    libraryGroups.mapValues { (_, group) -> group.files.filterNot(::isAnimeExtraVideo)
+      .map { snapshot.playbackIdentities[it.path] } }
+  }
+  val watchedCounts = remember(episodeIdentities, playback) {
+    episodeIdentities.mapValues { (_, identities) ->
+      identities.count { playback[it]?.hasBeenWatched == true } to identities.size
     }
   }
   val retainedGridState = libraryGridState ?: rememberLazyGridState()
