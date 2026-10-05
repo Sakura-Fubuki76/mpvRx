@@ -70,7 +70,7 @@ data class AnimeDetailsScreen(
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
       // A stationary layer reuses the cover cache; scrolling never recomputes a bitmap blur.
       if (showPoster && !cover.isNullOrBlank()) {
-        RemoteImage(cover, null, Modifier.matchParentSize().scale(1.3f).blur(80.dp), ContentScale.Crop)
+        RemoteImage(cover, null, Modifier.matchParentSize().scale(1.45f).blur(120.dp), ContentScale.Crop)
         val surface = MaterialTheme.colorScheme.surface
         val dark = surface.luminance() < .5f
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(
