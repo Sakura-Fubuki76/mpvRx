@@ -12,6 +12,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -164,7 +168,7 @@ internal fun AnimeLibraryContent(
       val subject = catalog.subjects[binding?.subjectId]
       val fallback = libraryGroups[path]?.query.orEmpty()
       val (watched, episodeCount) = watchedCounts[path] ?: (0 to 0)
-      Column {
+      Column(horizontalAlignment = if (centerTitles) Alignment.CenterHorizontally else Alignment.Start) {
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
             if (showPoster && subject?.cover?.isNotBlank() == true) {
@@ -175,15 +179,31 @@ internal fun AnimeLibraryContent(
             Box(Modifier.fillMaxWidth().height(70.dp).align(Alignment.BottomCenter)
               .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .75f)))))
             if (subject != null && subject.score > 0) {
-              Surface(Modifier.align(Alignment.TopEnd).padding(10.dp), color = Color.Black.copy(alpha = .65f), shape = RoundedCornerShape(10.dp)) {
-                Text(String.format(java.util.Locale.ROOT, "%.1f", subject.score), Modifier.padding(8.dp, 4.dp), color = Color.White)
+              Surface(Modifier.align(Alignment.TopEnd).padding(10.dp), color = Color.Black.copy(alpha = .55f), shape = RoundedCornerShape(10.dp)) {
+                Text(String.format(java.util.Locale.ROOT, "%.1f", subject.score), Modifier.padding(8.dp, 5.dp), color = Color.White,
+                  style = MaterialTheme.typography.labelLarge)
               }
             }
-            if (showCount) Text(stringResource(R.string.anime_available_count, files.size), Modifier.align(Alignment.BottomStart).padding(12.dp),
-              color = Color.White, style = MaterialTheme.typography.labelMedium)
+            Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (showCount) Surface(color = Color.Black.copy(alpha = .55f), shape = RoundedCornerShape(10.dp)) {
+                  Text(stringResource(R.string.anime_available_count, files.size), Modifier.padding(8.dp, 5.dp),
+                    color = Color.White, style = MaterialTheme.typography.labelMedium)
+                }
+                if (showProgress && watched > 0) Surface(color = Color.Black.copy(alpha = .55f), shape = RoundedCornerShape(10.dp)) {
+                  Text("$watched / $episodeCount", Modifier.padding(8.dp, 5.dp), color = Color.White,
+                    style = MaterialTheme.typography.labelMedium)
+                }
+              }
+              if (showProgress && watched > 0) LinearProgressIndicator(
+                progress = { (watched.toFloat() / episodeCount.coerceAtLeast(1)).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(3.dp), color = Color.White,
+                trackColor = Color.White.copy(alpha = .28f), gapSize = 0.dp, drawStopIndicator = {},
+              )
+            }
           }
         }
-        Text(subject?.title ?: fallback, Modifier.fillMaxWidth().padding(top = 8.dp), style = MaterialTheme.typography.titleSmall,
+        Text(subject?.title ?: fallback, Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall,
           maxLines = if (fullName) Int.MAX_VALUE else 2, textAlign = if (centerTitles) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start, overflow = TextOverflow.Ellipsis)
         val matchLabel = when {
           subject != null -> subject.date.take(4)
@@ -204,7 +224,6 @@ internal fun AnimeLibraryContent(
           }
         }
         if (totals.isNotEmpty()) Text(totals.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
-        if (showProgress && watched > 0) LinearProgressIndicator(progress = { watched.toFloat() / episodeCount.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
       }
     }
     if (visible.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
@@ -251,10 +270,14 @@ internal fun AnimeLibraryContent(
       LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 40.dp)) {
         item {
           Column {
-            if (showPoster && subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(MaterialTheme.colorScheme.surfaceContainer)) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
-              Box(Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter).background(
-                Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface.copy(alpha = .84f)))))
+            if (showPoster && subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio)) {
+              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                  drawContent()
+                  drawRect(Brush.verticalGradient(0f to Color.White, .55f to Color.White, 1f to Color.Transparent),
+                    blendMode = BlendMode.DstIn)
+                }, ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
             }
             Column(Modifier.padding(24.dp)) {
               Text(title, style = MaterialTheme.typography.headlineMedium)
@@ -306,7 +329,7 @@ internal fun AnimeLibraryContent(
             val episodeTitle = episode?.title?.takeIf { it.isNotBlank() } ?: subject?.takeIf { episode != null && it.episodes.count { row -> row.type == episode.type } == 1 }?.title
             val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
             NetworkVideoCard(file, connection, modifier = Modifier.padding(horizontal = 16.dp),
-              titleOverride = episodeTitle, episodeLabel = episodeLabel,
+              titleOverride = episodeTitle, episodeLabel = episodeLabel.takeIf { episode != null || section.isEmpty() },
               onClick = { onPlay(file, sectionFiles) })
           }
         }
