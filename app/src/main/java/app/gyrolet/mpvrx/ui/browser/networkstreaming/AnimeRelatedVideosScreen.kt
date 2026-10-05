@@ -67,7 +67,9 @@ data class AnimeRelatedVideosScreen(val credit: AnimeCreditSelection) : Screen {
               val binding = catalog.folders[group.key] ?: return@mapNotNull null
               val subject = catalog.subjects[binding.subjectId] ?: return@mapNotNull null
               if (subject.id !in relatedIds && !animeCreditMatches(subject, credit)) return@mapNotNull null
-              RelatedAnimeVideos(connection, group, subject, binding.episodeOffset)
+              val mainFiles = animeRelatedMainVideos(group, subject)
+              if (mainFiles.isEmpty()) return@mapNotNull null
+              RelatedAnimeVideos(connection, group.copy(files = mainFiles), subject, binding.episodeOffset)
             }, catalog.loaded && snapshot.loaded)
           }
         }

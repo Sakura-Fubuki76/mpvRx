@@ -16,20 +16,20 @@ class AnimeCreditRelationsTest {
     var calls = 0
     val cache = AnimeCreditRelations(file) { path ->
       calls++
-      assertEquals("/v0/persons/22/characters", path)
-      Json.parseToJsonElement("""[{"subject_id":100,"subject_type":2}]""")
+      Json.parseToJsonElement(if (path.endsWith("characters")) """[{"subject_id":100,"subject_type":2}]""" else """[{"id":200,"type":2}]""")
     }
-    assertEquals(setOf(100L), cache.resolve(actor))
+    assertEquals(setOf(100L, 200L), cache.resolve(actor))
     val reopened = AnimeCreditRelations(file) { error("Offline") }
-    assertEquals(setOf(100L), reopened.resolve(actor))
+    assertEquals(setOf(100L, 200L), reopened.resolve(actor))
+    assertEquals(setOf(100L, 200L), reopened.resolve(actor.copy(kind = AnimeCreditKind.STAFF)))
     try { reopened.resolve(actor, force = true); fail("Should report refresh failure") }
     catch (_: IllegalStateException) { }
-    assertEquals(setOf(100L), reopened.cached(actor))
-    assertEquals(1, calls)
+    assertEquals(setOf(100L, 200L), reopened.cached(actor))
+    assertEquals(2, calls)
   }
   @Test fun malformedCacheIsReplacedAndKindsUseSeparateKeys() = runBlocking {
     val file = temporary.newFile("relations.json")
-    file.writeText("""{"VOICE:22":{}}""")
+    file.writeText("""{"PERSON:22":{}}""")
     val paths = mutableListOf<String>()
     val cache = AnimeCreditRelations(file) { path ->
       paths += path
@@ -37,8 +37,9 @@ class AnimeCreditRelationsTest {
         else """[{"id":200,"type":2}]""")
     }
     assertTrue(cache.cached(actor).isEmpty())
-    assertEquals(setOf(100L), cache.resolve(actor))
-    assertEquals(setOf(200L), cache.resolve(actor.copy(kind = AnimeCreditKind.STAFF)))
-    assertEquals(listOf("/v0/persons/22/characters", "/v0/persons/22/subjects"), paths)
+    assertEquals(setOf(100L, 200L), cache.resolve(actor))
+    assertEquals(setOf(100L, 200L), cache.resolve(actor.copy(kind = AnimeCreditKind.STAFF)))
+    assertEquals(setOf(200L), cache.resolve(actor.copy(kind = AnimeCreditKind.CHARACTER)))
+    assertEquals(listOf("/v0/persons/22/characters", "/v0/persons/22/subjects", "/v0/characters/22/subjects"), paths)
   }
 }
