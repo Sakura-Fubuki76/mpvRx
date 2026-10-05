@@ -2957,4 +2957,8 @@
   <string name="anime_no_match">未找到可靠匹配</string>
   <string name="anime_match_failed">匹配失败，稍后重试</string>
   <string name="anime_matched">已匹配</string>
+  <string name="anime_related_videos">动画媒体库中的关联视频</string>
+  <string name="anime_related_empty">当前动画媒体库中没有关联视频</string>
+  <string name="anime_related_retry">关联作品更新失败，仍可浏览已缓存的结果。</string>
+  <string name="anime_related_refresh">重试</string>
 </resources>

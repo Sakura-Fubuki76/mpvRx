@@ -40,6 +40,9 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   private var aliases: Map<String, Set<Long>>? = null
   private val requests = Mutex()
   private val associations = Mutex()
+  private val creditRelations = AnimeCreditRelations(java.io.File(context.filesDir, "anime/credit-relations.json")) { requestJson(it) }
+  suspend fun cachedCreditSubjects(credit: AnimeCreditSelection): Set<Long> = creditRelations.cached(credit)
+  suspend fun creditSubjects(credit: AnimeCreditSelection, force: Boolean = false): Set<Long> = creditRelations.resolve(credit, force)
 
   private val decodedSubjects = java.util.concurrent.ConcurrentHashMap<Long, Pair<String, AnimeSubject>>()
   private val libraries = java.util.concurrent.ConcurrentHashMap<Pair<Long, String>, StateFlow<AnimeLibrarySnapshot>>()

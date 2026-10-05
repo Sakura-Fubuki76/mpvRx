@@ -19,6 +19,7 @@ These notes are written in plain English and focus on what changed for real use.
 - Improved verified title aliases, retried unmatched works on pull-to-refresh, and mapped novel adaptations, live events, compound TV chapters and numbered film collections to their actual Bangumi subjects.
 - Combine folders belonging to the same Bangumi work while retaining each file's episode numbering, including chapter recap episodes.
 - Show separate voice actor, character artwork and production staff sections, with stable card heights while scrolling.
+- Browse and play related videos across Anime libraries by tapping a voice actor, character or staff card; persist provider relations for reuse.
 
 ## 2.7.3 - WebDAV, Cloud Metadata, and Restore-only Anime4K
 

@@ -3000,4 +3000,8 @@
   <string name="anime_no_match">No reliable match found</string>
   <string name="anime_match_failed">Matching failed; retry later</string>
   <string name="anime_matched">Matched</string>
+  <string name="anime_related_videos">Related videos in your anime libraries</string>
+  <string name="anime_related_empty">No related videos found in your anime libraries</string>
+  <string name="anime_related_retry">Could not update related works. Cached results are still available.</string>
+  <string name="anime_related_refresh">Retry</string>
 </resources>
