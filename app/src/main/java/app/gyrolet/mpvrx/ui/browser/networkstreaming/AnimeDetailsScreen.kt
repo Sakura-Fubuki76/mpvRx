@@ -66,6 +66,7 @@ data class AnimeDetailsScreen(
     }
     val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
     var editMatch by remember { mutableStateOf(false) }
+    var editArtwork by remember(subjectId) { mutableStateOf<Boolean?>(null) }
     val useCoverColors by koinInject<AppearancePreferences>().animeCoverColors.collectAsState()
     val subject = catalog.subjects[catalog.folders[groupKey]?.subjectId]
     val cover = subject?.detailCover
@@ -87,12 +88,14 @@ data class AnimeDetailsScreen(
           onPlay = { file, queue -> model.playAnimeVideo(file, queue) },
           onBrowse = { folder -> backstack.navigateTo(NetworkBrowserScreen(connectionId, connectionName, folder.path, showAnimeLibrary = false)) },
           onRefresh = { model.loadFiles(forceStorageScan = true) },
-          detailKey = groupKey, onEditMatch = { editMatch = true })
+          detailKey = groupKey, onEditMatch = { editMatch = true },
+          onEditPoster = { editArtwork = false }, onEditLogo = { editArtwork = true })
       }
     IconButton(onClick = { backstack.popSafely() }, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(8.dp).background(Color.Black.copy(alpha = .45f), CircleShape)) {
       Icon(Icons.RoundedFilled.ArrowBack, contentDescription = null, tint = Color.White)
     }
     }
+    editArtwork?.let { logo -> subject?.let { AnimeArtworkDialog(it, logo, repository) { editArtwork = null } } }
     if (editMatch) AnimeMatchDialog(connectionId, groupKey, initialTitle,
       catalog.folders[groupKey]?.episodeOffset ?: 0, repository) { editMatch = false }
     }

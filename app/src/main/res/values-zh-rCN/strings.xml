@@ -2974,4 +2974,19 @@
     <string name="tmdb_artwork_saved">已配置</string>
     <string name="tmdb_artwork_summary">媒体库使用 TMDB 带标题海报，详情使用标题 Logo 和高清无语言海报。头图依次回退到 Bangumi 封面、TMDB 无语言背景图。优先使用 Token。</string>
     <string name="tmdb_artwork_attribution">本产品使用 TMDB API，但未获得 TMDB 的认可或认证。</string>
+    <string name="anime_poster_match">海报匹配</string>
+    <string name="anime_logo_match">Logo 匹配</string>
+    <string name="anime_artwork_error">部分图片加载或保存失败，请重试。</string>
+    <string name="anime_artwork_credentials">请在设置 → 网络配置 TMDB 凭据，以搜索 TMDB 图片。</string>
+    <string name="anime_artwork_back">返回搜索结果</string>
+    <string name="anime_artwork_none">暂无可用图片或结果</string>
+    <string name="anime_artwork_auto">恢复自动选择</string>
+    <string name="anime_artwork_text_title">使用文字标题</string>
+    <string name="anime_artwork_detail">详情页海报</string>
+    <string name="anime_artwork_library">首页海报</string>
+    <string name="anime_artwork_name">作品名（中文、日文、罗马音）</string>
+    <string name="anime_artwork_bangumi_id">Bangumi 作品 ID</string>
+    <string name="anime_artwork_tmdb_id">TMDB 作品 ID</string>
+    <string name="anime_artwork_tv">剧集</string>
+    <string name="anime_artwork_movie">电影</string>
 </resources>

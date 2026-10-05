@@ -3017,4 +3017,19 @@
     <string name="tmdb_artwork_saved">Configured</string>
     <string name="tmdb_artwork_summary">Use TMDB posters in the anime library, and title logos with high-resolution language-neutral posters in details. Detail covers fall back to Bangumi, then language-neutral backdrops. Token takes priority.</string>
     <string name="tmdb_artwork_attribution">This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
+    <string name="anime_poster_match">Poster matching</string>
+    <string name="anime_logo_match">Logo matching</string>
+    <string name="anime_artwork_error">Could not load or save some artwork. Please retry.</string>
+    <string name="anime_artwork_credentials">Configure TMDB credentials in Settings → Network to search TMDB images.</string>
+    <string name="anime_artwork_back">Back to search results</string>
+    <string name="anime_artwork_none">No available images or results</string>
+    <string name="anime_artwork_auto">Restore automatic selection</string>
+    <string name="anime_artwork_text_title">Use text title</string>
+    <string name="anime_artwork_detail">Detail poster</string>
+    <string name="anime_artwork_library">Library poster</string>
+    <string name="anime_artwork_name">Title (Chinese, Japanese or Romaji)</string>
+    <string name="anime_artwork_bangumi_id">Bangumi subject ID</string>
+    <string name="anime_artwork_tmdb_id">TMDB title ID</string>
+    <string name="anime_artwork_tv">TV series</string>
+    <string name="anime_artwork_movie">Movie</string>
 </resources>

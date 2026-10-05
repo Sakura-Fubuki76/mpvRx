@@ -48,6 +48,8 @@ internal fun AnimeLibraryContent(
   isRefreshing: Boolean = false,
   libraryGridState: LazyGridState? = null,
   onEditMatch: () -> Unit = {},
+  onEditPoster: () -> Unit = {},
+  onEditLogo: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
   val preferences = koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
@@ -288,7 +290,7 @@ internal fun AnimeLibraryContent(
                   drawRect(Brush.verticalGradient(0f to Color.White, .45f to Color.White, .95f to Color.Transparent),
                     blendMode = BlendMode.DstIn)
                 }, ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
-              AnimeDetailsTitle(title, subject?.titleLogo.orEmpty(), showPoster,
+              AnimeDetailsTitle(title, subject?.displayLogo.orEmpty(), showPoster,
                 Modifier.align(Alignment.BottomCenter).padding(horizontal = 24.dp, vertical = 16.dp))
             }
             Column(Modifier.padding(24.dp)) {
@@ -315,12 +317,16 @@ internal fun AnimeLibraryContent(
               Text(stringResource(if (partial) R.string.anime_continue else R.string.anime_play))
             }
           }
-          Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onClick = {
               val directory = libraryGroups[path]?.directory ?: currentPath
               onBrowse(NetworkFile(directory.substringAfterLast('/'), directory, 0, true))
             }) { Text(stringResource(R.string.anime_browse_files)) }
             TextButton(onClick = onEditMatch) { Text(stringResource(R.string.anime_match_edit)) }
+            if (subject != null) {
+              TextButton(onClick = onEditPoster) { Text(stringResource(R.string.anime_poster_match)) }
+              TextButton(onClick = onEditLogo) { Text(stringResource(R.string.anime_logo_match)) }
+            }
           }
           subject?.summary?.takeIf { it.isNotBlank() }?.let {
             Text(it, Modifier.padding(24.dp, 12.dp), style = MaterialTheme.typography.bodyMedium)
