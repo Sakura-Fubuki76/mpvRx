@@ -80,25 +80,26 @@ fun NetworkVideoCard(
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
+  val fields = browserPreferences.animeFields.takeIf { connection.isAnime }
   val thumbnailRepository = koinInject<ThumbnailRepository>()
 
-  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
+  val unlimitedNameLines by (fields?.unlimitedNameLines ?: appearancePreferences.unlimitedNameLines).collectAsState()
   val newLabelDays by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val watchedThreshold by browserPreferences.watchedThreshold.collectAsState()
-  val showSizeChip by browserPreferences.showSizeChip.collectAsState()
-  val showDateChip by browserPreferences.showDateChip.collectAsState()
-  val showDuration by browserPreferences.showDurationField.collectAsState()
-  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
-  val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
-  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
+  val showSizeChip by (fields?.showSizeChip ?: browserPreferences.showSizeChip).collectAsState()
+  val showDateChip by (fields?.showDateChip ?: browserPreferences.showDateChip).collectAsState()
+  val showDuration by (fields?.showDurationField ?: browserPreferences.showDurationField).collectAsState()
+  val showExtensionField by (fields?.showExtensionField ?: browserPreferences.showExtensionField).collectAsState()
+  val showSubtitleIndicator by (fields?.showSubtitleIndicator ?: browserPreferences.showSubtitleIndicator).collectAsState()
+  val showVideoThumbnails by (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).collectAsState()
   val showNetworkThumbs by appearancePreferences.showNetworkThumbnails.collectAsState()
-  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val centerGridTitles by (fields?.centerGridTitles ?: browserPreferences.centerGridTitles).collectAsState()
 
   val gestures = koinInject<app.gyrolet.mpvrx.preferences.GesturePreferences>()
   val tapThumbnailToSelect by gestures.tapThumbnailToSelect.collectAsState()
   val onThumbnailClick = if (tapThumbnailToSelect && onLongClick != null) onLongClick else onClick
 
-  val displayThumb = showVideoThumbnails && showNetworkThumbs
+  val displayThumb = showVideoThumbnails && (connection.isAnime || showNetworkThumbs)
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
 
   val thumbSizeDp = 160.dp
@@ -210,7 +211,7 @@ fun NetworkVideoCard(
       isSelected = isSelected, onThumbClick = onThumbnailClick, isGridMode = isGridMode,
       progressPercentage = progress, isWatched = playbackInfo.isWatched, isOldAndUnplayed = playbackInfo.isOldAndUnplayed, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
-      externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig().copy(showThumbnails = displayThumb),
+      externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig(fields).copy(showThumbnails = displayThumb),
       showSubtitleIndicator = showSubtitleIndicator, titleOverride = titleOverride)
     return
   }

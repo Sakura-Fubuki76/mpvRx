@@ -98,23 +98,23 @@ data class VideoCardUiConfig(
 
 /** Hoist this once per screen and pass the result to every card rather than collecting per item. */
 @Composable
-fun rememberVideoCardUiConfig(): VideoCardUiConfig {
+fun rememberVideoCardUiConfig(fields: app.gyrolet.mpvrx.preferences.AnimeFieldPreferences? = null): VideoCardUiConfig {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
 
-  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
-  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
-  val showSizeChipPref by browserPreferences.showSizeChip.collectAsState()
-  val showResolutionChipPref by browserPreferences.showResolutionChip.collectAsState()
-  val showFramerateInResolutionConfig by browserPreferences.showFramerateInResolution.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
-  val showProgressBarConfig by browserPreferences.showProgressBar.collectAsState()
-  val showDateChipConfig by browserPreferences.showDateChip.collectAsState()
+  val unlimitedNameLines by (fields?.unlimitedNameLines ?: appearancePreferences.unlimitedNameLines).collectAsState()
+  val showVideoThumbnails by (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).collectAsState()
+  val showSizeChipPref by (fields?.showSizeChip ?: browserPreferences.showSizeChip).collectAsState()
+  val showResolutionChipPref by (fields?.showResolutionChip ?: browserPreferences.showResolutionChip).collectAsState()
+  val showFramerateInResolutionConfig by (fields?.showFramerateInResolution ?: browserPreferences.showFramerateInResolution).collectAsState()
+  val showCodecSupportIndicator by (fields?.showCodecSupportIndicator ?: browserPreferences.showCodecSupportIndicator).collectAsState()
+  val showProgressBarConfig by (fields?.showProgressBar ?: browserPreferences.showProgressBar).collectAsState()
+  val showDateChipConfig by (fields?.showDateChip ?: browserPreferences.showDateChip).collectAsState()
   val showUnplayedOldVideoLabelConfig by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDaysConfig by appearancePreferences.unplayedOldVideoDays.collectAsState()
-  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
-  val showDurationFieldConfig by browserPreferences.showDurationField.collectAsState()
-  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val showExtensionField by (fields?.showExtensionField ?: browserPreferences.showExtensionField).collectAsState()
+  val showDurationFieldConfig by (fields?.showDurationField ?: browserPreferences.showDurationField).collectAsState()
+  val centerGridTitles by (fields?.centerGridTitles ?: browserPreferences.centerGridTitles).collectAsState()
   val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val swipeLeft by browserPreferences.videoSwipeLeft.collectAsState()
   val swipeRight by browserPreferences.videoSwipeRight.collectAsState()

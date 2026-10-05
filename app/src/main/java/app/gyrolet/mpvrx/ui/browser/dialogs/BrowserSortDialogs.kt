@@ -1254,60 +1254,61 @@ fun FileSystemSortDialog(
 @Composable
 internal fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = false, anime: Boolean = false): List<VisibilityToggle> {
   val browserPreferences = koinInject<BrowserPreferences>()
+  val fields = browserPreferences.animeFields.takeIf { anime }
   val appearancePreferences = koinInject<AppearancePreferences>()
-  val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
-  val showTotalVideosChip by browserPreferences.showTotalVideosChip.collectAsState()
-  val showTotalSizeChip by browserPreferences.showTotalSizeChip.collectAsState()
-  val showFolderPath by browserPreferences.showFolderPath.collectAsState()
-  val showSizeChip by browserPreferences.showSizeChip.collectAsState()
-  val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
-  val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
-  val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
-  val showProgressBar by browserPreferences.showProgressBar.collectAsState()
-  val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
-  val showExtensionField by browserPreferences.showExtensionField.collectAsState()
-  val showDurationField by browserPreferences.showDurationField.collectAsState()
-  val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
-  val showTotalDurationChip by browserPreferences.showTotalDurationChip.collectAsState()
-  val showDateChip by browserPreferences.showDateChip.collectAsState()
-  val posterPreference = if (anime) browserPreferences.animeShowPosters else browserPreferences.showFolderThumbnails
+  val showVideoThumbnails by (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).collectAsState()
+  val showTotalVideosChip by (fields?.showTotalVideosChip ?: browserPreferences.showTotalVideosChip).collectAsState()
+  val showTotalSizeChip by (fields?.showTotalSizeChip ?: browserPreferences.showTotalSizeChip).collectAsState()
+  val showFolderPath by (fields?.showFolderPath ?: browserPreferences.showFolderPath).collectAsState()
+  val showSizeChip by (fields?.showSizeChip ?: browserPreferences.showSizeChip).collectAsState()
+  val showResolutionChip by (fields?.showResolutionChip ?: browserPreferences.showResolutionChip).collectAsState()
+  val showFramerateInResolution by (fields?.showFramerateInResolution ?: browserPreferences.showFramerateInResolution).collectAsState()
+  val showCodecSupportIndicator by (fields?.showCodecSupportIndicator ?: browserPreferences.showCodecSupportIndicator).collectAsState()
+  val showProgressBar by (fields?.showProgressBar ?: browserPreferences.showProgressBar).collectAsState()
+  val showSubtitleIndicator by (fields?.showSubtitleIndicator ?: browserPreferences.showSubtitleIndicator).collectAsState()
+  val showExtensionField by (fields?.showExtensionField ?: browserPreferences.showExtensionField).collectAsState()
+  val showDurationField by (fields?.showDurationField ?: browserPreferences.showDurationField).collectAsState()
+  val unlimitedNameLines by (fields?.unlimitedNameLines ?: appearancePreferences.unlimitedNameLines).collectAsState()
+  val showTotalDurationChip by (fields?.showTotalDurationChip ?: browserPreferences.showTotalDurationChip).collectAsState()
+  val showDateChip by (fields?.showDateChip ?: browserPreferences.showDateChip).collectAsState()
+  val posterPreference = if (anime) browserPreferences.animeFields.showFolderThumbnails else browserPreferences.showFolderThumbnails
   val showFolderThumbnails by posterPreference.collectAsState()
-  val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
+  val centerGridTitles by (fields?.centerGridTitles ?: browserPreferences.centerGridTitles).collectAsState()
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
   return buildList {
         add(
           VisibilityToggle(
             label = "Video Thumbnails",
-            checked = showVideoThumbnails && (!cloud || showNetworkThumbnails),
-            onCheckedChange = { browserPreferences.showVideoThumbnails.set(it); if (cloud) appearancePreferences.showNetworkThumbnails.set(it) },
+            checked = showVideoThumbnails && (!cloud || anime || showNetworkThumbnails),
+            onCheckedChange = { (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).set(it); if (cloud && !anime) appearancePreferences.showNetworkThumbnails.set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Full Name",
             checked = unlimitedNameLines,
-            onCheckedChange = { appearancePreferences.unlimitedNameLines.set(it) },
+            onCheckedChange = { (fields?.unlimitedNameLines ?: appearancePreferences.unlimitedNameLines).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Extension",
             checked = showExtensionField,
-            onCheckedChange = { browserPreferences.showExtensionField.set(it) },
+            onCheckedChange = { (fields?.showExtensionField ?: browserPreferences.showExtensionField).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Duration",
             checked = showDurationField,
-            onCheckedChange = { browserPreferences.showDurationField.set(it) },
+            onCheckedChange = { (fields?.showDurationField ?: browserPreferences.showDurationField).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Path",
             checked = showFolderPath,
-            onCheckedChange = { browserPreferences.showFolderPath.set(it) },
+            onCheckedChange = { (fields?.showFolderPath ?: browserPreferences.showFolderPath).set(it) },
             enabled = anime || layoutMode == MediaLayoutMode.LIST,
           ),
         )
@@ -1315,14 +1316,14 @@ internal fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fal
           VisibilityToggle(
             label = "Total Media",
             checked = showTotalVideosChip,
-            onCheckedChange = { browserPreferences.showTotalVideosChip.set(it) },
+            onCheckedChange = { (fields?.showTotalVideosChip ?: browserPreferences.showTotalVideosChip).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Folder Size",
             checked = showTotalSizeChip,
-            onCheckedChange = { browserPreferences.showTotalSizeChip.set(it) },
+            onCheckedChange = { (fields?.showTotalSizeChip ?: browserPreferences.showTotalSizeChip).set(it) },
             enabled = anime || layoutMode == MediaLayoutMode.LIST,
           ),
         )
@@ -1330,49 +1331,49 @@ internal fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fal
           VisibilityToggle(
             label = "Size",
             checked = showSizeChip,
-            onCheckedChange = { browserPreferences.showSizeChip.set(it) },
+            onCheckedChange = { (fields?.showSizeChip ?: browserPreferences.showSizeChip).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Resolution",
             checked = showResolutionChip,
-            onCheckedChange = { browserPreferences.showResolutionChip.set(it) },
+            onCheckedChange = { (fields?.showResolutionChip ?: browserPreferences.showResolutionChip).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Framerate",
             checked = showFramerateInResolution,
-            onCheckedChange = { browserPreferences.showFramerateInResolution.set(it) },
+            onCheckedChange = { (fields?.showFramerateInResolution ?: browserPreferences.showFramerateInResolution).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Codec support",
             checked = showCodecSupportIndicator,
-            onCheckedChange = { browserPreferences.showCodecSupportIndicator.set(it) },
+            onCheckedChange = { (fields?.showCodecSupportIndicator ?: browserPreferences.showCodecSupportIndicator).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Subtitle",
             checked = showSubtitleIndicator,
-            onCheckedChange = { browserPreferences.showSubtitleIndicator.set(it) },
+            onCheckedChange = { (fields?.showSubtitleIndicator ?: browserPreferences.showSubtitleIndicator).set(it) },
           ),
         )
         add(
           VisibilityToggle(
             label = "Progress Bar",
             checked = showProgressBar,
-            onCheckedChange = { browserPreferences.showProgressBar.set(it) },
+            onCheckedChange = { (fields?.showProgressBar ?: browserPreferences.showProgressBar).set(it) },
           ),
         )
-        add(VisibilityToggle("Total Duration", showTotalDurationChip, browserPreferences.showTotalDurationChip::set))
-        add(VisibilityToggle("Date", showDateChip, browserPreferences.showDateChip::set))
+        add(VisibilityToggle("Total Duration", showTotalDurationChip, (fields?.showTotalDurationChip ?: browserPreferences.showTotalDurationChip)::set))
+        add(VisibilityToggle("Date", showDateChip, (fields?.showDateChip ?: browserPreferences.showDateChip)::set))
         if (layoutMode == MediaLayoutMode.GRID) {
           add(VisibilityToggle("Folder Thumbnails", showFolderThumbnails, posterPreference::set))
-          add(VisibilityToggle("Center Titles", centerGridTitles, browserPreferences.centerGridTitles::set))
+          add(VisibilityToggle("Center Titles", centerGridTitles, (fields?.centerGridTitles ?: browserPreferences.centerGridTitles)::set))
         }
       }
 }
