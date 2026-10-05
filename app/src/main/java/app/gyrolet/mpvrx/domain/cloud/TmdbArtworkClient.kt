@@ -6,7 +6,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-internal data class TmdbArtwork(val id: Long, val logo: String, val cover: String, val backdrop: String)
+internal data class TmdbArtwork(val id: Long, val logo: String, val cover: String, val backdrop: String, val poster: String)
 
 internal fun tmdbArtworkNames(subject: AnimeSubject): List<String> =
   (listOf(subject.name, subject.chineseName) + subject.aliases.take(3)).filter { it.isNotBlank() }
@@ -41,12 +41,29 @@ internal fun selectTmdbLogo(rows: List<JsonObject>): String {
 }
 
 internal fun selectTmdbTextlessImage(images: JsonObject, kind: String): String {
-    val path = images[kind]?.jsonArray.orEmpty().map { it.jsonObject }
+    val rows = images[kind]?.jsonArray.orEmpty().map { it.jsonObject }
       .filter { it["iso_639_1"] == JsonNull && it["file_path"]?.jsonPrimitive?.contentOrNull?.startsWith('/') == true }
+    val path = preferClearTmdbImages(rows)
       .sortedWith(compareByDescending<JsonObject> { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }
-        .thenByDescending { it["vote_average"]?.jsonPrimitive?.doubleOrNull ?: 0.0 })
+        .thenByDescending { it["vote_average"]?.jsonPrimitive?.doubleOrNull ?: 0.0 }
+        .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 })
       .firstOrNull()?.get("file_path")?.jsonPrimitive?.contentOrNull
-    return path?.let { "https://image.tmdb.org/t/p/w1280$it" }.orEmpty()
+    return path?.let { "https://image.tmdb.org/t/p/original$it" }.orEmpty()
+}
+
+private fun preferClearTmdbImages(rows: List<JsonObject>): List<JsonObject> =
+  rows.filter { (it["width"]?.jsonPrimitive?.intOrNull ?: 0) >= 1280 }.ifEmpty { rows }
+
+internal fun selectTmdbPoster(images: JsonObject): String {
+  fun languageRank(row: JsonObject) = when (row["iso_639_1"]?.jsonPrimitive?.contentOrNull) {
+    "zh" -> 4; "ja" -> 3; "en" -> 2; null -> 0; else -> 1
+  }
+  val rows = images["posters"]?.jsonArray.orEmpty().map { it.jsonObject }
+    .filter { it["iso_639_1"]?.jsonPrimitive?.contentOrNull != null && it["file_path"]?.jsonPrimitive?.contentOrNull?.startsWith('/') == true }
+  val path = preferClearTmdbImages(rows).sortedWith(compareByDescending<JsonObject>(::languageRank)
+    .thenByDescending { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }
+    .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 }).firstOrNull()?.get("file_path")?.jsonPrimitive?.contentOrNull
+  return path?.let { "https://image.tmdb.org/t/p/w780$it" }.orEmpty()
 }
 
 internal class TmdbArtworkClient(private val http: OkHttpClient) {
@@ -78,6 +95,6 @@ internal class TmdbArtworkClient(private val http: OkHttpClient) {
     val images = request("$type/$id/images", credential, mapOf("include_image_language" to "zh,ja,en,null"))
     val logo = selectTmdbLogo(images["logos"]?.jsonArray.orEmpty().map { it.jsonObject })
     return TmdbArtwork(id, logo.takeIf { it.startsWith('/') }?.let { "https://image.tmdb.org/t/p/w500$it" }.orEmpty(),
-      selectTmdbTextlessImage(images, "posters"), selectTmdbTextlessImage(images, "backdrops"))
+      selectTmdbTextlessImage(images, "posters"), selectTmdbTextlessImage(images, "backdrops"), selectTmdbPoster(images))
   }
 }

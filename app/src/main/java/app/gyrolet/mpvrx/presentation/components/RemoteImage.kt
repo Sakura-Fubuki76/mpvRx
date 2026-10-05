@@ -163,10 +163,12 @@ internal object RemoteImageLoader {
     }
 
     val httpUrl = url.toHttpUrlOrNull() ?: return null
+    // Full-screen TMDB artwork needs more pixels than grid images; keep decoding bounded.
+    val decodeDimension = if (httpUrl.host == "image.tmdb.org" && httpUrl.encodedPath.startsWith("/t/p/original/")) 1536 else MAX_IMAGE_DIMENSION
 
     val cacheDirectory = File(context.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }
     val cacheFile = File(cacheDirectory, hash(url))
-    decodeSampled(cacheFile)?.let { bitmap ->
+    decodeSampled(cacheFile, decodeDimension)?.let { bitmap ->
       synchronized(memoryCache) { memoryCache.put(url, bitmap) }
       return bitmap
     }
@@ -192,7 +194,7 @@ internal object RemoteImageLoader {
         if (!response.isSuccessful) return@use null
         val bytes = response.body.bytes()
         FileOutputStream(cacheFile).use { it.write(bytes) }
-        decodeSampled(cacheFile)?.also { bitmap ->
+        decodeSampled(cacheFile, decodeDimension)?.also { bitmap ->
           synchronized(memoryCache) { memoryCache.put(url, bitmap) }
         }
       }
@@ -226,7 +228,7 @@ internal object RemoteImageLoader {
       }
     }.getOrNull()
 
-  private fun decodeSampled(file: File): Bitmap? {
+  private fun decodeSampled(file: File, maxDimension: Int = MAX_IMAGE_DIMENSION): Bitmap? {
     if (!file.isFile || file.length() <= 0L) return null
     return runCatching {
       val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -234,7 +236,7 @@ internal object RemoteImageLoader {
       if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
       var sampleSize = 1
-      while (maxOf(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= MAX_IMAGE_DIMENSION) {
+      while (maxOf(bounds.outWidth, bounds.outHeight) / (sampleSize * 2) >= maxDimension) {
         sampleSize *= 2
       }
       BitmapFactory.decodeFile(
