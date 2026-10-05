@@ -25,6 +25,7 @@ import app.gyrolet.mpvrx.domain.network.*
 import app.gyrolet.mpvrx.repository.*
 import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.ui.browser.cards.NetworkVideoCard
+import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -113,12 +114,19 @@ internal fun AnimeLibraryContent(
   }
   val retainedGridState = libraryGridState ?: rememberLazyGridState()
   if (detailKey == null && visible.isNotEmpty()) PullToRefreshBox(isRefreshing = isRefreshing, onRefresh = { onRefresh(); anime.schedule(connection.id, allFiles, retryUnmatched = true) }, modifier = modifier.fillMaxSize()) {
+  val featured = visible.firstOrNull { it.key == snapshot.featuredKey }
+    ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }
+    ?: visible.firstOrNull()
+  val scrollLabels = remember(visible, catalog, libraryGroups, featured?.key, sortType) {
+    fun sortItem(key: String): AnimeSortItem {
+      val subject = catalog.subjects[catalog.folders[key]?.subjectId]
+      return AnimeSortItem(key, subject?.title ?: libraryGroups[key]?.query ?: key, subject?.date.orEmpty(), subject?.score ?: 0.0)
+    }
+    animeFastScrollLabels(visible.map { sortItem(it.key) }, featured?.let { sortItem(it.key) }, sortType)
+  }
   LazyVerticalGrid(state = retainedGridState, columns = GridCells.Adaptive(145.dp), modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 96.dp),
     horizontalArrangement = Arrangement.spacedBy(14.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-    val featured = visible.firstOrNull { it.key == snapshot.featuredKey }
-      ?: visible.firstOrNull { catalog.subjects[catalog.folders[it.key]?.subjectId]?.cover?.isNotBlank() == true }
-      ?: visible.firstOrNull()
     if (featured != null) item(key = "anime-featured", span = { GridItemSpan(maxLineSpan) }) {
       val subject = catalog.subjects[catalog.folders[featured.key]?.subjectId]
       val featuredTitle = subject?.title ?: libraryGroups[featured.key]?.query.orEmpty()
@@ -197,6 +205,12 @@ internal fun AnimeLibraryContent(
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
   }
+  if (visible.size >= 20) ExpressiveScrollBar(
+    gridState = retainedGridState,
+    dragLabelProvider = { index -> scrollLabels.getOrNull(index) },
+    dragLabelSize = if (sortType == AnimeSortType.Year) 64.dp else 48.dp,
+    modifier = Modifier.align(Alignment.CenterEnd).padding(top = 8.dp, bottom = 96.dp, end = 4.dp),
+  )
   if (matchProgress.running) Surface(
     modifier = Modifier.align(Alignment.TopCenter).padding(top = if (isRefreshing) 48.dp else 8.dp),
     shape = RoundedCornerShape(16.dp), tonalElevation = 3.dp,

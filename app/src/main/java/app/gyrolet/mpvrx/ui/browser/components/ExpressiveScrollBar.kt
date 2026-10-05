@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -752,7 +753,7 @@ fun ExpressiveScrollBar(
                 val x = indicatorX - dragLabelSizePx - dragLabelGapPx - dragLabelSlidePx
                 val y = handleY + (handleHeightPx / 2f) - (dragLabelSizePx / 2f)
                 IntOffset(x.toInt(), y.toInt())
-              }.size(dragLabelSize)
+              }.wrapContentSize(Alignment.TopStart, unbounded = true).size(dragLabelSize)
               .graphicsLayer {
                 alpha = dragLabelAlpha
                 scaleX = dragLabelScale
@@ -770,6 +771,8 @@ fun ExpressiveScrollBar(
           ) {
             Text(
               text = displayedDragLabel,
+              maxLines = 1,
+              softWrap = false,
               style = MaterialTheme.typography.titleLarge,
               fontWeight = FontWeight.Bold,
             )
