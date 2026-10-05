@@ -2655,15 +2655,8 @@
   <string name="oss_backdrop_description">Размытие и преломление Compose для поверхностей Liquid Glass.</string>
   <string name="oss_telephoto_description">Жесты масштабирования и панорамирования в просмотрщике изображений.</string>
   <string name="oss_androidx_lifecycle_description">Состояние с учётом жизненного цикла и ViewModel для экранов Compose.</string>
-  <string name="oss_anitomy_description">Разбирает имена медиафайлов на названия и сведения об эпизодах.</string>
   <string name="oss_leakcanary_description">Обнаруживает утечки памяти в отладочных сборках.</string>
-  <string name="oss_python_description">Встроенная среда Python для онлайн-извлечения и анализа имён файлов.</string>
   <string name="oss_ytdlp_description">Онлайн-экстрактор мультимедиа для поддерживаемых ссылок.</string>
-  <string name="oss_guessit_description">Извлекает структурированные сведения о медиа из имён файлов.</string>
-  <string name="oss_rebulk_description">Механизм правил для сопоставления имён файлов в GuessIt.</string>
-  <string name="oss_babelfish_description">Преобразование кодов языков и стран для GuessIt.</string>
-  <string name="oss_python_dateutil_description">Средства разбора даты и времени для GuessIt.</string>
-  <string name="oss_six_description">Средства совместимости Python, включённые в анализатор имён.</string>
   <string name="oss_anime4k_description">Шейдеры повышения разрешения и восстановления анимационного видео в реальном времени.</string>
   <string name="oss_hdr_toys_description">Шейдеры тонального и цветового отображения HDR и передаточных функций.</string>
   <string name="pref_auto_backup_title">Автоматическая копия настроек</string>

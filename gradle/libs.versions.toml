@@ -18,7 +18,6 @@ kotlinx-collections-immutable = "0.5.2"
 profileinstaller = "1.4.1"
 
 truetype-parser = "2.1.4"
-anitomy = "v1.0"
 accompanist = "0.37.3"
 okhttp = "5.5.0"
 jsoup = "1.23.2"
@@ -26,6 +25,7 @@ sardineAndroid = "0.9"
 reorderable = "3.1.0"
 googleMaterial = "1.14.0"
 androidxCore = "1.19.0"
+androidxCoreSplashScreen = "1.2.0"
 androidxPreference = "1.2.1"
 androidxConstraintLayout = "2.2.2"
 media3 = "1.11.1"
@@ -95,6 +95,7 @@ mpvlib-fongmi = { module = "app.gyrolet.mpvlib:mpvlib-fongmi", version.ref = "mp
 
 google-material = { module = "com.google.android.material:material", version.ref = "googleMaterial" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidxCoreSplashScreen" }
 androidx-preference-ktx = { module = "androidx.preference:preference-ktx", version.ref = "androidxPreference" }
 androidx-constraintlayout = { module = "androidx.constraintlayout:constraintlayout", version.ref = "androidxConstraintLayout" }
 androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3" }
@@ -121,7 +122,6 @@ kotlinx-immutable-collections = { module = "org.jetbrains.kotlinx:kotlinx-collec
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
 truetype-parser = { module = "io.github.yubyf:truetypeparser-light", version.ref = "truetype-parser" }
-anitomy = { module = "com.github.TraceLTRC:kotlin-anitomy", version.ref = "anitomy" }
 fsaf = { module = "com.github.K1rakishou:Fuck-Storage-Access-Framework", version.ref = "fsaf" }
 accompanist-permissions = { module = "com.google.accompanist:accompanist-permissions", version.ref = "accompanist" }
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }

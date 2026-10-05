@@ -228,6 +228,7 @@ fun BulkAiRenameDialog(
                 Column {
                   Row(
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth(),
                   ) {
                     Checkbox(

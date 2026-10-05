@@ -22,6 +22,7 @@ import app.gyrolet.mpvrx.data.network.proxy.XtreamStreamingProxy
 import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
 import app.gyrolet.mpvrx.domain.network.XtreamPlaybackUri
 import app.gyrolet.mpvrx.network.AndroidCookieJar
+import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
 import `is`.xyz.mpv.MPVLib
@@ -307,9 +308,18 @@ object PlaybackSession : MPVLib.EventObserver {
     }
   }
 
-  internal fun userScriptsNeedReload(currentKey: String): Boolean = nativeLock.withLock {
-    initialized && activeUserScriptsKey != currentKey
-  }
+/**
+ * Whether a core built for [currentKey] must be recreated for a changed user-script selection.
+ *
+ * [AdvancedPreferences.USER_SCRIPTS_DISABLED] can never mismatch: [initialize] stores that exact
+ * key for a core created with scripts off, so this answers `false` without taking [nativeLock].
+ * The open path calls this on the main thread before the core exists, where acquiring the lock
+ * would contend with the MPV event thread for a decision that is already known.
+ */
+internal fun userScriptsNeedReload(currentKey: String): Boolean {
+  if (currentKey == AdvancedPreferences.USER_SCRIPTS_DISABLED) return false
+  return nativeLock.withLock { initialized && activeUserScriptsKey != currentKey }
+}
 
   fun reloadMpvConfig(configPath: String): Boolean =
     nativeLock.withLock {
@@ -980,9 +990,12 @@ object PlaybackSession : MPVLib.EventObserver {
         speedBeforeAudiobook = null
       }
       val videoSelection = resolvedItem.videoSelection()
-      // Select the track during demuxer initialization. Video output remains `vo=null` until a
-      // Surface is attached, so cold starts do not need a post-load track reselect.
+      // MediaCodec needs a valid native window when the video decoder is created. The optimized
+      // startup path can issue loadfile before SurfaceView.surfaceCreated, so defer video-track
+      // selection until bindSurface attaches a valid Surface.
       val selectVideoForNewFile = videoSelection == PlaybackVideoSelection.IMMEDIATE
+      val deferVideoSelectionUntilSurface =
+        selectVideoForNewFile && !_state.value.surfaceAttached
 
       // An OUTPUT Ambient shader bakes the previous video's aspect ratio into its GLSL. Because the
       // libmpv core outlives PlayerActivity, a late/cancelled Ambient job can otherwise poison the
@@ -1011,7 +1024,8 @@ object PlaybackSession : MPVLib.EventObserver {
       pendingPositionRestoreOverride = positionRestoreOverride?.let { generation to it }
       initialPositionGeneration = generation.takeIf { initialPosition != null } ?: 0L
       val holdForPositionRestore = pendingPositionRestoreGeneration == generation
-      deferredVideoSelectionGeneration = null
+      deferredVideoSelectionGeneration =
+        generation.takeIf { deferVideoSelectionUntilSurface }
       updateState {
         it.copy(
           phase = PlaybackPhase.LOADING,
@@ -1055,7 +1069,7 @@ object PlaybackSession : MPVLib.EventObserver {
             val fonts = app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.directory(context, resolvedItem.stableId)
             if (fonts.isDirectory) add("sub-fonts-dir=${fonts.path}")
           }
-          add(if (selectVideoForNewFile) "vid=auto" else "vid=no")
+          add(if (selectVideoForNewFile && !deferVideoSelectionUntilSurface) "vid=auto" else "vid=no")
           initialPosition?.let { add("start=$it") }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")

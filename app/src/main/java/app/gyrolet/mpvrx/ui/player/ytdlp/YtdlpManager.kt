@@ -530,17 +530,12 @@ object YtdlpManager {
 
       when {
         existingContent.isNotBlank() && !generatedConfig -> Log.d(TAG, "Preserving user-supplied ytdl_hook.conf")
+        // Already byte-identical to what this run would write. Skipping the rewrite keeps the open
+        // path off a filesDir write per launch; the content is derived purely from app-owned
+        // constants, so an unchanged marker line proves it cannot have drifted.
+        existingContent == buildGeneratedHookConfig(ytdlBinaryPath, allFormats) -> Unit
         else -> {
-          val confLines =
-            buildList {
-              add(GENERATED_HOOK_CONFIG_MARKER)
-              add("ytdl_path=$ytdlBinaryPath")
-              add("all_formats=$allFormats")
-              add("force_all_formats=yes")
-              add("try_ytdl_first=yes")
-              add("exclude=$DIRECT_MEDIA_EXCLUDE")
-            }
-          ytdlConf.writeText(confLines.joinToString("\n", postfix = "\n"))
+          ytdlConf.writeText(buildGeneratedHookConfig(ytdlBinaryPath, allFormats))
           Log.d(TAG, "Created generated ytdl_hook.conf at ${ytdlConf.absolutePath}")
         }
       }
@@ -581,6 +576,19 @@ object YtdlpManager {
 
     Log.d(TAG, "MPV ytdl options set. Binary: $ytdlBinaryPath")
   }
+
+  private fun buildGeneratedHookConfig(
+    ytdlBinaryPath: String,
+    allFormats: String,
+  ): String =
+    buildList {
+      add(GENERATED_HOOK_CONFIG_MARKER)
+      add("ytdl_path=$ytdlBinaryPath")
+      add("all_formats=$allFormats")
+      add("force_all_formats=yes")
+      add("try_ytdl_first=yes")
+      add("exclude=$DIRECT_MEDIA_EXCLUDE")
+    }.joinToString("\n", postfix = "\n")
 
   private fun isLegacyGeneratedHookConfig(content: String): Boolean {
     if (content.isBlank()) return false

@@ -2640,15 +2640,8 @@
   <string name="oss_backdrop_description">用于 Liquid Glass 表面的 Compose 模糊和折射。</string>
   <string name="oss_telephoto_description">图像查看器的缩放和平移手势。</string>
   <string name="oss_androidx_lifecycle_description">为 Compose 界面提供生命周期感知状态和 ViewModel 支持。</string>
-  <string name="oss_anitomy_description">从媒体文件名解析标题和剧集信息。</string>
   <string name="oss_leakcanary_description">检测调试版本中的内存泄漏。</string>
-  <string name="oss_python_description">用于在线提取和文件名解析的内置 Python 运行时。</string>
   <string name="oss_ytdlp_description">用于受支持流媒体链接的在线媒体提取器。</string>
-  <string name="oss_guessit_description">从文件名提取结构化媒体信息。</string>
-  <string name="oss_rebulk_description">GuessIt 用于文件名匹配的规则引擎。</string>
-  <string name="oss_babelfish_description">GuessIt 使用的语言和国家代码转换。</string>
-  <string name="oss_python_dateutil_description">GuessIt 使用的日期和时间解析工具。</string>
-  <string name="oss_six_description">随文件名解析器提供的 Python 兼容性辅助库。</string>
   <string name="oss_anime4k_description">用于动画视频的实时放大和修复着色器。</string>
   <string name="oss_hdr_toys_description">HDR 色调映射、色域映射和传递函数着色器。</string>
   <string name="pref_auto_backup_title">自动备份设置</string>

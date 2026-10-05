@@ -103,7 +103,7 @@
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
-            android:theme="@style/Theme.mpvrx">
+            android:theme="@style/Theme.mpvrx.Splash">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

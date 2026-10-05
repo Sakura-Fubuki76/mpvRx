@@ -9,14 +9,20 @@
 
 package app.gyrolet.mpvrx
 
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.animation.PathInterpolator
 import android.app.Activity
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.withFrameNanos
+import androidx.core.animation.doOnEnd
+import androidx.core.splashscreen.SplashScreen
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -65,6 +71,9 @@ import app.gyrolet.mpvrx.ui.browser.components.MiniPlayer
 import app.gyrolet.mpvrx.ui.theme.DarkMode
 import app.gyrolet.mpvrx.ui.theme.AppWallpaperHost
 import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
+import app.gyrolet.mpvrx.ui.theme.SPLASH_MAX_DURATION_MS
+import app.gyrolet.mpvrx.ui.theme.SPLASH_MIN_DURATION_MS
+import app.gyrolet.mpvrx.ui.theme.SplashContent
 import app.gyrolet.mpvrx.ui.theme.rememberThemeTransitionState
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -102,6 +111,13 @@ import org.koin.android.ext.android.inject
 private const val RENDERER_NOTICE_PREFERENCES = "renderer_build_notice"
 private const val NON_VULKAN_NOTICE_SHOWN = "non_vulkan_notice_shown"
 
+// Splash exit animation (pre-Android 12 only; see setSplashExitAnimation).
+private const val SPLASH_EXIT_ANIMATION_MS = 320L
+private const val SPLASH_EXIT_TRANSLATION_DP = 16f
+
+private fun Float.dpToPx(resources: android.content.res.Resources): Float =
+  this * resources.displayMetrics.density
+
 /**
  * Main entry point for the application
  */
@@ -115,6 +131,11 @@ class MainActivity : AppCompatActivity() {
   private var pendingPipExitResolution = false
   private var isExpandingFromPip by mutableStateOf(false)
 
+  // Splash lifecycle. isSplashReady is read from the keep-on-screen condition, which runs off the
+  // composition, so it is deliberately not Compose state.
+  @Volatile private var isSplashReady = false
+  private var isSplashFinished by mutableStateOf(false)
+
   // Register the ActivityResultLauncher at class level
   private val mediaAccessLauncher =
     registerForActivityResult(
@@ -124,6 +145,11 @@ class MainActivity : AppCompatActivity() {
     }
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    // Before super.onCreate(): the system splash has to be installed while the pre-splash theme is
+    // still active. Skipped on recreation so a rotation or theme change does not replay it.
+    val showSplash = savedInstanceState == null
+    val splashScreen = if (showSplash) installSplashScreen() else null
+
     super.onCreate(savedInstanceState)
 
     if (DeviceFormFactor.isTelevision(this)) {
@@ -242,7 +268,18 @@ class MainActivity : AppCompatActivity() {
         MpvrxTheme(transitionState = themeTransitionState) {
           AppWallpaperHost {
             Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
+              // Reported only once a frame has actually been produced, so the splash is never lifted
+              // onto an empty window.
+              if (showSplash) {
+                LaunchedEffect(Unit) {
+                  withFrameNanos { }
+                  onSplashReady()
+                }
+              }
               Navigator()
+            }
+            if (showSplash) {
+              SplashContent(visible = !isSplashFinished)
             }
             if (showRendererBuildNotice) {
               val acknowledgeNotice = {
@@ -273,6 +310,71 @@ class MainActivity : AppCompatActivity() {
           }
         }
       }
+    }
+
+    if (splashScreen != null) {
+      val startTime = System.currentTimeMillis()
+      splashScreen.setKeepOnScreenCondition {
+        val elapsed = System.currentTimeMillis() - startTime
+        // Never flash: hold for a beat so a fast launch does not strobe, and cap the wait so a slow
+        // device cannot strand the user on the splash.
+        elapsed <= SPLASH_MIN_DURATION_MS || (!isSplashReady && elapsed <= SPLASH_MAX_DURATION_MS)
+      }
+      setSplashExitAnimation(splashScreen)
+    }
+  }
+
+  /**
+   * Called once the first Compose frame is out.
+   *
+   * Releases the system splash and starts the themed overlay's fade-out. The minimum duration is
+   * enforced by the keep-on-screen condition above, so this only ever shortens the wait.
+   */
+  private fun onSplashReady() {
+    if (isSplashReady) return
+    isSplashReady = true
+    isSplashFinished = true
+  }
+
+  /**
+   * Custom exit animation for the pre-Android 12 splash, where the platform draws its own view and
+   * hands it to us to dismiss.
+   *
+   * Above API 31 the system animates the splash itself and this listener never runs, so the
+   * transition is left to the platform there rather than double-animated.
+   */
+  @Suppress("DEPRECATION")
+  private fun setSplashExitAnimation(splashScreen: SplashScreen) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return
+    val root = findViewById<android.view.View>(android.R.id.content)
+    // Transparent while the splash is up so the exit does not flash the bar backgrounds back in.
+    window.statusBarColor = android.graphics.Color.TRANSPARENT
+    window.navigationBarColor = android.graphics.Color.TRANSPARENT
+
+    splashScreen.setOnExitAnimationListener { splashProvider ->
+      // The compat layer mis-translates the icon on the way in, so it is reset here.
+      splashProvider.iconView.translationY = 0f
+
+      val contentAnim =
+        ValueAnimator.ofFloat(1f, 0f).apply {
+          interpolator = PathInterpolator(0f, 0f, 0.2f, 1f)
+          duration = SPLASH_EXIT_ANIMATION_MS
+          addUpdateListener { animator ->
+            val value = animator.animatedValue as Float
+            root.translationY = value * SPLASH_EXIT_TRANSLATION_DP.dpToPx(root.resources)
+          }
+        }
+      val splashAnim =
+        ValueAnimator.ofFloat(1f, 0f).apply {
+          interpolator = PathInterpolator(0.4f, 0f, 0.2f, 1f)
+          duration = SPLASH_EXIT_ANIMATION_MS
+          addUpdateListener { animator ->
+            splashProvider.view.alpha = animator.animatedValue as Float
+          }
+          doOnEnd { splashProvider.remove() }
+        }
+      contentAnim.start()
+      splashAnim.start()
     }
   }
 

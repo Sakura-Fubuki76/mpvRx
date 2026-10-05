@@ -1,0 +1,126 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+package app.gyrolet.mpvrx.ui.theme
+
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.R
+import kotlinx.coroutines.delay
+
+/**
+ * App-drawn launch screen, shown for as long as the system splash is held.
+ *
+ * The system splash exists only between the launcher tap and the first frame, and its background can
+ * only be a static theme colour — Android's SplashScreen API has no setter for it, so a palette the
+ * user picks at runtime (custom themes, AMOLED black) could never reach it. This overlay is the part
+ * that actually follows the theme, because it reads the live [MaterialTheme.colorScheme] that
+ * [MpvrxTheme] has already resolved.
+ *
+ * It is layered above the app content rather than replacing it, so the first real frame is already
+ * laid out underneath and the handover is a cross-fade instead of a blank flash.
+ *
+ * @param visible false starts the fade-out. The composable removes itself once that finishes, so the
+ *   caller can leave it in the tree for the whole session.
+ */
+@Composable
+fun SplashContent(
+  visible: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  // Kept mounted through the fade: unmounting on `visible = false` would drop it instantly and the
+  // cross-fade would never be seen. Only the finished state stops rendering.
+  var mounted by remember { mutableStateOf(true) }
+  LaunchedEffect(visible) {
+    if (visible) {
+      mounted = true
+    } else {
+      delay(SPLASH_FADE_OUT_DURATION_MS.toLong())
+      mounted = false
+    }
+  }
+  if (!mounted) return
+
+  val alpha by animateFloatAsState(
+    targetValue = if (visible) 1f else 0f,
+    animationSpec = tween(durationMillis = SPLASH_FADE_OUT_DURATION_MS, easing = FastOutSlowInEasing),
+    label = "splashAlpha",
+  )
+
+  // A short grow-in gives the icon some life; it settles well before the fade starts.
+  var entered by remember { mutableStateOf(false) }
+  LaunchedEffect(Unit) { entered = true }
+  val iconScale by animateFloatAsState(
+    targetValue = if (entered) 1f else SPLASH_ICON_ENTER_FROM_SCALE,
+    animationSpec = tween(durationMillis = SPLASH_ICON_ENTER_DURATION_MS, easing = FastOutSlowInEasing),
+    label = "splashIconScale",
+  )
+
+  Box(
+    modifier =
+      modifier
+        .fillMaxSize()
+        // background, not surface: this must match the canvas the app is about to draw on, so the
+        // handover does not flash a second shade.
+        .background(MaterialTheme.colorScheme.background)
+        .alpha(alpha),
+    contentAlignment = Alignment.Center,
+  ) {
+    Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(SPLASH_LABEL_SPACING),
+    ) {
+      Image(
+        painter = painterResource(R.mipmap.ic_launcher_foreground),
+        contentDescription = null,
+        modifier =
+          Modifier
+            .size(SPLASH_ICON_SIZE)
+            .scale(iconScale),
+      )
+      Text(
+        text = stringResource(R.string.app_name),
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onBackground,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.padding(horizontal = SPLASH_LABEL_PADDING),
+      )
+    }
+  }
+}
+
+internal const val SPLASH_MIN_DURATION_MS = 500
+internal const val SPLASH_MAX_DURATION_MS = 5_000
+internal const val SPLASH_FADE_OUT_DURATION_MS = 320
+internal const val SPLASH_ICON_ENTER_DURATION_MS = 420
+
+private const val SPLASH_ICON_ENTER_FROM_SCALE = 0.86f
+private val SPLASH_ICON_SIZE = 96.dp
+private val SPLASH_LABEL_SPACING = 20.dp
+private val SPLASH_LABEL_PADDING = 24.dp

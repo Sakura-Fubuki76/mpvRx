@@ -48,6 +48,16 @@ object VideoScanUtils : KoinComponent {
    */
   private const val METADATA_BATCH_SIZE = 32
 
+  /**
+   * MediaStore's per-video rotation column.
+   *
+   * The platform exposes no public constant for it: `MediaStore.Media.ROTATION` covers images only
+   * and `MediaStore.Video.VideoColumns` has never declared one, so the raw column name is used and
+   * read defensively via [android.database.Cursor.getColumnIndex], which returns -1 when the
+   * provider or OS version does not carry it.
+   */
+  private const val VIDEO_ROTATION_COLUMN = "rotation"
+
   // Extensions where MediaStore duration is unreliable (returns 0)
   private val MEDIASTORE_DURATION_UNRELIABLE = setOf("ts", "mts", "m2ts")
 
@@ -183,6 +193,7 @@ object VideoScanUtils : KoinComponent {
         MediaStore.Video.Media.MIME_TYPE,
         MediaStore.Video.Media.WIDTH,
         MediaStore.Video.Media.HEIGHT,
+        VIDEO_ROTATION_COLUMN,
       )
 
     val normalizedFolderPath = normalizeStoragePath(folderPath) ?: return
@@ -209,6 +220,7 @@ object VideoScanUtils : KoinComponent {
           val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
           val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
           val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
+          val rotationColumn = cursor.getColumnIndex(VIDEO_ROTATION_COLUMN)
 
           while (cursor.moveToNext()) {
             currentCoroutineContext().ensureActive()
@@ -232,6 +244,7 @@ object VideoScanUtils : KoinComponent {
             val mimeType = cursor.getString(mimeTypeColumn) ?: "video/*"
             val width = cursor.getInt(widthColumn)
             val height = cursor.getInt(heightColumn)
+            val rotation = if (rotationColumn >= 0) cursor.getInt(rotationColumn) else 0
 
             val uri =
               Uri.withAppendedPath(
@@ -258,6 +271,7 @@ object VideoScanUtils : KoinComponent {
                 bucketDisplayName = leafStorageName(normalizedFolderPath),
                 width = width,
                 height = height,
+                rotation = rotation,
                 fps = 0f,
                 resolution = formatResolution(width, height),
                 hasEmbeddedSubtitles = false,

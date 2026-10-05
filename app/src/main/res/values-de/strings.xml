@@ -2641,15 +2641,8 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="oss_backdrop_description">Compose-Weichzeichnung und -Lichtbrechung für Liquid-Glass-Flächen.</string>
   <string name="oss_telephoto_description">Zoom- und Schwenkgesten für den Bildbetrachter.</string>
   <string name="oss_androidx_lifecycle_description">Lebenszyklusabhängiger Zustand und ViewModel-Unterstützung für Compose.</string>
-  <string name="oss_anitomy_description">Analysiert Mediendateinamen in Titel- und Episodeninformationen.</string>
   <string name="oss_leakcanary_description">Erkennt Speicherlecks in Debug-Builds.</string>
-  <string name="oss_python_description">Eingebettete Python-Laufzeit für Online-Extraktion und Dateinamenanalyse.</string>
   <string name="oss_ytdlp_description">Online-Medienextraktor für unterstützte Streaming-Links.</string>
-  <string name="oss_guessit_description">Extrahiert strukturierte Medieninformationen aus Dateinamen.</string>
-  <string name="oss_rebulk_description">Regel-Engine für die Dateinamenabgleiche von GuessIt.</string>
-  <string name="oss_babelfish_description">Sprach- und Ländercode-Konvertierung für GuessIt.</string>
-  <string name="oss_python_dateutil_description">Dienstprogramme zur Datums- und Zeitanalyse für GuessIt.</string>
-  <string name="oss_six_description">Python-Kompatibilitätshilfen für den Dateinamenparser.</string>
   <string name="oss_anime4k_description">Echtzeit-Upscaling- und Restaurierungs-Shader für animierte Videos.</string>
   <string name="oss_hdr_toys_description">Shader für HDR-Tonemapping, Farbraumabbildung und Übertragungsfunktionen.</string>
   <string name="pref_auto_backup_title">Automatische Einstellungssicherung</string>

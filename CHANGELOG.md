@@ -2,6 +2,12 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## Unreleased
+
+### Translations
+
+- **Ukrainian:** Added a complete Ukrainian translation, contributed by [@WATCHER-00](https://github.com/WATCHER-00). Every user-facing string and plural is covered, so the app now speaks Ukrainian alongside the existing locales.
+
 ## 2.7.4 - Anime Libraries and Persistent Cloud Indexes
 
 - Added Anime-enabled WebDAV libraries with Bangumi posters, immersive detail pages, episode names, cast and staff, and optional cover-derived colours.

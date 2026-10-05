@@ -37,7 +37,7 @@ plugins {
 }
 
 android {
-  sourceSets.getByName("main").java.srcDir(rootProject.file("third_party/anitomy/src/main/kotlin"))
+  sourceSets.getByName("main").kotlin.srcDir(rootProject.file("third_party/anitomy/src/main/kotlin"))
   namespace = "app.gyrolet.mpvrx"
   compileSdk = 37
   ndkVersion = "27.3.13750724"
@@ -263,6 +263,7 @@ dependencies {
   implementation(libs.bundles.compose.navigation3)
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core.ktx)
+  implementation(libs.androidx.core.splashscreen)
   implementation(libs.crashx)
   implementation(libs.kmp.vibrate)
   implementation(libs.androidx.compose.constraintlayout)
@@ -304,7 +305,6 @@ dependencies {
   coreLibraryDesugaring(libs.desugar.jdk.libs)
 
   implementation(libs.truetype.parser)
-  implementation(libs.anitomy)
   implementation(libs.fsaf)
   implementation(libs.mediainfo.lib)
   implementation(libs.androidx.profileinstaller)

@@ -31,6 +31,7 @@ import app.gyrolet.mpvrx.utils.permission.PermissionUtils.StorageOps
 import app.gyrolet.mpvrx.utils.sort.SortUtils
 import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import app.gyrolet.mpvrx.utils.storage.FolderViewScanner
+import app.gyrolet.mpvrx.utils.storage.MediaStoreGenerationGuard
 import app.gyrolet.mpvrx.utils.storage.TreeViewScanner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -174,6 +175,9 @@ class FileSystemBrowserViewModel(
     viewModelScope.launch(Dispatchers.IO) {
       MediaLibraryEvents.changes.collectLatest {
         MediaFileRepository.invalidateTreeCache()
+        // Drops the persisted tree snapshot too, so a mutation that did not move MediaStore's
+        // generation (an in-app rename, a move, a new .nomedia folder) cannot be served from it.
+        MediaStoreGenerationGuard.invalidate(getApplication())
         loadCurrentDirectory()
       }
     }
@@ -242,6 +246,8 @@ class FileSystemBrowserViewModel(
     MediaFileRepository.clearCache()
     FolderViewScanner.clearCache()
     TreeViewScanner.clearCache()
+    // A user-driven refresh must never be served from the persisted tree snapshot.
+    MediaStoreGenerationGuard.invalidate(getApplication())
 
     // Trigger media scan to ensure MediaStore is up-to-date
     triggerMediaScan()

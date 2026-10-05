@@ -21,6 +21,12 @@ class AdvancedPreferences(
     const val AUTO_BACKUP_ENABLED_KEY = "auto_backup_enabled"
     // Kept only to ignore backups created by the short-lived separate-folder implementation.
     const val AUTO_BACKUP_FOLDER_URI_KEY = "auto_backup_folder_uri"
+    /**
+     * Stable key for "no user scripts at all". Exposed so callers on the open path can compare
+     * against it and skip the preference reads plus the libmpv lock entirely instead of building
+     * an identical string on every Activity creation.
+     */
+    const val USER_SCRIPTS_DISABLED = "disabled"
   }
 
   val mpvConfStorageUri = preferenceStore.getString("mpv_conf_storage_location_uri")
@@ -42,8 +48,14 @@ class AdvancedPreferences(
   val enableLuaScripts = preferenceStore.getBoolean("enable_lua_scripts", false)
   val selectedLuaScripts = preferenceStore.getStringSet("selected_lua_scripts", emptySet())
 
+  /**
+   * Identity of the user-script configuration. Returns [USER_SCRIPTS_DISABLED] — a constant,
+   * with no set copy, sort or StringBuilder — when Lua scripts are switched off, because that is
+   * the state on the common video-open path and the key is then compared on every Activity
+   * creation.
+   */
   fun userScriptsConfigurationKey(): String {
-    if (!enableLuaScripts.get()) return "disabled"
+    if (!enableLuaScripts.get()) return USER_SCRIPTS_DISABLED
     return buildString {
       val location = mpvConfStorageUri.get()
       append(location.length).append(':').append(location)

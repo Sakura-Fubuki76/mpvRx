@@ -249,6 +249,9 @@ fun SortDialog(
                           haptics.selection(checked)
                         },
                       ),
+                    // Without this the label sits flush against the checkbox's own padding and reads
+                    // as one glued block.
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                   ) {
                     Checkbox(
@@ -276,6 +279,7 @@ fun SortDialog(
                           haptics.selection(checked)
                         },
                       ),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                   ) {
                     Checkbox(checked = manualGridToggle.checked, onCheckedChange = null, enabled = isEnabled)

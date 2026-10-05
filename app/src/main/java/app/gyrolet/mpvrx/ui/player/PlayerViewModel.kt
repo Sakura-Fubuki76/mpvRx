@@ -2597,15 +2597,23 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         }
       }
     }
-
-    setupCustomButtons()
   }
 
+  /**
+   * Builds and loads the custom-button scripts, then publishes the Android system state to mpv.
+   *
+   * Called once the core exists rather than from `init`, because generating the scripts needs a
+   * live mpv to activate them and [reloadCustomButtonsScript] needs the paths
+   * [setupCustomButtons] produces. `PlayerActivity` calls this immediately after construction, so
+   * running it here instead of at `init` removes one redundant pass — a JSON decode, an MD5 per
+   * script, a `filesDir/scripts` write and a Main-thread hop — from Activity construction.
+   */
   fun onMpvCoreInitialized() {
     _isMpvCoreReady.value = true
     scheduleAmbientUpdate(0)
     startMpvStateCollectors()
     isMpvReadyForCustomButtons = true
+    setupCustomButtons()
     reloadCustomButtonsScript("mpv_core_initialized")
     startAndroidSystemInfoBridge()
   }

@@ -2545,15 +2545,8 @@
   <string name="oss_backdrop_description">Liquid Glass सतहों के लिए Compose धुंधलापन और अपवर्तन।</string>
   <string name="oss_telephoto_description">चित्र दर्शक के लिए ज़ूम और पैन जेस्चर।</string>
   <string name="oss_androidx_lifecycle_description">Compose स्क्रीन के लिए लाइफ़साइकल-जागरूक स्थिति और ViewModel समर्थन।</string>
-  <string name="oss_anitomy_description">मीडिया फ़ाइल नामों से शीर्षक और एपिसोड जानकारी निकालता है।</string>
   <string name="oss_leakcanary_description">डिबग बिल्ड में मेमोरी लीक का पता लगाता है।</string>
-  <string name="oss_python_description">ऑनलाइन निष्कर्षण और फ़ाइल नाम विश्लेषण के लिए अंतर्निहित Python रनटाइम।</string>
   <string name="oss_ytdlp_description">समर्थित स्ट्रीमिंग लिंक के लिए ऑनलाइन मीडिया एक्सट्रैक्टर।</string>
-  <string name="oss_guessit_description">फ़ाइल नामों से संरचित मीडिया जानकारी निकालता है।</string>
-  <string name="oss_rebulk_description">GuessIt द्वारा फ़ाइल नाम मिलान के लिए उपयोग किया गया नियम इंजन।</string>
-  <string name="oss_babelfish_description">GuessIt में उपयोग किए गए भाषा और देश कोड रूपांतरण।</string>
-  <string name="oss_python_dateutil_description">GuessIt में उपयोग की गई दिनांक और समय विश्लेषण सुविधाएँ।</string>
-  <string name="oss_six_description">फ़ाइल नाम पार्सर के साथ शामिल Python संगतता सहायक।</string>
   <string name="oss_anime4k_description">एनिमेटेड वीडियो के लिए रियल-टाइम अपस्केलिंग और पुनर्स्थापन शेडर।</string>
   <string name="oss_hdr_toys_description">HDR टोन मैपिंग, गैमट मैपिंग और ट्रांसफ़र फ़ंक्शन शेडर।</string>
   <string name="pref_auto_backup_title">सेटिंग्स का ऑटो बैकअप</string>

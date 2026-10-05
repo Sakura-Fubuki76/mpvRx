@@ -12,18 +12,12 @@ package app.gyrolet.mpvrx.utils.media
 import android.content.Context
 import android.net.Uri
 import app.gyrolet.mpvrx.utils.sort.SortUtils
-import com.github.TraceLTRC.AnitomyK
-import com.github.TraceLTRC.ElementCategory
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import java.text.Normalizer
 import java.time.Year
 import java.util.Locale
 
 /**
- * Shared media filename parsing with an offline GuessIt lookup path and a fast Kotlin/Anitomy fallback.
+ * Shared native Kotlin media filename parser.
  *
  * Extracts structured metadata from messy release filenames:
  * - Title (cleaned and normalized)
@@ -57,10 +51,9 @@ data class ParsedMediaInfo(
 
 object MediaInfoParser {
   // ── Result cache — avoids re-parsing the same filename (e.g. playlist repeat) ──
-  private data class CacheEntry(val fast: ParsedMediaInfo, val detailed: ParsedMediaInfo? = null)
+  private data class CacheEntry(val fast: ParsedMediaInfo)
 
   private val parseCache = android.util.LruCache<String, CacheEntry>(300)
-  private val lookupMutex = Mutex()
 
   // ── Japanese season numbers ──────────────────────────────────────────────────
   private val JAPANESE_NUMBERS =
@@ -467,22 +460,8 @@ object MediaInfoParser {
     }
   }
 
-  suspend fun parseForLookup(context: Context, fileName: String): ParsedMediaInfo =
-    withContext(Dispatchers.IO) {
-      val normalizedName = normalizeFileName(fileName)
-      if (normalizedName.isBlank()) return@withContext parse(normalizedName)
-      lookupMutex.withLock {
-        parseCache.get(normalizedName)?.detailed?.let { return@withLock it }
-        val fast = parse(fileName)
-        val detailed = GuessItParser.parse(context.applicationContext, normalizedName)
-        if (detailed != null) {
-          synchronized(parseCache) {
-            parseCache.put(normalizedName, CacheEntry(fast, detailed = detailed))
-          }
-        }
-        detailed ?: fast
-      }
-    }
+  @Suppress("UNUSED_PARAMETER")
+  suspend fun parseForLookup(context: Context, fileName: String): ParsedMediaInfo = parse(fileName)
 
   private fun normalizeFileName(source: String): String {
     var name = source.trim()
@@ -638,16 +617,6 @@ object MediaInfoParser {
     }
 
     // Step 8: Default season to 1 if episode is found but no season
-    if (episode == null && year == null && !isEpisodeAmbiguous) {
-      parseAnimeRelease(fileName)?.let { anime ->
-        cleanTitle = anime.title
-        season = season ?: anime.season
-        episode = anime.episode
-        episodeEnd = anime.episodeEnd
-        episodeTitle = anime.episodeTitle
-      }
-    }
-
     if (episode != null && season == null) {
       season = 1
     }
@@ -692,40 +661,6 @@ object MediaInfoParser {
         isEpisodeAmbiguous = isEpisodeAmbiguous,
       )
     return result
-  }
-
-  private fun parseAnimeRelease(fileName: String): ParsedMediaInfo? {
-    val leadingGroup = LEADING_GROUP_REGEX.find(fileName)
-    val hasReleaseContext = leadingGroup != null ||
-      Regex("""(?i)(?<![\p{L}\p{N}])\d{2,4}v\d+(?![\p{L}\p{N}])""").containsMatchIn(fileName)
-    if (!hasReleaseContext) return null
-
-    val elements = try {
-      AnitomyK().apply { parse(fileName) }.elements
-    } catch (_: RuntimeException) {
-      return null
-    }
-    val animeType = elements.firstOrNull { it.first == ElementCategory.kElementAnimeType }?.second
-    if (animeType != null && !animeType.equals("TV", ignoreCase = true)) return null
-    val title = elements.firstOrNull { it.first == ElementCategory.kElementAnimeTitle }?.second
-      ?.takeIf(String::isNotBlank) ?: return null
-    val episodeValues = elements.filter { it.first == ElementCategory.kElementEpisodeNumber }.map { it.second }
-    if (episodeValues.isEmpty() || episodeValues.any { !it.matches(Regex("""\d{1,4}""")) }) return null
-    val episodes = episodeValues.mapNotNull(String::toIntOrNull).distinct()
-    val episode = episodes.firstOrNull()?.takeIf { it > 0 && it !in 1900..2100 } ?: return null
-    val hasReleaseVersion = elements.any { it.first == ElementCategory.kElementReleaseVersion }
-    if (episodeValues.first().length < 2 && !hasReleaseVersion) return null
-    val season = elements.firstOrNull { it.first == ElementCategory.kElementAnimeSeason }?.second?.toIntOrNull()
-    val episodeTitle = elements.firstOrNull { it.first == ElementCategory.kElementEpisodeTitle }?.second
-
-    return ParsedMediaInfo(
-      title = finalCleanup(title),
-      season = season ?: 1,
-      episode = episode,
-      episodeTitle = episodeTitle?.takeIf { it.any(Char::isLetter) },
-      type = "tv",
-      episodeEnd = episodes.lastOrNull()?.takeIf { episodes.size > 1 },
-    )
   }
 
   // ── Helper: Find year without matching inside episode patterns ────────────────

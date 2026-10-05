@@ -171,6 +171,7 @@ fun NetworkConnectionCard(
           Modifier
             .fillMaxWidth()
             .padding(top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Checkbox(

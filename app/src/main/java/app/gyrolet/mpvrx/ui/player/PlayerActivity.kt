@@ -94,7 +94,6 @@ import app.gyrolet.mpvrx.network.NetworkUserAgent
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.AudioChannels
-import app.gyrolet.mpvrx.preferences.AudioPlayerOrientation
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
@@ -463,6 +462,8 @@ class PlayerActivity :
   private var backgroundHandoffJob: Job? = null
   private var deferredFontSyncJob: Job? = null
   private var deferredMpvAssetSyncJob: Job? = null
+  private var mpvAssetPreparationJob: Job? = null
+  private var mpvCorePreparationJob: Deferred<String?>? = null
   private var systemBarsAutoHideJob: Job? = null
   private var videoParamRefreshJob: Job? = null
   private var intentSubtitleJob: Job? = null
@@ -656,6 +657,12 @@ class PlayerActivity :
     applyInitialVideoOrientation(intent)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // Kick the multi-MB asset copy and the user mpv.conf SAF walk off the main thread first, so
+    // they run concurrently with everything below instead of being joined inside setupMPV().
+    startMpvAssetPreparation()
+    // Derive every init option value up front on IO. Only the option writes themselves need the
+    // core, so this overlaps with layout inflation and the Compose trees.
+    player.prepareInitInputs()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE &&
       intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER
     ) {
@@ -686,32 +693,16 @@ class PlayerActivity :
     }
     // Read from the actual launch intent now that it's safe to (see isSecureFolderLaunch kdoc).
     isSecureFolderLaunch = intent.getStringExtra("launch_source") == "secure_folder"
-
-    // Bind the shared asset layer before anything can reach for it. setupMPV and the deferred
-    // sync jobs below both call into PlaybackStartupAssets directly.
-    PlaybackStartupAssets.attach(this)
-
-    // Started here, joined in setupMPV. Deliberately does *not* wait for the app-launch core
-    // warm-up: joining it would put the main thread behind libmpv's config parse and Lua script
-    // load, which is precisely the work being moved off the critical path. The join below only has
-    // to cover the assets, because libmpv must not initialize before its config and scripts are on
-    // disk — and on a warm cache that is four cheap directory probes, since PlaybackCorePrewarmer
-    // normally did the multi-megabyte copy plus the SAF tree walk while this Activity did not exist.
-    //
-    // The core itself is adopted rather than awaited: MPVView.initializeSession -> initializeSession
-    // computes a configuration key from the same preferences the prewarmer used, and
-    // PlaybackSession.initialize returns early on a match. So a warm core makes the open free, and a
-    // cold or in-flight one just means this Activity initializes it exactly as it did before.
-    startupAssetPreparation =
-      lifecycleScope.async(Dispatchers.IO) { PlaybackStartupAssets.prepare(this@PlayerActivity) }
-
+    // Decide whether a live background core is being adopted before native initialization can
+    // change session state, then overlap MPVLib.init() with the remaining Android window setup.
+    releaseDetachedBackgroundPlaybackBeforeFreshLaunch()
+    startMpvCorePreparation()
     setContentView(binding.root)
     setupSystemBarsAutoHide()
     setupPipHelper()
 
     // A detached background session belongs to PlaybackSession, not to the old Activity.
     // Notification re-entry attaches this new surface to that live core without reloading it.
-    releaseDetachedBackgroundPlaybackBeforeFreshLaunch()
     val setupResult = setupMPV()
     if (setupResult != null) {
       isUserFinishing = true
@@ -730,17 +721,11 @@ class PlayerActivity :
     // its StateFlow declarations register native properties during ViewModel initialization.
     viewModel.attachHost(this)
     viewModelHostAttached = true
-    traceStartup("viewModel.onMpvCoreInitialized") { viewModel.onMpvCoreInitialized() }
-    MediaPlaybackService.createNotificationChannel(this)
-    traceStartup("setupAudio") { setupAudio() }
-    traceStartup("setupBackPressHandler") { setupBackPressHandler() }
-    traceStartup("setupVideoAmbientBackground") { setupVideoAmbientBackground() }
-    traceStartup("setupPlayerControls") { setupPlayerControls() }
-    traceStartup("setupVideoTransformObserver") { setupVideoTransformObserver() }
-    traceStartup("setupAudioPlayerViewObserver") { setupAudioPlayerViewObserver() }
-    traceStartup("setupMediaSession") { setupMediaSession() }
-    traceStartup("observePlaybackSessionQueue") { observePlaybackSessionQueue() }
-    traceStartup("observeTorrentStreamingState") { observeTorrentStreamingState() }
+    viewModel.onMpvCoreInitialized()
+    // Audio focus and video transforms must be ready before loadfile can begin. The remaining UI,
+    // media-session and notification plumbing is initialized after the load has been dispatched.
+    setupAudio()
+    setupVideoTransformObserver()
     // Note: screenStateReceiver is now registered in onStart() and
     // unregistered in onStop(), matching the noisyReceiver pattern.
     // Previously it was registered here in onCreate and stayed registered
@@ -858,10 +843,21 @@ class PlayerActivity :
         }
       }
     }
-    traceStartup("setupCastPlayback") { setupCastPlayback() }
 
-    // Only set orientation immediately if NOT in Video mode
-    // For Video mode, wait for video-params/aspect to become available
+    // The local/network resolver now runs in parallel with this non-critical Android/UI setup.
+    MediaPlaybackService.createNotificationChannel(this)
+    setupBackPressHandler()
+    setupVideoAmbientBackground()
+    setupPlayerControls()
+    setupAudioPlayerViewObserver()
+    setupMediaSession()
+    observePlaybackSessionQueue()
+    observeTorrentStreamingState()
+    setupCastPlayback()
+
+    // Video mode waits for mpv geometry; every other preference is decidable now. Audio launches
+    // always decide now. In the waiting case applyInitialVideoOrientation already ran before
+    // super.onCreate() with the intent's geometry.
     if (isKnownAudioLaunch(intent) || playerPreferences.orientation.get() != PlayerOrientation.Video) {
       setOrientation()
     }
@@ -1141,22 +1137,38 @@ class PlayerActivity :
     return true
   }
 
+/**
+   * Mounts the controls Compose tree.
+   *
+   * [PlayerControls] is a 2.7k-line composable with its own preference and MPV subscriptions, and
+   * inflating it inline here made it the single largest item in `onCreate` — larger than the MPV
+   * core bring-up it was blocking. Nothing in it is visible on arrival: the controls start hidden
+   * and only appear on a tap or a key event. So the tree is mounted on the first frame after layout
+   * rather than before it, which takes the whole composition off the open path while still landing
+   * well before the user can plausibly interact.
+   *
+   * An input arriving inside that one-frame window is not lost: every tap and key path already sets
+   * `viewModel.controlsShown`, which the tree reads when it mounts, so the controls still appear.
+   */
   private fun setupPlayerControls() {
-    binding.controls.setContent {
-      MpvrxTheme {
-        Box(modifier = Modifier.fillMaxSize()) {
-          Box(
-            modifier = Modifier.fillMaxSize().graphicsLayer {
-              alpha = PlayerArtworkTransitions.contentAlpha(PlayerArtworkDestination.FULL)
-            },
-          ) {
-            PlayerControls(
-              viewModel = viewModel,
-              onBackPress = ::handleBackPress,
-              modifier = Modifier,
-            )
+    binding.controls.postOnAnimation {
+      if (isDestroyed || isFinishing) return@postOnAnimation
+      binding.controls.setContent {
+        MpvrxTheme {
+          Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+              modifier = Modifier.fillMaxSize().graphicsLayer {
+                alpha = PlayerArtworkTransitions.contentAlpha(PlayerArtworkDestination.FULL)
+              },
+            ) {
+              PlayerControls(
+                viewModel = viewModel,
+                onBackPress = ::handleBackPress,
+                modifier = Modifier,
+              )
+            }
+            PlayerArtworkTransitionOverlay(PlayerArtworkDestination.FULL)
           }
-          PlayerArtworkTransitionOverlay(PlayerArtworkDestination.FULL)
         }
       }
     }
@@ -1171,6 +1183,25 @@ class PlayerActivity :
     )
     // Pre-Android 11 stops inset dispatch at a consuming sibling, which would starve the controls of IME insets.
     binding.ambientBackground.consumeWindowInsets = false
+
+    // The ambient tree subscribes to eleven sources and registers its own MPV observer. With the
+    // effect off — the default, and every offline open — that whole composition would render
+    // nothing, because `presentationActive` requires `isAmbientEnabled`. So mount it only once the
+    // preference says it can produce output, and keep a single cheap watcher to mount it later if
+    // the user turns it on.
+    if (viewModel.isAmbientEnabled.value) {
+      setVideoAmbientBackgroundContent()
+    } else {
+      lifecycleScope.launch {
+        // `first` unsubscribes once the preference turns on, so this costs one idle subscription
+        // while the effect is off instead of a mounted composition.
+        viewModel.isAmbientEnabled.first { it }
+        setVideoAmbientBackgroundContent()
+      }
+    }
+  }
+
+  private fun setVideoAmbientBackgroundContent() {
     binding.ambientBackground.setContent {
       val enabled by viewModel.isAmbientEnabled.collectAsState()
       val style by viewModel.ambientStyle.collectAsState()
@@ -1687,6 +1718,8 @@ class PlayerActivity :
     backgroundHandoffJob?.cancel()
     deferredFontSyncJob?.cancel()
     deferredMpvAssetSyncJob?.cancel()
+    mpvAssetPreparationJob?.cancel()
+    mpvCorePreparationJob?.cancel()
     mediaLoadJob?.cancel()
     cancelPlaybackLoadRecovery()
     eofAdvanceJob?.cancel()
@@ -1773,7 +1806,13 @@ class PlayerActivity :
     }
   }
 
+  /**
+ * The torrent engine can only emit state for torrent-backed items, so an offline launch has
+ * nothing to observe and skips the subscription entirely. A source that is not local may still be
+ * a magnet/hash/http torrent, and a later queue item can be one, so anything else keeps observing.
+ */
   private fun observeTorrentStreamingState() {
+    if (isOfflineLocalLaunch(intent)) return
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
         torrentStreamingEngine.state.collect { state ->
@@ -2622,19 +2661,9 @@ class PlayerActivity :
    * CRITICAL: Must copy config and scripts BEFORE initializing MPV, as MPV loads scripts during init.
    */
   private fun setupMPV(): String? {
-    // Joined rather than started: the copy began before the view tree was inflated, so by now it is
-    // usually finished and this costs nothing. libmpv must not initialize before the assets are on
-    // disk, so this cannot be skipped, only awaited.
-    runCatching {
-      runBlocking {
-        withContext(Dispatchers.IO) {
-          startupAssetPreparation?.await()
-        }
-      }
-    }.onFailure { e ->
-      Log.e(TAG, "Error copying MPV config and assets", e)
-    }
-
+    // Asset preparation and MPVLib.init() were already started on IO. The main thread waits only
+    // for the portion that did not overlap Android window/surface setup.
+    val waitStartedAt = android.os.SystemClock.elapsedRealtime()
     player.onSurfaceReady = {
       if (!isDeviceScreenOffOrLocked() && (isInBackgroundPlayback || lastVid > 0)) {
         enableVideoAfterBackground()
@@ -2644,19 +2673,23 @@ class PlayerActivity :
       binding.root.post(::updateVideoAmbientPlayerBounds)
     }
 
-    // NOW initialize MPV - it will find and load the scripts we just copied
-    val initStartedAt = android.os.SystemClock.elapsedRealtime()
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.core.begin")
-    val initError = synchronized(USER_MPV_ASSET_LOCK) {
-      val cleanupFailure =
-        runCatching { PlaybackStartupAssets.removeDisabledCachedScripts() }.exceptionOrNull()
-      if (cleanupFailure != null) {
-        Log.e(TAG, "Could not remove disabled cached scripts", cleanupFailure)
-        cleanupFailure.message ?: getString(R.string.toast_playback_load_failed)
-      } else initializePlayerWithRendererFallback()
-    }
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.core.end", detail = "elapsedMs=${android.os.SystemClock.elapsedRealtime() - initStartedAt} success=${initError == null}")
+    val corePreparation = mpvCorePreparationJob
+    val initError =
+      if (corePreparation != null) {
+        runCatching { runBlocking { corePreparation.await() } }
+          .getOrElse { error ->
+            Log.e(TAG, "Could not initialize MPV", error)
+            error.message ?: getString(R.string.toast_playback_load_failed)
+          }
+      } else {
+        initializeMpvCore()
+      }
+    Log.d(TAG, "MPV core joined in ${android.os.SystemClock.elapsedRealtime() - waitStartedAt} ms")
     if (initError != null) return initError
+
+    // SurfaceHolder and View callbacks stay on the main thread even though the native core was
+    // prepared in parallel.
+    player.attachSessionSurface()
     runCatching { PlaybackSession.setThumbnailJavaVM(applicationContext) }
     mpvInitialized = true
     Log.d(TAG, "MPV initialized")
@@ -2671,9 +2704,46 @@ class PlayerActivity :
     return null
   }
 
+  /** Starts native initialization once the launch has been validated and session handoff decided. */
+  private fun startMpvCorePreparation() {
+    mpvCorePreparationJob?.cancel()
+    mpvCorePreparationJob =
+      lifecycleScope.async(Dispatchers.IO) {
+        mpvAssetPreparationJob?.join()
+        initializeMpvCore()
+      }
+  }
+
+  private fun initializeMpvCore(): String? =
+    synchronized(USER_MPV_ASSET_LOCK) {
+      val cleanupFailure = runCatching { PlaybackStartupAssets.removeDisabledCachedScripts() }.exceptionOrNull()
+      if (cleanupFailure != null) {
+        Log.e(TAG, "Could not remove disabled cached scripts", cleanupFailure)
+        cleanupFailure.message ?: getString(R.string.toast_playback_load_failed)
+      } else {
+        initializePlayerWithRendererFallback()
+      }
+    }
+
+  /**
+   * Starts the multi-MB asset copy and the user mpv.conf SAF walk on IO. Called at the top of
+   * onCreate so they overlap binding inflation and player setup instead of blocking them.
+   */
+  private fun startMpvAssetPreparation() {
+    mpvAssetPreparationJob?.cancel()
+    mpvAssetPreparationJob =
+      lifecycleScope.launch(Dispatchers.IO) {
+        val startedAt = android.os.SystemClock.elapsedRealtime()
+        runCatching {
+          PlaybackStartupAssets.prepare(this@PlayerActivity)
+        }.onFailure { e -> Log.e(TAG, "Error copying MPV config and assets", e) }
+        Log.d(TAG, "MPV startup assets prepared in ${android.os.SystemClock.elapsedRealtime() - startedAt} ms")
+      }
+  }
+
   private fun initializePlayerWithRendererFallback(): String? {
     player.forceOpenGlFallback = false
-    val firstAttempt = player.initializeSession(filesDir.path, cacheDir.path)
+    val firstAttempt = player.initializeCoreSession(filesDir.path, cacheDir.path)
     if (firstAttempt.isSuccess) return null
 
     val firstError = firstAttempt.exceptionOrNull()
@@ -2684,7 +2754,7 @@ class PlayerActivity :
 
     Log.w(TAG, "MPV Vulkan init failed, retrying with OpenGL fallback for this session", firstError)
     player.forceOpenGlFallback = true
-    val fallbackAttempt = player.initializeSession(filesDir.path, cacheDir.path)
+    val fallbackAttempt = player.initializeCoreSession(filesDir.path, cacheDir.path)
     fallbackAttempt.exceptionOrNull()?.let { error -> Log.e(TAG, "Failed to initialize MPV", error) }
     return if (fallbackAttempt.isSuccess) null else fallbackAttempt.exceptionOrNull()?.message ?: fallbackAttempt.exceptionOrNull()?.toString() ?: "Unknown fallback error"
   }
@@ -2693,7 +2763,11 @@ class PlayerActivity :
     deferredFontSyncJob?.cancel()
     deferredFontSyncJob =
       lifecycleScope.launch(Dispatchers.IO) {
-        delay(750)
+        val readyState = PlaybackSession.state.first { state ->
+          state.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND, PlaybackPhase.ERROR)
+        }
+        if (readyState.phase == PlaybackPhase.ERROR) return@launch
+        delay(POST_FIRST_FRAME_IO_DELAY_MS)
         runCatching { PlaybackStartupAssets.syncSubtitleFontsFromPreferenceFolder() }
           .onFailure { e -> Log.e(TAG, "Deferred subtitle font sync failed", e) }
       }
@@ -2711,6 +2785,10 @@ class PlayerActivity :
       lifecycleScope.launch(Dispatchers.IO) {
         var completed = false
         try {
+          val readyState = PlaybackSession.state.first { state ->
+            state.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND, PlaybackPhase.ERROR)
+          }
+          if (readyState.phase == PlaybackPhase.ERROR) return@launch
           delay(DEFERRED_MPV_ASSET_SYNC_DELAY_MS)
           if (!ownsPlaybackSession() || isFinishing || isDestroyed) return@launch
           deferredFontSyncJob?.join()
@@ -3714,16 +3792,7 @@ class PlayerActivity :
         Log.d(TAG, "Coalesced video params refresh, aspect: $aspect")
         pipHelper.updatePictureInPictureParams()
 
-        val aspectOverride =
-          withContext(playbackRenderDispatcher) {
-            PlaybackSession.getPropertyDouble("video-aspect-override") ?: -1.0
-          }
-        if (playerPreferences.orientation.get() == PlayerOrientation.Video &&
-          aspect != null &&
-          aspectOverride <= 0.0
-        ) {
-          setOrientation()
-        }
+        setOrientation(aspect)
 
         if (pendingVideoParamRefreshRequiresShaderReload) {
           pendingVideoParamRefreshRequiresShaderReload = false
@@ -3956,27 +4025,13 @@ class PlayerActivity :
       }
     }
 
-    // Only set orientation immediately if NOT in Video mode
-    // For Video mode, wait for video-params/aspect to become available
+    // Video mode waits for geometry; every other preference is known now. Either way, re-apply once
+    // the track list settles — audio track info only arrives after FILE_LOADED, so without this an
+    // album-art video would be treated as a video. One deferred pass covers both reasons, and
+    // setOrientation is a no-op when it would not change anything.
     if (playerPreferences.orientation.get() != PlayerOrientation.Video) {
       setOrientation()
-    } else {
-      // For Video mode, try to set orientation after a short delay to ensure
-      // video dimensions are available
-      lifecycleScope.launch {
-        kotlinx.coroutines.delay(100)
-        if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
-          val aspect = player.getVideoOutAspect()
-          Log.d(TAG, "handleFileLoaded - Video mode, aspect after delay: $aspect")
-          if (aspect != null && aspect > 0) {
-            setOrientation()
-          }
-        }
-      }
     }
-
-    // Audio track information becomes available only after FILE_LOADED. Re-apply
-    // orientation once the track list settles so album art is not treated as video.
     lifecycleScope.launch {
       delay(100)
       if (PlaybackSession.isCurrentGeneration(loadGeneration) && mpvInitialized && !player.isExiting && !isFinishing) {
@@ -5750,6 +5805,24 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     return if (isRemote) NETWORK_PLAYBACK_LOAD_TIMEOUT_MS else LOCAL_PLAYBACK_LOAD_TIMEOUT_MS
   }
 
+  /**
+   * Whether this launch is plain offline media: a `file://` or `content://` URI that is not itself
+   * a `.torrent` payload.
+   *
+   * The torrent hand-off and the torrent engine observer only exist for magnet/hash/http sources,
+   * plus the `content://`/`.torrent` case that the picker has to resolve. Recognising the ordinary
+   * local file up front means an offline open never reaches [isTorrentSource]'s hash and magnet
+   * parsing, and it still cannot swallow the one local form that genuinely is a torrent. Network
+   * launches deliberately keep the existing checks, since a later queue item can be a torrent.
+   */
+  private fun isOfflineLocalLaunch(sourceIntent: Intent): Boolean {
+    val data = sourceIntent.data ?: return false
+    val scheme = data.scheme?.lowercase() ?: return false
+    if (scheme != "file" && scheme != "content") return false
+    return !data.toString().substringBefore('?').substringBefore('#')
+      .endsWith(".torrent", ignoreCase = true)
+  }
+
   private fun redirectUnselectedTorrentToPicker(
     sourceIntent: Intent,
     finishCurrent: Boolean,
@@ -5760,6 +5833,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     ) {
       return false
     }
+    if (isOfflineLocalLaunch(sourceIntent)) return false
     val source = extractUriFromIntent(sourceIntent)?.toString()?.trim().orEmpty()
     if (!isTorrentSource(source, sourceIntent.type)) return false
 
@@ -5904,65 +5978,55 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   // ==================== Orientation Management ====================
 
   /**
-   * Sets the screen orientation based on user preferences.
+   * Applies the orientation for the current media, per [PlayerOrientationPolicy].
    *
-   * IMPORTANT: Preferences are the single source of truth for orientation.
-   * This method applies the preference value when videos load.
-   * The rotation button temporarily overrides this without changing preferences.
+   * Preferences remain the single source of truth; the rotation button overrides this temporarily
+   * without changing them. Nothing is applied when the geometry needed to decide is not known yet,
+   * so the launch orientation survives until mpv reports it.
    *
-   * For "Video" orientation mode, this will wait for video-params/aspect to update
-   * to the correct orientation, starting with landscape as fallback.
+   * [sourceAspect] is for callers that already read mpv geometry; null makes PlayerOrientation.Video
+   * read it here instead.
    */
-  private fun setOrientation() {
+  private fun setOrientation(sourceAspect: Double? = null) {
     if (isTelevision) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
       return
     }
-    if (isCurrentMediaKnownAudio() || viewModel.isAudioOnly.value) {
-      val audioOrient =
-        when (audioPreferences.audioOrientation.get()) {
-          AudioPlayerOrientation.Auto -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
-          AudioPlayerOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-          AudioPlayerOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
-      requestedOrientation = audioOrient
-      return
-    }
-    val orientationPref = playerPreferences.orientation.get()
 
-    requestedOrientation =
-      when (orientationPref) {
-        PlayerOrientation.Free -> ActivityInfo.SCREEN_ORIENTATION_SENSOR
-        PlayerOrientation.Video -> {
-          // For video orientation, check if aspect is available
-          val aspect = runCatching { player.getVideoOutAspect() }.getOrNull()
-          Log.d(TAG, "setOrientation - Video mode: aspect=$aspect")
-          if (aspect == null || !aspect.isFinite() || aspect <= 0.0) {
-            // Aspect not available yet - wait for video-params/aspect update
-            Log.d(TAG, "setOrientation - Aspect not available, retaining launch orientation")
-            return
-          } else {
-            // Aspect available - set correct orientation now
-            val orientation =
-              if (aspect > 1.0) {
-                Log.d(TAG, "setOrientation - Aspect $aspect > 1.0, setting landscape")
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-              } else {
-                Log.d(TAG, "setOrientation - Aspect $aspect <= 1.0, setting portrait")
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-              }
-            orientation
-          }
+    val target =
+      if (isCurrentMediaKnownAudio() || viewModel.isAudioOnly.value) {
+        PlayerOrientationPolicy.forAudioPreference(audioPreferences.audioOrientation.get())
+      } else {
+        val preference = playerPreferences.orientation.get()
+        // A hand-set aspect ratio is a deliberate override of the picture's shape, so keep the
+        // current orientation rather than rotating to the source geometry behind the user's back.
+        if (preference == PlayerOrientation.Video && hasCustomAspectRatio()) {
+          return
         }
-        PlayerOrientation.Portrait -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        PlayerOrientation.ReversePortrait -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
-        PlayerOrientation.SensorPortrait -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        PlayerOrientation.Landscape -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        PlayerOrientation.ReverseLandscape -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-        PlayerOrientation.SensorLandscape -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-      }
+        PlayerOrientationPolicy.forPreference(preference) {
+          sourceAspect ?: player.getVideoOutAspect()
+        }
+      } ?: return
+
+    if (requestedOrientation != target) requestedOrientation = target
   }
 
+  private fun hasCustomAspectRatio(): Boolean =
+    playerPreferences.lastCustomAspectRatio.get() > 0f
+
+  /**
+   * Orientation for "Video" mode before mpv exists, so the window opens the right way round.
+   *
+   * This must stay synchronous, before super.onCreate(), so the requested orientation is applied
+   * while the window does not exist yet. Deferring it (even by one frame) makes the assignment land
+   * after the window is added and after overrideActivityTransition() has begun, and the resulting
+   * relayout drops the open animation — reproducible as a vertical video no longer sliding in.
+   * PlayerActivity handles orientation|screenSize|screenLayout itself, so the late assignment does
+   * not recreate the Activity; it relayouts the window mid-transition.
+   *
+   * Media library launches carry width/height/rotation in the intent, so this is a pure lookup.
+   * Anything else falls back to MediaMetadataRetriever for the missing fields.
+   */
   private fun applyInitialVideoOrientation(sourceIntent: Intent) {
     if (isTelevision) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -5970,19 +6034,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
     if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) return
 
-    // This must stay synchronous, before super.onCreate(), so the requested orientation is applied
-    // while the window does not exist yet. Deferring it (even by one frame) makes the assignment
-    // land after the window is added and after overrideActivityTransition() has begun, and the
-    // resulting relayout drops the open animation — reproducible as a vertical video no longer
-    // sliding in. PlayerActivity handles orientation|screenSize|screenLayout itself, so the late
-    // assignment does not recreate the Activity; it relayouts the window mid-transition.
     var width = sourceIntent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
     var height = sourceIntent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
-    var rotation = sourceIntent.getIntExtra(EXTRA_VIDEO_ROTATION, 0).takeIf { it != 0 }
-      ?: sourceIntent.getIntExtra("rotation", 0)
+    var rotation = sourceIntent.getIntExtra(EXTRA_VIDEO_ROTATION, 0)
 
-    // Only invoke expensive MediaMetadataRetriever synchronously if dimensions are not provided in intent extras
-    if (width <= 0 || height <= 0) {
+    // Only invoke expensive MediaMetadataRetriever synchronously if the intent carried no geometry.
+    if (width <= 0 || height <= 0 || rotation == 0) {
       extractUriFromIntent(sourceIntent)
         ?.takeIf { uri -> uri.scheme.equals("content", true) || uri.scheme.equals("file", true) }
         ?.let { uri ->
@@ -6017,17 +6074,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           }
         }
     }
-    if (width <= 0 || height <= 0) return
-
-    val normalizedRotation = ((rotation % 360) + 360) % 360
-    val swapsDimensions = normalizedRotation == 90 || normalizedRotation == 270
-    val initialOrientation =
-      if ((width > height) != swapsDimensions) {
-        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-      } else {
-        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-      }
-
+    val initialOrientation = PlayerOrientationPolicy.forSourceGeometry(width, height, rotation) ?: return
     if (requestedOrientation != initialOrientation) requestedOrientation = initialOrientation
   }
 
@@ -8105,6 +8152,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     private const val PLAYBACK_LOAD_RETRY_DELAY_MS = 200L
     private const val PLAYBACK_LOAD_ERROR_SETTLE_MS = 300L
     private const val MAX_PLAYBACK_LOAD_RETRIES = 1
+    private const val POST_FIRST_FRAME_IO_DELAY_MS = 2_000L
     private const val DEFERRED_MPV_ASSET_SYNC_DELAY_MS = 5_000L
     private const val LOCKED_CONTROLS_DOUBLE_BACK_TIMEOUT_MS = 2_000L
     private const val MPV_ASSET_SYNC_PREFERENCES = "mpv_asset_sync"
