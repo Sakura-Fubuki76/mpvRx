@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.Brush
@@ -70,12 +69,12 @@ data class AnimeDetailsScreen(
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
       // A stationary layer reuses the cover cache; scrolling never recomputes a bitmap blur.
       if (showPoster && !cover.isNullOrBlank()) {
-        RemoteImage(cover, null, Modifier.matchParentSize().scale(1.45f).blur(120.dp), ContentScale.Crop)
+        AnimeBackdrop(cover, Modifier.matchParentSize().scale(1.15f))
         val surface = MaterialTheme.colorScheme.surface
         val dark = surface.luminance() < .5f
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(
-          surface.copy(alpha = if (dark) .58f else .62f),
-          surface.copy(alpha = if (dark) .78f else .76f),
+          surface.copy(alpha = if (dark) .22f else .20f),
+          surface.copy(alpha = if (dark) .52f else .42f),
         ))))
       }
       connection?.let { server ->
