@@ -254,7 +254,7 @@ internal fun AnimeLibraryContent(
             if (showPoster && subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(MaterialTheme.colorScheme.surfaceContainer)) {
               RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
               Box(Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter).background(
-                Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
+                Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface.copy(alpha = .84f)))))
             }
             Column(Modifier.padding(24.dp)) {
               Text(title, style = MaterialTheme.typography.headlineMedium)
@@ -306,7 +306,7 @@ internal fun AnimeLibraryContent(
             val episodeTitle = episode?.title?.takeIf { it.isNotBlank() } ?: subject?.takeIf { episode != null && it.episodes.count { row -> row.type == episode.type } == 1 }?.title
             val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
             NetworkVideoCard(file, connection, modifier = Modifier.padding(horizontal = 16.dp),
-              titleOverride = episodeTitle?.let { "$episodeLabel · $it" },
+              titleOverride = episodeTitle, episodeLabel = episodeLabel,
               onClick = { onPlay(file, sectionFiles) })
           }
         }

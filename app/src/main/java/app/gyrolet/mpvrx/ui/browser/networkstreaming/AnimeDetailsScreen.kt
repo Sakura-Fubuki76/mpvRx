@@ -10,6 +10,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.luminance
+import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import app.gyrolet.mpvrx.R
@@ -59,8 +65,19 @@ data class AnimeDetailsScreen(
     var editMatch by remember { mutableStateOf(false) }
     val useCoverColors by koinInject<AppearancePreferences>().animeCoverColors.collectAsState()
     val cover = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.cover
+    val showPoster by koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>().animeFields.showFolderThumbnails.collectAsState()
     AnimeCoverTheme(cover, useCoverColors) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+      // A stationary layer reuses the cover cache; scrolling never recomputes a bitmap blur.
+      if (showPoster && !cover.isNullOrBlank()) {
+        RemoteImage(cover, null, Modifier.matchParentSize().scale(1.15f).blur(32.dp), ContentScale.Crop)
+        val surface = MaterialTheme.colorScheme.surface
+        val dark = surface.luminance() < .5f
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(
+          surface.copy(alpha = if (dark) .58f else .80f),
+          surface.copy(alpha = if (dark) .78f else .92f),
+        ))))
+      }
       connection?.let { server ->
         AnimeLibraryContent(server, "/", "",
           onPlay = { file, queue -> model.playAnimeVideo(file, queue) },

@@ -77,6 +77,7 @@ fun NetworkVideoCard(
   /** Corner label naming the media type; null hides it (shown only when images are mixed in). */
   mediaType: NetworkMediaType? = null,
   titleOverride: String? = null,
+  episodeLabel: String? = null,
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
@@ -219,7 +220,18 @@ fun NetworkVideoCard(
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig(fields).copy(showThumbnails = displayThumb),
       showSubtitleIndicator = showSubtitleIndicator, titleOverride = if (showExtensionField && titleOverride != null) "$titleOverride.${file.name.substringAfterLast('.', "")}" else titleOverride,
-      sourceSubtitle = file.path.takeIf { fields != null && showPath })
+      sourceSubtitle = file.path.takeIf { fields != null && showPath },
+      titleLeading = episodeLabel?.let { label -> {
+        androidx.compose.material3.Surface(
+          modifier = Modifier.padding(end = 8.dp),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp),
+          color = MaterialTheme.colorScheme.primaryContainer,
+          contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+          Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium, maxLines = 1)
+        }
+      } })
     return
   }
 

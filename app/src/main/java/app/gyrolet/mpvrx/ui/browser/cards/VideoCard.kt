@@ -236,6 +236,7 @@ fun VideoCard(
   titleAction: (@Composable () -> Unit)? = null,
   externalThumbnail: Bitmap? = null,
   playbackIdentity: String? = null,
+  titleLeading: (@Composable () -> Unit)? = null,
 ) {
   // Screens hoist this once and pass it down; collecting per card would register a dozen
   // preference observers for every visible item in a grid.
@@ -569,9 +570,10 @@ fun VideoCard(
             horizontalArrangement = if (centerGridTitles) Arrangement.Center else Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
           ) {
+          titleLeading?.invoke()
           Text(
             text = displayName,
-            modifier = if (titleAction != null) Modifier.weight(1f) else Modifier,
+            modifier = if (titleAction != null || titleLeading != null) Modifier.weight(1f) else Modifier,
             style =
               MaterialTheme.typography.titleMedium.let { baseStyle ->
                 if (isRecentlyPlayed) baseStyle.copy(fontStyle = FontStyle.Italic) else baseStyle
@@ -900,6 +902,7 @@ fun VideoCard(
             verticalArrangement = if (sourceLabel != null) Arrangement.spacedBy(6.dp) else Arrangement.Top,
           ) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            titleLeading?.invoke()
             Text(
               displayName,
               modifier = Modifier.weight(1f),
