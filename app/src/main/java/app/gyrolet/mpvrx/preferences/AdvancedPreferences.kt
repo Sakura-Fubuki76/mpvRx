@@ -25,6 +25,8 @@ class AdvancedPreferences(
 
   val mpvConfStorageUri = preferenceStore.getString("mpv_conf_storage_location_uri")
   val mpvConf = preferenceStore.getString("mpv.conf")
+  val tmdbArtworkToken = preferenceStore.getString("tmdb_artwork_token", "")
+  val tmdbArtworkApiKey = preferenceStore.getString("tmdb_artwork_api_key", "")
   val inputConf = preferenceStore.getString("input.conf")
   val mpvConfOverrides = preferenceStore.getStringSet("mpv_conf_overrides", emptySet())
 

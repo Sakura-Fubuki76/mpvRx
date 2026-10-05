@@ -57,13 +57,18 @@ data class AnimeDetailsScreen(
     val catalog by remember(connectionId) { repository.observe(connectionId) }
       .collectAsState()
     val subjectId = catalog.folders[groupKey]?.subjectId
+    val advanced = koinInject<app.gyrolet.mpvrx.preferences.AdvancedPreferences>()
+    val artworkToken by advanced.tmdbArtworkToken.collectAsState()
+    val artworkKey by advanced.tmdbArtworkApiKey.collectAsState()
+    LaunchedEffect(subjectId, artworkToken, artworkKey) { subjectId?.let(repository::scheduleArtwork) }
     LaunchedEffect(subjectId) {
       subjectId?.let { kotlinx.coroutines.delay(500); repository.scheduleCredits(it) }
     }
     val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
     var editMatch by remember { mutableStateOf(false) }
     val useCoverColors by koinInject<AppearancePreferences>().animeCoverColors.collectAsState()
-    val cover = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.cover
+    val subject = catalog.subjects[catalog.folders[groupKey]?.subjectId]
+    val cover = subject?.detailCover
     val showPoster by koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>().animeFields.showFolderThumbnails.collectAsState()
     AnimeCoverTheme(cover, useCoverColors) {
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {

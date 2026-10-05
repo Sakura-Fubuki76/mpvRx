@@ -266,23 +266,27 @@ internal fun AnimeLibraryContent(
     val binding = catalog.folders[path]
     val subject = catalog.subjects[binding?.subjectId]
     val title = subject?.title ?: libraryGroups[path]?.query.orEmpty()
-    var coverRatio by remember(subject?.cover) { mutableFloatStateOf(2f / 3f) }
+    val detailCover = subject?.detailCover.orEmpty()
+    var coverRatio by remember(detailCover) { mutableFloatStateOf(2f / 3f) }
       LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 40.dp)) {
         item {
           Column {
-            if (showPoster && subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio)) {
-              RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize()
+            if (showPoster && detailCover.isNotBlank()) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio)) {
+              RemoteImage(detailCover, title, Modifier.fillMaxSize()
                 .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 .drawWithContent {
                   drawContent()
-                  drawRect(Brush.verticalGradient(0f to Color.White, .55f to Color.White, 1f to Color.Transparent),
+                  drawRect(Brush.verticalGradient(0f to Color.White, .45f to Color.White, .95f to Color.Transparent),
                     blendMode = BlendMode.DstIn)
                 }, ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
+              AnimeDetailsTitle(title, subject?.titleLogo.orEmpty(), showPoster,
+                Modifier.align(Alignment.BottomCenter).padding(horizontal = 24.dp, vertical = 16.dp))
             }
             Column(Modifier.padding(24.dp)) {
-              Text(title, style = MaterialTheme.typography.headlineMedium)
+              if (!showPoster || detailCover.isBlank()) AnimeDetailsTitle(title, "", false)
               Text(listOfNotNull(subject?.date?.take(4), subject?.score?.takeIf { it > 0 }?.let { String.format(java.util.Locale.ROOT, "%.1f", it) },
-                subject?.tags?.take(3)?.joinToString(" · ")).joinToString("  ·  "), style = MaterialTheme.typography.bodyMedium)
+                subject?.tags?.take(3)?.joinToString(" · ")).joinToString("  ·  "), Modifier.fillMaxWidth().padding(top = 12.dp),
+                style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
             }
           }
         }
@@ -340,6 +344,18 @@ internal fun AnimeLibraryContent(
       }
   }
 
+}
+
+@Composable
+private fun AnimeDetailsTitle(title: String, logo: String, showLogo: Boolean, modifier: Modifier = Modifier) {
+  var logoReady by remember(logo) { mutableStateOf(false) }
+  Box(modifier.fillMaxWidth().heightIn(min = 80.dp), contentAlignment = Alignment.Center) {
+    if (showLogo && logo.isNotBlank()) RemoteImage(logo, title,
+      Modifier.fillMaxWidth(.8f).height(112.dp), ContentScale.Fit,
+      onAspectRatio = { logoReady = true })
+    if (!showLogo || !logoReady) Text(title, Modifier.fillMaxWidth(),
+      style = MaterialTheme.typography.headlineMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+  }
 }
 
 @Composable

@@ -12,8 +12,12 @@ data class AnimeSubject(
   val creditsFetchedAt: Long = 0,
   val aliases: List<String> = emptyList(), val format: String = "",
   val subjectType: Int = 2, val episodeSchemaVersion: Int = 0,
+  val titleLogo: String = "", val tmdbId: Long = 0,
+  val artworkFetchedAt: Long = 0,
+  val artworkCover: String = "", val artworkBackdrop: String = "", val artworkSchemaVersion: Int = 0,
 ) {
   val title: String get() = chineseName.ifBlank { name }
+  val detailCover: String get() = artworkCover.ifBlank { cover }.ifBlank { artworkBackdrop }
 }
 
 @Serializable

@@ -20,6 +20,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -37,6 +38,7 @@ import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
+import me.zhanghai.compose.preference.TextFieldPreference
 import org.koin.compose.koinInject
 
 @Serializable
@@ -48,6 +50,8 @@ object NetworkConfigurationPreferencesScreen : Screen {
     val preferences = koinInject<AdvancedPreferences>()
     val enableP2pStreaming by preferences.enableP2pStreaming.collectAsState()
     val enableHlsProxy by preferences.enableHlsProxy.collectAsState()
+    val tmdbToken by preferences.tmdbArtworkToken.collectAsState()
+    val tmdbApiKey by preferences.tmdbArtworkApiKey.collectAsState()
 
     Scaffold(
       topBar = {
@@ -77,6 +81,25 @@ object NetworkConfigurationPreferencesScreen : Screen {
           state = settingsListState,
           modifier = Modifier.fillMaxSize().padding(padding).then(settingsHighlight),
         ) {
+          item { PreferenceSectionHeader(title = stringResource(R.string.tmdb_artwork_title)) }
+          item {
+            PreferenceCard {
+              for ((value, preference, label) in listOf(
+                Triple(tmdbToken, preferences.tmdbArtworkToken, R.string.tmdb_artwork_token),
+                Triple(tmdbApiKey, preferences.tmdbArtworkApiKey, R.string.tmdb_artwork_key),
+              )) TextFieldPreference(
+                value = value, onValueChange = { preference.set(it.trim()) }, textToValue = { it },
+                title = { Text(stringResource(label)) },
+                summary = { Text(stringResource(if (value.isBlank()) R.string.tmdb_artwork_unset else R.string.tmdb_artwork_saved)) },
+                textField = { text, onChange, _ -> androidx.compose.material3.TextField(
+                  value = text, onValueChange = onChange, singleLine = true,
+                  visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                ) },
+              )
+              Text(stringResource(R.string.tmdb_artwork_summary), Modifier.padding(16.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
           item {
             PreferenceSectionHeader(title = stringResource(R.string.pref_section_p2p_streaming))
           }

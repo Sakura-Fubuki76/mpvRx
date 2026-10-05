@@ -2967,4 +2967,11 @@
     <string name="anime_sort_score">评分</string>
     <string name="anime_sort_ascending">升序</string>
     <string name="anime_sort_descending">降序</string>
+    <string name="tmdb_artwork_title">动画图片 · TMDB</string>
+    <string name="tmdb_artwork_token">TMDB API 读取访问令牌（Token）</string>
+    <string name="tmdb_artwork_key">TMDB API 密钥（Key）</string>
+    <string name="tmdb_artwork_unset">尚未配置</string>
+    <string name="tmdb_artwork_saved">已配置</string>
+    <string name="tmdb_artwork_summary">为动画详情获取标题 Logo 和无语言海报。头图依次使用 TMDB 无语言海报、Bangumi 封面、TMDB 无语言背景图。优先使用 Token。</string>
+    <string name="tmdb_artwork_attribution">本产品使用 TMDB API，但未获得 TMDB 的认可或认证。</string>
 </resources>

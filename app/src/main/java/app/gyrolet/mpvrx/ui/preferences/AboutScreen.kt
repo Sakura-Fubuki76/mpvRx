@@ -624,6 +624,14 @@ object AboutScreen : Screen {
         }
 
         // System Stats Section
+        PreferenceSectionHeader(title = stringResource(R.string.tmdb_artwork_title))
+        PreferenceCard {
+          Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(R.drawable.tmdb_logo), "TMDB",
+              Modifier.padding(bottom = 12.dp))
+            Text(stringResource(R.string.tmdb_artwork_attribution), style = MaterialTheme.typography.bodySmall)
+          }
+        }
         PreferenceSectionHeader(title = stringResource(R.string.pref_section_system))
 
         val systemStats = remember { collectSystemStats(context) }

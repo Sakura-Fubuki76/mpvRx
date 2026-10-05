@@ -3010,4 +3010,11 @@
     <string name="anime_sort_score">Rating</string>
     <string name="anime_sort_ascending">Ascending</string>
     <string name="anime_sort_descending">Descending</string>
+    <string name="tmdb_artwork_title">Anime artwork · TMDB</string>
+    <string name="tmdb_artwork_token">TMDB API Read Access Token</string>
+    <string name="tmdb_artwork_key">TMDB API Key</string>
+    <string name="tmdb_artwork_unset">Not configured</string>
+    <string name="tmdb_artwork_saved">Configured</string>
+    <string name="tmdb_artwork_summary">Use TMDB title logos and language-neutral posters in anime details. Covers fall back to Bangumi, then language-neutral backdrops. Token takes priority.</string>
+    <string name="tmdb_artwork_attribution">This product uses the TMDB API but is not endorsed or certified by TMDB.</string>
 </resources>
