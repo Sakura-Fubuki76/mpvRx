@@ -3004,4 +3004,10 @@
   <string name="anime_related_empty">No related videos found in your anime libraries</string>
   <string name="anime_related_retry">Could not update related works. Cached results are still available.</string>
   <string name="anime_related_refresh">Retry</string>
+    <string name="anime_sort_title">Anime sorting and fields</string>
+    <string name="anime_sort_name">Name</string>
+    <string name="anime_sort_year">Release year</string>
+    <string name="anime_sort_score">Rating</string>
+    <string name="anime_sort_ascending">Ascending</string>
+    <string name="anime_sort_descending">Descending</string>
 </resources>

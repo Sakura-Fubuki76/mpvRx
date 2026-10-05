@@ -175,6 +175,7 @@ data class NetworkBrowserScreen(
     val files = (indexResults ?: directoryFiles).filterNot { it.isDirectory && it.folderScanComplete && it.videoCount == 0 }
     val connection by viewModel.connection.collectAsState()
     val isCloudLibrary = connection?.protocol in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)
+    val isAnimeLibrary = connection?.isAnime == true && isCloudLibrary && showAnimeLibrary && !isPickerMode
     val effectiveLayout = networkLayoutMode
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
@@ -398,7 +399,7 @@ data class NetworkBrowserScreen(
         }
       },
     ) { padding ->
-      if (connection?.isAnime == true && isCloudLibrary && showAnimeLibrary && !isPickerMode) {
+      if (isAnimeLibrary) {
         AnimeLibraryContent(
           connection = requireNotNull(connection), currentPath = currentPath, searchQuery = searchQuery,
           onPlay = { file, episodes -> viewModel.playAnimeVideo(file, episodes) },
@@ -487,7 +488,8 @@ data class NetworkBrowserScreen(
         )
       }
 
-      NetworkSortDialog(
+      if (isAnimeLibrary) AnimeSortDialog(sortDialogOpen.value) { sortDialogOpen.value = false }
+      else NetworkSortDialog(
         isCloudLibrary = isCloudLibrary,
         isOpen = sortDialogOpen.value,
         onDismiss = { sortDialogOpen.value = false },

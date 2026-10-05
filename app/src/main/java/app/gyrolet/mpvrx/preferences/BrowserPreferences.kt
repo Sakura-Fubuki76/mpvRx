@@ -48,6 +48,10 @@ class BrowserPreferences(
     internal val VIDEO_SWIPE_ZONE_RANGE = 1..50
   }
 
+  val animeShowPosters = preferenceStore.getBoolean("anime_show_posters", true)
+  val animeSortType = preferenceStore.getEnum("anime_sort_type", app.gyrolet.mpvrx.domain.cloud.AnimeSortType.Title)
+  val animeSortOrder = preferenceStore.getEnum("anime_sort_order", SortOrder.Ascending)
+
   // Folder sorting preferences
   val folderSortType = preferenceStore.getEnum("folder_sort_type", FolderSortType.Title)
   val folderSortOrder = preferenceStore.getEnum("folder_sort_order", SortOrder.Ascending)

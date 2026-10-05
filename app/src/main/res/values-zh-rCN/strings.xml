@@ -2961,4 +2961,10 @@
   <string name="anime_related_empty">当前动画媒体库中没有关联视频</string>
   <string name="anime_related_retry">关联作品更新失败，仍可浏览已缓存的结果。</string>
   <string name="anime_related_refresh">重试</string>
+    <string name="anime_sort_title">动画排序与字段</string>
+    <string name="anime_sort_name">名称</string>
+    <string name="anime_sort_year">放送年份</string>
+    <string name="anime_sort_score">评分</string>
+    <string name="anime_sort_ascending">升序</string>
+    <string name="anime_sort_descending">降序</string>
 </resources>

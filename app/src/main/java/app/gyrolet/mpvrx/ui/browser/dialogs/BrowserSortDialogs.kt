@@ -1252,7 +1252,7 @@ fun FileSystemSortDialog(
 }
 
 @Composable
-private fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = false): List<VisibilityToggle> {
+internal fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = false, anime: Boolean = false): List<VisibilityToggle> {
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
@@ -1270,7 +1270,8 @@ private fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fals
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val showTotalDurationChip by browserPreferences.showTotalDurationChip.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
-  val showFolderThumbnails by browserPreferences.showFolderThumbnails.collectAsState()
+  val posterPreference = if (anime) browserPreferences.animeShowPosters else browserPreferences.showFolderThumbnails
+  val showFolderThumbnails by posterPreference.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
   return buildList {
@@ -1307,7 +1308,7 @@ private fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fals
             label = "Path",
             checked = showFolderPath,
             onCheckedChange = { browserPreferences.showFolderPath.set(it) },
-            enabled = layoutMode == MediaLayoutMode.LIST,
+            enabled = anime || layoutMode == MediaLayoutMode.LIST,
           ),
         )
         add(
@@ -1322,7 +1323,7 @@ private fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fals
             label = "Folder Size",
             checked = showTotalSizeChip,
             onCheckedChange = { browserPreferences.showTotalSizeChip.set(it) },
-            enabled = layoutMode == MediaLayoutMode.LIST,
+            enabled = anime || layoutMode == MediaLayoutMode.LIST,
           ),
         )
         add(
@@ -1370,7 +1371,7 @@ private fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fals
         add(VisibilityToggle("Total Duration", showTotalDurationChip, browserPreferences.showTotalDurationChip::set))
         add(VisibilityToggle("Date", showDateChip, browserPreferences.showDateChip::set))
         if (layoutMode == MediaLayoutMode.GRID) {
-          add(VisibilityToggle("Folder Thumbnails", showFolderThumbnails, browserPreferences.showFolderThumbnails::set))
+          add(VisibilityToggle("Folder Thumbnails", showFolderThumbnails, posterPreference::set))
           add(VisibilityToggle("Center Titles", centerGridTitles, browserPreferences.centerGridTitles::set))
         }
       }

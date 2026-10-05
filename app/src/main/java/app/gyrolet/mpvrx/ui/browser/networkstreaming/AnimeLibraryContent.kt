@@ -18,6 +18,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.cloud.*
 import app.gyrolet.mpvrx.domain.network.*
@@ -44,6 +45,18 @@ internal fun AnimeLibraryContent(
   onEditMatch: () -> Unit = {},
   modifier: Modifier = Modifier,
 ) {
+  val preferences = koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
+  val appearance = koinInject<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
+  val fullName by appearance.unlimitedNameLines.collectAsState()
+  val showPoster by preferences.animeShowPosters.collectAsState()
+  val centerTitles by preferences.centerGridTitles.collectAsState()
+  val showCount by preferences.showTotalVideosChip.collectAsState()
+  val showProgress by preferences.showProgressBar.collectAsState()
+  val showPath by preferences.showFolderPath.collectAsState()
+  val showTotalSize by preferences.showTotalSizeChip.collectAsState()
+  val showTotalDuration by preferences.showTotalDurationChip.collectAsState()
+  val sortType by preferences.animeSortType.collectAsState()
+  val sortOrder by preferences.animeSortOrder.collectAsState()
   val cloud = koinInject<CloudMetadataRepository>()
   val anime = koinInject<AnimeRepository>()
   val snapshot by remember(connection.id, currentPath) {
@@ -73,14 +86,21 @@ internal fun AnimeLibraryContent(
     if (detailKey == null && snapshot.loaded && allFiles.isNotEmpty()) anime.schedule(connection.id, allFiles)
   }
 
-  val visible by produceState(initialValue = emptyList<Map.Entry<String, List<NetworkFile>>>(), snapshot, catalog, searchQuery, detailKey) {
+  val visible by produceState(initialValue = emptyList<Map.Entry<String, List<NetworkFile>>>(), snapshot, catalog, searchQuery, detailKey, sortType, sortOrder) {
     value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+      val sortItems = groups.keys.associateWith { key ->
+        val subject = catalog.subjects[catalog.folders[key]?.subjectId]
+        AnimeSortItem(key, subject?.title ?: libraryGroups[key]?.query ?: key, subject?.date.orEmpty(), subject?.score ?: 0.0)
+      }
       if (detailKey != null || !snapshot.loaded || !catalog.loaded) emptyList() else groups.entries.filter { (path, files) ->
         searchQuery.isBlank() || path.contains(searchQuery, true) || files.any { it.name.contains(searchQuery, true) } ||
           catalog.subjects[catalog.folders[path]?.subjectId]?.title?.contains(searchQuery, true) == true
-      }.sortedWith(compareBy<Map.Entry<String, List<NetworkFile>>, String>(app.gyrolet.mpvrx.utils.sort.SortUtils.NaturalOrderComparator.DEFAULT) {
-        catalog.subjects[catalog.folders[it.key]?.subjectId]?.title ?: libraryGroups[it.key]?.query ?: it.key
-      }.thenBy { libraryGroups[it.key]?.query ?: it.key }.thenBy { it.key })
+      }.sortedWith(Comparator { left, right ->
+        compareAnimeSort(
+          sortItems.getValue(left.key), sortItems.getValue(right.key),
+          sortType, sortOrder.isAscending,
+        )
+      })
     }
   }
   val watchedCounts by produceState(initialValue = emptyMap<String, Pair<Int, Int>>(), snapshot, playback) {
@@ -104,15 +124,19 @@ internal fun AnimeLibraryContent(
       val featuredTitle = subject?.title ?: libraryGroups[featured.key]?.query.orEmpty()
       Card(onClick = { onOpenDetails(featured.key, libraryGroups.getValue(featured.key).directory, featuredTitle) }, shape = RoundedCornerShape(24.dp)) {
         Box(Modifier.fillMaxWidth().height(280.dp)) {
-          if (subject != null) RemoteImage(subject.cover, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = .25f)
+          if (showPoster && subject != null) RemoteImage(subject.cover, null, Modifier.fillMaxSize(), ContentScale.Crop, alpha = .25f)
           Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(MaterialTheme.colorScheme.surfaceContainer, Color.Transparent))))
           Row(Modifier.fillMaxSize().padding(20.dp), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
               Text(featuredTitle, style = MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-              Text(subject?.let { "${it.date.take(4)}  ·  ${it.score}" }.orEmpty(), style = MaterialTheme.typography.labelLarge)
+              val featuredFields = listOfNotNull(
+                subject?.date?.take(4)?.takeIf { it.isNotBlank() },
+                subject?.score?.takeIf { it > 0 }?.let { String.format(java.util.Locale.ROOT, "%.1f", it) },
+              ).joinToString("  ·  ")
+              if (featuredFields.isNotEmpty()) Text(featuredFields, style = MaterialTheme.typography.labelLarge)
               Text(subject?.summary.orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
             }
-            if (subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Crop)
+            if (showPoster && subject != null) RemoteImage(subject.cover, featuredTitle, Modifier.width(135.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(16.dp)), ContentScale.Crop)
           }
         }
       }
@@ -125,7 +149,7 @@ internal fun AnimeLibraryContent(
       Column {
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-            if (subject?.cover?.isNotBlank() == true) {
+            if (showPoster && subject?.cover?.isNotBlank() == true) {
               RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Crop)
             } else {
               Text(fallback, Modifier.align(Alignment.Center).padding(20.dp), style = MaterialTheme.typography.titleMedium)
@@ -137,22 +161,32 @@ internal fun AnimeLibraryContent(
                 Text(String.format(java.util.Locale.ROOT, "%.1f", subject.score), Modifier.padding(8.dp, 4.dp), color = Color.White)
               }
             }
-            Text(stringResource(R.string.anime_available_count, files.size), Modifier.align(Alignment.BottomStart).padding(12.dp),
+            if (showCount) Text(stringResource(R.string.anime_available_count, files.size), Modifier.align(Alignment.BottomStart).padding(12.dp),
               color = Color.White, style = MaterialTheme.typography.labelMedium)
           }
         }
-        Text(subject?.title ?: fallback, Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleSmall,
-          maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(subject?.title ?: fallback, Modifier.fillMaxWidth().padding(top = 8.dp), style = MaterialTheme.typography.titleSmall,
+          maxLines = if (fullName) Int.MAX_VALUE else 2, textAlign = if (centerTitles) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start, overflow = TextOverflow.Ellipsis)
         val matchLabel = when {
-          subject != null -> subject.date.take(4).ifBlank { stringResource(R.string.anime_matched) }
+          subject != null -> subject.date.take(4)
           matchProgress.running && matchProgress.current == path -> stringResource(R.string.anime_matching)
           binding?.query?.endsWith(" | request-failed") == true -> stringResource(R.string.anime_match_failed)
           binding?.attemptedAt != null -> stringResource(R.string.anime_no_match)
           else -> stringResource(R.string.anime_unmatched)
         }
-        Text(matchLabel,
+        if (matchLabel.isNotBlank()) Text(matchLabel,
           style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (watched > 0) LinearProgressIndicator(progress = { watched.toFloat() / episodeCount.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+        if (showPath) Text(libraryGroups[path]?.directory.orEmpty(), style = MaterialTheme.typography.bodySmall,
+          maxLines = if (fullName) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
+        val totals = buildList {
+          if (showTotalSize) add(android.text.format.Formatter.formatShortFileSize(androidx.compose.ui.platform.LocalContext.current, files.sumOf { it.size.coerceAtLeast(0) }))
+          if (showTotalDuration) {
+            val seconds = files.sumOf { it.durationMs.coerceAtLeast(0) } / 1000
+            if (seconds > 0) add(String.format(java.util.Locale.ROOT, "%d:%02d:%02d", seconds / 3600, seconds / 60 % 60, seconds % 60))
+          }
+        }
+        if (totals.isNotEmpty()) Text(totals.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+        if (showProgress && watched > 0) LinearProgressIndicator(progress = { watched.toFloat() / episodeCount.coerceAtLeast(1) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
       }
     }
     if (visible.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
@@ -193,7 +227,7 @@ internal fun AnimeLibraryContent(
       LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 40.dp)) {
         item {
           Column {
-            if (subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(MaterialTheme.colorScheme.surfaceContainer)) {
+            if (showPoster && subject?.cover?.isNotBlank() == true) Box(Modifier.fillMaxWidth().aspectRatio(coverRatio).background(MaterialTheme.colorScheme.surfaceContainer)) {
               RemoteImage(subject.cover, subject.title, Modifier.fillMaxSize(), ContentScale.Fit, Alignment.TopCenter, onAspectRatio = { coverRatio = it })
               Box(Modifier.fillMaxWidth().height(160.dp).align(Alignment.BottomCenter).background(
                 Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface))))
