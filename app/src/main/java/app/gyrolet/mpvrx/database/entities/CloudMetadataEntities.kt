@@ -14,6 +14,11 @@ data class CloudVideoMetadataEntity(
   val width: Int,
   val height: Int,
   val updatedAt: Long,
+  @androidx.room.ColumnInfo(defaultValue = "0") val fps: Float = 0f,
+  @androidx.room.ColumnInfo(defaultValue = "''") val videoCodec: String = "",
+  @androidx.room.ColumnInfo(defaultValue = "0") val hasEmbeddedSubtitles: Boolean = false,
+  @androidx.room.ColumnInfo(defaultValue = "''") val subtitleCodec: String = "",
+  @androidx.room.ColumnInfo(defaultValue = "0") val technicalVersion: Int = 0,
 )
 
 @Entity(
@@ -59,4 +64,8 @@ data class CloudLibraryItem(
   val durationMs: Long,
   val width: Int,
   val height: Int,
+  val fps: Float = 0f,
+  val videoCodec: String = "",
+  val hasEmbeddedSubtitles: Boolean = false,
+  val subtitleCodec: String = "",
 )

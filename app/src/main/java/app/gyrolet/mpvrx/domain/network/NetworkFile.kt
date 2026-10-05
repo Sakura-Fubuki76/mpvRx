@@ -27,4 +27,8 @@ data class NetworkFile(
   val height: Int = 0,
   val videoCount: Int? = null,
   val folderScanComplete: Boolean = false,
+  val fps: Float = 0f,
+  val videoCodec: String = "",
+  val hasEmbeddedSubtitles: Boolean = false,
+  val subtitleCodec: String = "",
 )

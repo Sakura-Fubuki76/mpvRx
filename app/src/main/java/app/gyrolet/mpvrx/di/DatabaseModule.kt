@@ -1036,6 +1036,16 @@ val MIGRATION_33_34 = object : Migration(33, 34) {
   }
 }
 
+val MIGRATION_34_35 = object : Migration(34, 35) {
+  override fun migrate(db: SupportSQLiteDatabase) {
+    db.execSQL("ALTER TABLE cloud_video_metadata ADD COLUMN fps REAL NOT NULL DEFAULT 0")
+    db.execSQL("ALTER TABLE cloud_video_metadata ADD COLUMN videoCodec TEXT NOT NULL DEFAULT ''")
+    db.execSQL("ALTER TABLE cloud_video_metadata ADD COLUMN hasEmbeddedSubtitles INTEGER NOT NULL DEFAULT 0")
+    db.execSQL("ALTER TABLE cloud_video_metadata ADD COLUMN subtitleCodec TEXT NOT NULL DEFAULT ''")
+    db.execSQL("ALTER TABLE cloud_video_metadata ADD COLUMN technicalVersion INTEGER NOT NULL DEFAULT 0")
+  }
+}
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -1085,6 +1095,7 @@ val DatabaseModule =
           MIGRATION_31_32,
           MIGRATION_32_33,
           MIGRATION_33_34,
+          MIGRATION_34_35,
         ).build()
     }
 

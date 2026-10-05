@@ -82,6 +82,16 @@ internal fun AnimeLibraryContent(
     }
   }.collectAsState(emptyMap())
   val groups = remember(libraryGroups) { libraryGroups.mapValues { it.value.files } }
+  val cloudMetadata = koinInject<app.gyrolet.mpvrx.repository.CloudMetadataRepository>()
+  val showVideoThumbnails by fields.showVideoThumbnails.collectAsState()
+  val detailFiles = libraryGroups.values.firstOrNull { it.key == detailKey || detailKey in it.sourceKeys }?.files.orEmpty()
+  val detailVersions = remember(detailFiles) { detailFiles.map { Triple(it.path, it.size, it.lastModified) } }
+  LaunchedEffect(connection.id, detailKey, detailVersions, showVideoThumbnails) {
+    if (detailKey != null && detailFiles.isNotEmpty()) {
+      cloudMetadata.cacheMissingMetadata(connection, detailFiles,
+        app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND, showVideoThumbnails)
+    }
+  }
   LaunchedEffect(connection.id, snapshot.playbackIdentities) {
     kotlinx.coroutines.delay(750)
     if (detailKey == null && snapshot.loaded && allFiles.isNotEmpty()) anime.schedule(connection.id, allFiles)

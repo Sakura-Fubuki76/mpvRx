@@ -1460,7 +1460,8 @@ class ThumbnailRepository(
       )
       if (result != null && connection != null) {
         KoinJavaComponent.get<app.gyrolet.mpvrx.repository.CloudMetadataRepository>(app.gyrolet.mpvrx.repository.CloudMetadataRepository::class.java)
-          .publish(connection.id, path, fileSize, lastModified, result.durationMs ?: 0L, result.width ?: 0, result.height ?: 0)
+          .publish(connection.id, path, fileSize, lastModified, result.durationMs ?: 0L, result.width ?: 0, result.height ?: 0,
+            technical = cloudKeyframes.cachedTechnicalMetadata(app.gyrolet.mpvrx.domain.cloud.cloudMediaKey(connection, path, fileSize, lastModified)))
       }
       result?.bitmap
     } catch (cancellation: CancellationException) {

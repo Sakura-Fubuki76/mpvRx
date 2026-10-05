@@ -34,6 +34,14 @@ class CloudKeyframeExtractor(
   private val mp4 = Mp4KeyframeExtractor(okHttpClient)
   private val mkv = MkvKeyframeExtractor(okHttpClient)
 
+  suspend fun cachedTechnicalMetadata(stableKey: String): CloudTechnicalMetadata? {
+    MoovIndexCache.ensureLoadedFromDisk(stableKey)
+    val info = MoovIndexCache.get(stableKey)?.parsed?.moovInfo ?: return null
+    return CloudTechnicalMetadata(info.width, info.height, info.fps, when (info.codecType) {
+      "video/avc" -> "h264"; "video/hevc" -> "hevc"; "video/av01" -> "av1"; "video/x-vnd.on2.vp9" -> "vp9"; else -> info.codecType
+    })
+  }
+
   data class Result(
     val bitmap: Bitmap,
     val durationMs: Long? = null,

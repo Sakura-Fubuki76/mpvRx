@@ -10,11 +10,13 @@ suspend fun probeVideoDurationMs(
     url: String,
     okHttpClient: okhttp3.OkHttpClient,
     extension: String = "",
+    onHeader: ((ByteArray) -> Unit)? = null,
     mp4Duration: (suspend (String) -> Long?)? = null,
 ): Long? {
     return try {
         val ext = extension.lowercase()
         val probeSize = when (ext) {
+            "mkv", "webm" -> 65536
             "flv" -> 4096
             "mp4", "mov" -> 16384
             else -> 16384
@@ -23,6 +25,7 @@ suspend fun probeVideoDurationMs(
         val data = fetchWithRetry(url, probeSize, okHttpClient)
             ?: return null
 
+        onHeader?.invoke(data)
         val result = when {
             isMkv(data) -> parseMkvDuration(data)
             isMp4(data) -> parseMp4Duration(data) ?: mp4Duration?.invoke(url)

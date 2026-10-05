@@ -23,7 +23,7 @@ abstract class CloudMetadataDao {
   abstract suspend fun getVideos(connectionId: Long, paths: List<String>): List<CloudVideoMetadataEntity>
 
   // Merge is atomic, and a new file version resets fields from the old file.
-  @Query("""INSERT OR REPLACE INTO cloud_video_metadata(connectionId, path, size, lastModified, durationMs, width, height, updatedAt)
+  @Query("""INSERT OR REPLACE INTO cloud_video_metadata(connectionId, path, size, lastModified, durationMs, width, height, updatedAt, fps, videoCodec, hasEmbeddedSubtitles, subtitleCodec, technicalVersion)
     VALUES (:connectionId, :path, :size, :lastModified,
       CASE WHEN :durationMs > 0 THEN :durationMs ELSE COALESCE((SELECT durationMs FROM cloud_video_metadata
         WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), 0) END,
@@ -31,10 +31,15 @@ abstract class CloudMetadataDao {
         WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), 0) END,
       CASE WHEN :height > 0 THEN :height ELSE COALESCE((SELECT height FROM cloud_video_metadata
         WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), 0) END,
-      :updatedAt)""")
+      :updatedAt,
+      CASE WHEN :fps > 0 THEN :fps ELSE COALESCE((SELECT fps FROM cloud_video_metadata WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), 0) END,
+      CASE WHEN :videoCodec != '' THEN :videoCodec ELSE COALESCE((SELECT videoCodec FROM cloud_video_metadata WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), '') END,
+      CASE WHEN :hasEmbeddedSubtitles THEN 1 ELSE COALESCE((SELECT hasEmbeddedSubtitles FROM cloud_video_metadata WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), 0) END,
+      CASE WHEN :subtitleCodec != '' THEN :subtitleCodec ELSE COALESCE((SELECT subtitleCodec FROM cloud_video_metadata WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), '') END,
+      MAX(:technicalVersion, COALESCE((SELECT technicalVersion FROM cloud_video_metadata WHERE connectionId = :connectionId AND path = :path AND size = :size AND lastModified = :lastModified), 0)))""")
   abstract suspend fun mergeVideo(
     connectionId: Long, path: String, size: Long, lastModified: Long,
-    durationMs: Long, width: Int, height: Int, updatedAt: Long,
+    durationMs: Long, width: Int, height: Int, updatedAt: Long, fps: Float = 0f, videoCodec: String = "", hasEmbeddedSubtitles: Boolean = false, subtitleCodec: String = "", technicalVersion: Int = 0,
   )
 
   @Query("SELECT * FROM cloud_directory_items WHERE connectionId = :connectionId AND path = :path LIMIT 1")
@@ -47,7 +52,7 @@ abstract class CloudMetadataDao {
 
   @Transaction
   open suspend fun mergeCurrentVideo(connectionId: Long, path: String, size: Long, modified: Long,
-    duration: Long, width: Int, height: Int, updatedAt: Long) {
+    duration: Long, width: Int, height: Int, updatedAt: Long, fps: Float = 0f, videoCodec: String = "", hasEmbeddedSubtitles: Boolean = false, subtitleCodec: String = "", technicalVersion: Int = 0) {
     val current = getItem(connectionId, path)
     if (current == null || current.size != size || current.lastModified != modified) {
       app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("metadata.reject", connectionId, path,
@@ -57,12 +62,17 @@ abstract class CloudMetadataDao {
     val previous = getVideo(connectionId, path)
     if (previous != null && previous.size == size && previous.lastModified == modified && previous.durationMs > 0 &&
       (duration <= 0 || duration == previous.durationMs) && (width <= 0 || width == previous.width) &&
-      (height <= 0 || height == previous.height)) return
-    mergeVideo(connectionId, path, size, modified, duration, width, height, updatedAt)
+      (height <= 0 || height == previous.height) && (fps <= 0 || fps == previous.fps) &&
+      (videoCodec.isEmpty() || videoCodec == previous.videoCodec) &&
+      (subtitleCodec.isEmpty() || subtitleCodec == previous.subtitleCodec) && technicalVersion <= previous.technicalVersion &&
+      (!hasEmbeddedSubtitles || previous.hasEmbeddedSubtitles)) return
+    mergeVideo(connectionId, path, size, modified, duration, width, height, updatedAt, fps, videoCodec, hasEmbeddedSubtitles, subtitleCodec, technicalVersion)
   }
 
   @Query("""SELECT d.*, COALESCE(v.durationMs, 0) AS durationMs,
-    COALESCE(v.width, 0) AS width, COALESCE(v.height, 0) AS height
+    COALESCE(v.width, 0) AS width, COALESCE(v.height, 0) AS height, COALESCE(v.fps, 0) AS fps,
+    COALESCE(v.videoCodec, '') AS videoCodec, COALESCE(v.hasEmbeddedSubtitles, 0) AS hasEmbeddedSubtitles,
+    COALESCE(v.subtitleCodec, '') AS subtitleCodec
     FROM cloud_directory_items d LEFT JOIN cloud_video_metadata v
     ON d.connectionId = v.connectionId AND d.path = v.path
       AND d.size = v.size AND d.lastModified = v.lastModified

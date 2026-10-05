@@ -93,6 +93,7 @@ fun NetworkVideoCard(
   val showSubtitleIndicator by (fields?.showSubtitleIndicator ?: browserPreferences.showSubtitleIndicator).collectAsState()
   val showVideoThumbnails by (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).collectAsState()
   val showNetworkThumbs by appearancePreferences.showNetworkThumbnails.collectAsState()
+  val showPath by (fields?.showFolderPath ?: browserPreferences.showFolderPath).collectAsState()
   val centerGridTitles by (fields?.centerGridTitles ?: browserPreferences.centerGridTitles).collectAsState()
 
   val gestures = koinInject<app.gyrolet.mpvrx.preferences.GesturePreferences>()
@@ -193,6 +194,9 @@ fun NetworkVideoCard(
     val positionMs = (playback?.lastPosition ?: 0).coerceAtLeast(0).toLong() * 1000
     val durationMs = file.durationMs.takeIf { it > 0 } ?: playback?.let { (it.lastPosition.toLong() + it.timeRemaining).coerceAtLeast(0) * 1000 } ?: 0
     val progress = if (durationMs > 0 && positionMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else null
+    val codec = remember(file.videoCodec) {
+      app.gyrolet.mpvrx.utils.media.VideoCodecSupportInspector.descriptor(file.videoCodec, file.videoCodec)
+    }
     val video = app.gyrolet.mpvrx.domain.media.model.Video(
       id = ("${connection.id}:${file.path}").hashCode().toLong(), title = displayName, displayName = file.name,
       path = file.path, uri = android.net.Uri.parse(file.path), duration = durationMs,
@@ -202,8 +206,10 @@ fun NetworkVideoCard(
       } else "--",
       size = file.size, sizeFormatted = formatCardFileSize(file.size), dateModified = file.lastModified / 1000,
       dateAdded = 0, mimeType = file.mimeType ?: "video/*", bucketId = "cloud:${connection.id}",
-      bucketDisplayName = connection.name, width = file.width, height = file.height, fps = 0f,
-      resolution = app.gyrolet.mpvrx.utils.storage.VideoScanUtils.formatResolution(file.width, file.height),
+      bucketDisplayName = connection.name, width = file.width, height = file.height, fps = file.fps,
+      resolution = app.gyrolet.mpvrx.utils.storage.VideoScanUtils.formatResolutionWithFps(file.width, file.height, file.fps),
+      videoCodec = file.videoCodec.takeIf { it.isNotBlank() }?.let { codec.label }.orEmpty(), videoCodecMimeType = codec.mimeType,
+      hasEmbeddedSubtitles = file.hasEmbeddedSubtitles, subtitleCodec = file.subtitleCodec,
     )
     val playbackInfo = app.gyrolet.mpvrx.ui.browser.videolist.buildVideoWithPlaybackInfo(
       video, playback, System.currentTimeMillis(), newLabelDays, watchedThreshold)
@@ -212,7 +218,8 @@ fun NetworkVideoCard(
       progressPercentage = progress, isWatched = playbackInfo.isWatched, isOldAndUnplayed = playbackInfo.isOldAndUnplayed, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig(fields).copy(showThumbnails = displayThumb),
-      showSubtitleIndicator = showSubtitleIndicator, titleOverride = titleOverride)
+      showSubtitleIndicator = showSubtitleIndicator, titleOverride = if (showExtensionField && titleOverride != null) "$titleOverride.${file.name.substringAfterLast('.', "")}" else titleOverride,
+      sourceSubtitle = file.path.takeIf { fields != null && showPath })
     return
   }
 

@@ -181,7 +181,7 @@ class CloudMetadataRepository(
     }.map { byPath ->
       files.map { file ->
         val entry = byPath[NetworkPath.from(file.path).value]
-        if (entry != null && entry.matches(file)) file.copy(durationMs = entry.durationMs.takeIf { it > 0 } ?: file.durationMs, width = entry.width.takeIf { it > 0 } ?: file.width, height = entry.height.takeIf { it > 0 } ?: file.height) else file
+        if (entry != null && entry.matches(file)) file.copy(durationMs = entry.durationMs.takeIf { it > 0 } ?: file.durationMs, width = entry.width.takeIf { it > 0 } ?: file.width, height = entry.height.takeIf { it > 0 } ?: file.height, fps = entry.fps, videoCodec = entry.videoCodec, hasEmbeddedSubtitles = entry.hasEmbeddedSubtitles, subtitleCodec = entry.subtitleCodec) else file
       }
     }.distinctUntilChanged()
   }
@@ -215,7 +215,8 @@ class CloudMetadataRepository(
           val summary = summaries[item.path]?.takeIf { item.isDirectory }
           NetworkFile(item.name, item.path, summary?.totalSize ?: item.size, item.isDirectory,
             item.lastModified, item.mimeType, summary?.totalDurationMs ?: row.durationMs, row.width, row.height,
-            summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false)
+            summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false,
+            fps = row.fps, videoCodec = row.videoCodec, hasEmbeddedSubtitles = row.hasEmbeddedSubtitles, subtitleCodec = row.subtitleCodec)
         }
       }.distinctUntilChanged().flowOn(Dispatchers.Default)
         .shareIn(storageScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), replay = 1)
@@ -288,7 +289,7 @@ class CloudMetadataRepository(
     val thumbnails = org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
     val pending = videos.filter { file ->
       val entry = cached[NetworkPath.from(file.path).value]
-      entry == null || !entry.matches(file) || entry.durationMs <= 0 || (includeThumbnails && !thumbnails.isNetworkThumbnailCached(connection, file))
+      entry == null || !entry.matches(file) || entry.durationMs <= 0 || entry.technicalVersion < 1 || (includeThumbnails && !thumbnails.isNetworkThumbnailCached(connection, file))
     }
     val done = java.util.concurrent.atomic.AtomicInteger()
     val ready = java.util.concurrent.atomic.AtomicInteger()
@@ -335,7 +336,7 @@ class CloudMetadataRepository(
     val lock = locks[((connection.id.hashCode() * 31 + path.hashCode()) and Int.MAX_VALUE) % locks.size]
     lock.withLock {
       val cached = dao.getVideo(connection.id, path)
-      if (cached != null && cached.matches(file) && cached.durationMs > 0) {
+      if (cached != null && cached.matches(file) && cached.durationMs > 0 && cached.technicalVersion >= 1) {
         if (file.width > 0 || file.height > 0) publish(connection.id, path, file.size, file.lastModified, 0, file.width, file.height, System.currentTimeMillis())
         return
       }
@@ -351,13 +352,17 @@ class CloudMetadataRepository(
         val url = proxy.registerStream(streamId, connection, path, file.size, file.mimeType ?: "application/octet-stream")
         val extension = app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(file.name)
         val key = app.gyrolet.mpvrx.domain.cloud.cloudMediaKey(connection, path, file.size, file.lastModified)
-        var duration = probeVideoDurationMs(url, http, extension) { keyframes.extractDurationMs(it, key, extension) } ?: 0
+        var technical: app.gyrolet.mpvrx.domain.cloud.CloudTechnicalMetadata? = null
+        var duration = probeVideoDurationMs(url, http, extension, onHeader = {
+          technical = app.gyrolet.mpvrx.domain.cloud.parseCloudTechnicalMetadata(it)
+        }) { keyframes.extractDurationMs(it, key, extension) } ?: cached?.takeIf { it.matches(file) }?.durationMs ?: 0
+        if (technical == null) technical = keyframes.cachedTechnicalMetadata(key)
         if (duration <= 0 && keyframes.supports(extension)) duration = keyframes.extractDurationMs(url, key, extension) ?: 0
         var width = 0
         var height = 0
         if (duration > 0) {
           currentCoroutineContext().ensureActive()
-          publish(connection.id, path, file.size, file.lastModified, duration, file.width, file.height, System.currentTimeMillis())
+          publish(connection.id, path, file.size, file.lastModified, duration, technical?.width ?: file.width, technical?.height ?: file.height, System.currentTimeMillis(), technical)
         } else {
           withTimeoutOrNull(10_000) {
             runInterruptible(Dispatchers.IO) {
@@ -367,13 +372,15 @@ class CloudMetadataRepository(
                 duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0
                 width = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
                 height = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                technical = app.gyrolet.mpvrx.domain.cloud.CloudTechnicalMetadata(width, height,
+                  retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE)?.toFloatOrNull() ?: 0f)
               } finally {
                 retriever.release()
               }
             }
           }
           currentCoroutineContext().ensureActive()
-          publish(connection.id, path, file.size, file.lastModified, duration, width, height, System.currentTimeMillis())
+          publish(connection.id, path, file.size, file.lastModified, duration, width, height, System.currentTimeMillis(), technical)
         }
       } catch (cancelled: CancellationException) {
         throw cancelled
@@ -387,9 +394,13 @@ class CloudMetadataRepository(
   }
 
   suspend fun publish(connectionId: Long, path: String, size: Long, modified: Long,
-    duration: Long, width: Int, height: Int, updatedAt: Long = System.currentTimeMillis()) {
+    duration: Long, width: Int, height: Int, updatedAt: Long = System.currentTimeMillis(), technical: app.gyrolet.mpvrx.domain.cloud.CloudTechnicalMetadata? = null) {
     val normalized = NetworkPath.from(path).value
-    dao.mergeCurrentVideo(connectionId, normalized, size, modified, duration, width, height, updatedAt)
+    dao.mergeCurrentVideo(connectionId, normalized, size, modified, duration, width, height, updatedAt,
+      technical?.fps ?: 0f, technical?.videoCodec.orEmpty(), technical?.hasEmbeddedSubtitles ?: false,
+      technical?.subtitleCodec.orEmpty(), if (technical != null) 1 else 0)
+    if (technical != null) CloudTrace.event("metadata.technical", connectionId, normalized,
+      "width=$width height=$height fps=${technical.fps} codec=${technical.videoCodec} subtitles=${technical.hasEmbeddedSubtitles}")
     if (duration > 0) dao.refreshFolderDurations(connectionId, normalized, includeAncestors = true)
   }
 

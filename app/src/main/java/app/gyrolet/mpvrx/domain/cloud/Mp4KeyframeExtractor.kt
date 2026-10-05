@@ -226,6 +226,7 @@ class Mp4KeyframeExtractor(
     val codecConfigNalUnits: List<ByteArray>,
     val nalLengthSize: Int,
     val keyframes: List<KeyframeEntry>,
+    val fps: Float = 0f,
   )
 
   @kotlinx.serialization.Serializable
@@ -1069,6 +1070,10 @@ class Mp4KeyframeExtractor(
         codecConfigNalUnits = codec.nalUnits,
         nalLengthSize = codec.nalLengthSize,
         keyframes = keyframes,
+        fps = sttsEntries.sumOf { it.sampleCount.toDouble() }.let { count ->
+          val ticks = sttsEntries.sumOf { it.sampleCount.toDouble() * it.sampleDelta }
+          if (ticks > 0 && timescale > 0) (count * timescale / ticks).toFloat() else 0f
+        },
       )
     }
 
