@@ -256,6 +256,7 @@ fun GestureHandler(
   )
   val brightnessHaptics = app.gyrolet.mpvrx.ui.utils.rememberAdjustmentHaptics(0f, 1f)
   val coroutineScope = rememberCoroutineScope()
+  var horizontalSeekHideJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
   val density = LocalDensity.current
   val topStatusBarInsetPx = WindowInsets.statusBars.getTop(density).toFloat()
   val bottomNavigationInsetPx = WindowInsets.navigationBars.getBottom(density).toFloat()
@@ -1372,6 +1373,7 @@ fun GestureHandler(
                         hasStartedSeeking = true
                         initialVideoPosition = position?.toFloat() ?: 0f
                         pendingSeekPosition = initialVideoPosition
+                        horizontalSeekHideJob?.cancel()
                         // Screen scrubbing exposes the timeline without opening the full control panel.
                         viewModel.autoHideControls()
 
@@ -1449,11 +1451,12 @@ fun GestureHandler(
 
               // Briefly retain the timeline; an older gesture must not clear a newer one.
               val completedUpdate = viewModel.playerUpdate.value
-              coroutineScope.launch {
+              horizontalSeekHideJob = coroutineScope.launch {
                 delay(300)
-                if (viewModel.playerUpdate.compareAndSet(completedUpdate, PlayerUpdates.None)) {
-                  viewModel.hideSeekBar()
-                }
+                viewModel.playerUpdate.compareAndSet(completedUpdate, PlayerUpdates.None)
+                // Other gesture handlers may already have cleared the feedback update.
+                // Timeline cleanup must still run; a new swipe cancels this job above.
+                viewModel.hideSeekBar()
               }
             }
             releaseGesture(GestureOwner.HORIZONTAL_SEEK)
