@@ -93,12 +93,17 @@ object MusicLibraryScanner {
             cursor.getString(column)?.let { File(it).name }
           }
           val album = resolveAlbumTag(context, contentUri, indexedAlbum, folderName, cursor.getLong(dateModifiedCol), size)
-          val albumId = if (album?.equals(indexedAlbum, ignoreCase = true) == true) cursor.getLong(albumIdCol) else 0L
+          val mediaStoreAlbumId = cursor.getLong(albumIdCol)
+          val albumId = if (album?.equals(indexedAlbum, ignoreCase = true) == true) mediaStoreAlbumId else 0L
           val dateAdded = cursor.getLong(dateAddedCol)
           val track = cursor.getInt(trackCol)
           val year = cursor.getInt(yearCol)
 
-          val albumArtUri = if (albumId > 0) ContentUris.withAppendedId(ALBUM_ART_BASE_URI, albumId) else null
+          // Keep MediaStore's artwork identity even when we intentionally avoid its album ID for
+          // grouping because the embedded album tag disagrees with the index. Dropping the raw ID
+          // here made otherwise valid cover art disappear for those songs.
+          val albumArtUri =
+            if (mediaStoreAlbumId > 0) ContentUris.withAppendedId(ALBUM_ART_BASE_URI, mediaStoreAlbumId) else null
 
           songs.add(
             MusicSong(

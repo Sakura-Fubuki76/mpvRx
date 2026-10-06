@@ -750,8 +750,8 @@
   <string name="playlist_refresh_success">Playlist refreshed successfully</string>
   <string name="playlist_refresh_error">Failed to refresh playlist: %s</string>
   <string name="playlist_m3u_badge">M3U</string>
-  <string name="playlist_favorite_songs">Favorite Songs</string>
-  <string name="playlist_favorite_videos">Favorite Videos</string>
+  <string name="playlist_favorite_songs">Favourite Audio</string>
+  <string name="playlist_favorite_videos">Favourite Videos</string>
   <string name="playlist_online_badge">Online</string>
   <string name="playlist_xtream_badge">Xtream</string>
   <string name="playlist_xtream_add_action">Add Xtream Codes</string>
@@ -1491,6 +1491,8 @@
   <string name="player_unknown_video">Unknown Video</string>
   <string name="media_widget_name">mpvRx playback</string>
   <string name="media_widget_description">Control audio and video playback</string>
+  <string name="media_widget_pill_name">mpvRx music pill</string>
+  <string name="media_widget_pill_description">Compact music playback controls</string>
   <string name="media_widget_empty">Nothing playing</string>
   <string name="media_widget_audio">Audio</string>
   <string name="media_widget_video">Video</string>
@@ -1728,6 +1730,7 @@
   <string name="ui_valid_url">Valid URL</string>
   <string name="ui_invalid_url">Invalid URL</string>
   <string name="ui_playlist_options">Playlist Options</string>
+  <string name="playlist_open_action">Open playlist</string>
   <string name="ui_create_a_new_blank_playlist">Create a new blank playlist</string>
   <string name="ui_add_m3u_playlist_from_url">Add M3U Playlist from URL</string>
   <string name="ui_add_playlist_from_url">Add Playlist from URL</string>
@@ -2694,6 +2697,19 @@
   <string name="ui_snapshots">Snapshots</string>
   <string name="pref_nav_snapshots_title">Show Snapshots tab</string>
   <string name="pref_nav_snapshots_summary">Show or hide Snapshots in the bottom navigation bar</string>
+  <string name="ui_profile">Profile</string>
+  <string name="pref_nav_profile_title">Show Profile tab</string>
+  <string name="pref_nav_profile_summary">Combine Recents, Playlists and Snapshots into a single tab</string>
+  <string name="pref_nav_in_profile_tab_summary">Included in the Profile tab</string>
+  <string name="profile_view_all">View all</string>
+  <string name="profile_edit">Edit profile</string>
+  <string name="profile_display_name">Display name</string>
+  <string name="profile_choose_photo">Choose photo</string>
+  <string name="profile_remove_photo">Remove photo</string>
+  <string name="profile_remove_from_history">Remove from history</string>
+  <string name="profile_recents_empty_message">Items you play will appear here</string>
+  <string name="profile_playlists_empty_message">Playlists you create will appear here</string>
+  <string name="playlist_audio_empty_description">Create a music playlist, or favorite songs from the Music tab</string>
 
   <string name="snapshot_save_button">Save to Snapshots</string>
   <string name="snapshot_saved">Saved to Snapshots</string>
@@ -2780,6 +2796,7 @@
   <string name="watch_stats_last_seven_days">Last 7 days</string>
   <string name="watch_stats_top_media">Most watched</string>
   <string name="watch_stats_empty">Play some media to start building your statistics.</string>
+  <string name="watch_stats_reset_confirm">Reset all playback statistics? Your history, watched status and playlists will be kept.</string>
   <string name="pref_debug_log_size_title">Log size limit</string>
   <string name="pref_debug_log_size_summary">Keep up to %1$d MB in the log viewer and shared diagnostics.</string>
   <string name="onboarding_configuration_title">Set up mpvRx storage</string>

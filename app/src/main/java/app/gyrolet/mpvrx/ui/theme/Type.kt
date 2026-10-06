@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import app.gyrolet.mpvrx.R
 import java.util.Locale
 
@@ -114,21 +115,21 @@ val GoogleSansRounded =
 fun typographyWithFontFamily(fontFamily: FontFamily): Typography =
   SystemTypography.run {
     copy(
-      displayLarge = displayLarge.copy(fontFamily = fontFamily),
-      displayMedium = displayMedium.copy(fontFamily = fontFamily),
-      displaySmall = displaySmall.copy(fontFamily = fontFamily),
-      headlineLarge = headlineLarge.copy(fontFamily = fontFamily),
-      headlineMedium = headlineMedium.copy(fontFamily = fontFamily),
-      headlineSmall = headlineSmall.copy(fontFamily = fontFamily),
-      titleLarge = titleLarge.copy(fontFamily = fontFamily),
-      titleMedium = titleMedium.copy(fontFamily = fontFamily),
-      titleSmall = titleSmall.copy(fontFamily = fontFamily),
-      bodyLarge = bodyLarge.copy(fontFamily = fontFamily),
-      bodyMedium = bodyMedium.copy(fontFamily = fontFamily),
-      bodySmall = bodySmall.copy(fontFamily = fontFamily),
-      labelLarge = labelLarge.copy(fontFamily = fontFamily),
-      labelMedium = labelMedium.copy(fontFamily = fontFamily),
-      labelSmall = labelSmall.copy(fontFamily = fontFamily),
+      displayLarge = displayLarge.copy(fontFamily = fontFamily, fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
+      displayMedium = displayMedium.copy(fontFamily = fontFamily, fontWeight = FontWeight.Bold, letterSpacing = 0.sp),
+      displaySmall = displaySmall.copy(fontFamily = fontFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+      headlineLarge = headlineLarge.copy(fontFamily = fontFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+      headlineMedium = headlineMedium.copy(fontFamily = fontFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+      headlineSmall = headlineSmall.copy(fontFamily = fontFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+      titleLarge = titleLarge.copy(fontFamily = fontFamily, fontWeight = FontWeight.Medium, letterSpacing = 0.sp),
+      titleMedium = titleMedium.copy(fontFamily = fontFamily, fontWeight = FontWeight.Medium, letterSpacing = 0.sp),
+      titleSmall = titleSmall.copy(fontFamily = fontFamily, fontWeight = FontWeight.Medium, letterSpacing = 0.sp),
+      bodyLarge = bodyLarge.copy(fontFamily = fontFamily, fontWeight = FontWeight.Normal, letterSpacing = 0.sp),
+      bodyMedium = bodyMedium.copy(fontFamily = fontFamily, fontWeight = FontWeight.Normal, letterSpacing = 0.sp),
+      bodySmall = bodySmall.copy(fontFamily = fontFamily, fontWeight = FontWeight.Normal, letterSpacing = 0.sp),
+      labelLarge = labelLarge.copy(fontFamily = fontFamily, fontWeight = FontWeight.SemiBold, letterSpacing = 0.sp),
+      labelMedium = labelMedium.copy(fontFamily = fontFamily, fontWeight = FontWeight.Medium, letterSpacing = 0.sp),
+      labelSmall = labelSmall.copy(fontFamily = fontFamily, fontWeight = FontWeight.Medium, letterSpacing = 0.sp),
     )
   }
 

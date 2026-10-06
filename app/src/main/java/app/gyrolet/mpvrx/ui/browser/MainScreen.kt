@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,7 +42,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.layout.widthIn
 import app.gyrolet.mpvrx.ui.utils.NavigationPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
@@ -49,7 +50,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -69,9 +69,15 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -83,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
@@ -113,6 +120,11 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import app.gyrolet.mpvrx.ui.player.NavigationAnimStyle
 import app.gyrolet.mpvrx.ui.utils.navigationDurationMillis
+import dev.chrisbanes.haze.HazeInput
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.blur.HazeBlurStyle
+import dev.chrisbanes.haze.blur.HazeColorEffect
+import dev.chrisbanes.haze.blur.hazeBlur
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
@@ -131,6 +143,7 @@ object MainScreen : Screen {
     CLOUD,
     JELLYFIN,
     SNAPSHOTS,
+    PROFILE,
   }
 
   /**
@@ -183,6 +196,7 @@ object MainScreen : Screen {
     val musicLibraryViewModel: MusicLibraryViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val localMusicTabs by musicLibraryViewModel.visibleTabs.collectAsStateWithLifecycle()
     val showMusicTab by appearancePreferences.showMusicTab.collectAsState()
+    val showProfileTab by appearancePreferences.showProfileTab.collectAsState()
     val showRecentsTab by appearancePreferences.showRecentsTab.collectAsState()
     val showPlaylistsTab by appearancePreferences.showPlaylistsTab.collectAsState()
     val showNetworkTab by appearancePreferences.showNetworkTab.collectAsState()
@@ -198,6 +212,7 @@ object MainScreen : Screen {
     val visibleTabs =
       remember(
         showMusicTab,
+        showProfileTab,
         showRecentsTab,
         showPlaylistsTab,
         showNetworkTab,
@@ -205,17 +220,16 @@ object MainScreen : Screen {
         showJellyfinTab,
         showSnapshotTab,
       ) {
-        buildList {
-          // Home is the permanent root so Back never exits directly from another tab.
-          add(MainTab.HOME)
-          if (showCloudTab) add(MainTab.CLOUD)
-          if (showMusicTab) add(MainTab.MUSIC)
-          if (showRecentsTab) add(MainTab.RECENTS)
-          if (showPlaylistsTab) add(MainTab.PLAYLISTS)
-          if (showNetworkTab) add(MainTab.NETWORK)
-          if (showJellyfinTab) add(MainTab.JELLYFIN)
-          if (showSnapshotTab) add(MainTab.SNAPSHOTS)
-        }
+        mainNavigationTabs(
+          showMusic = showMusicTab,
+          showCloud = showCloudTab,
+          showProfile = showProfileTab,
+          showRecents = showRecentsTab,
+          showPlaylists = showPlaylistsTab,
+          showNetwork = showNetworkTab,
+          showJellyfin = showJellyfinTab,
+          showSnapshots = showSnapshotTab,
+        )
       }
     val navigationTabs = visibleTabs.takeIf { it.size > 1 }.orEmpty()
 
@@ -317,12 +331,18 @@ object MainScreen : Screen {
       onTabSelected(MainTab.HOME)
     }
 
+    // One captured backdrop drives both modes: plain Haze when Liquid Glass is off and
+    // Haze Glass when it is on. This keeps the effect local to the floating capsule.
+    val navigationBackdrop = rememberLiquidGlassBackdrop()
+
     val mainNavBar = @Composable { modifier: Modifier ->
       ExpressivePillNavigationBar(
         visibleTabs = navigationTabs,
         selectedTab = selectedTab,
         onTabSelected = onTabSelected,
         pagerState = pagerState,
+        hazeBackdrop = navigationBackdrop,
+        liquidGlassEnabled = liquidGlassEnabled,
         modifier = modifier,
       )
     }
@@ -352,8 +372,6 @@ object MainScreen : Screen {
             context.applicationContext as android.app.Application,
           ),
       )
-    val navigationBackdrop = rememberLiquidGlassBackdrop()
-
     // Scaffold with bottom navigation bar
     Scaffold(
       modifier = Modifier.fillMaxSize(),
@@ -365,11 +383,12 @@ object MainScreen : Screen {
             modifier =
               Modifier
                 .fillMaxSize()
-                .captureLiquidGlassBackdrop(navigationBackdrop, liquidGlassEnabled),
+                .captureLiquidGlassBackdrop(navigationBackdrop, navigationTabs.isNotEmpty()),
           ) {
             CompositionLocalProvider(
               LocalNavigationBarHeight provides contentBottomPadding,
               LocalMainNavigationBar provides mainNavBar,
+              LocalIsMainTabPage provides true,
             ) {
               FolderListScreen.Content()
             }
@@ -378,6 +397,7 @@ object MainScreen : Screen {
           CompositionLocalProvider(
             LocalNavigationBarHeight provides contentBottomPadding,
             LocalMainNavigationBar provides mainNavBar,
+            LocalIsMainTabPage provides true,
           ) {
             NavigationPager(
               state = pagerState,
@@ -385,7 +405,7 @@ object MainScreen : Screen {
                 Modifier
                   .fillMaxSize()
                   .clipToBounds()
-                  .captureLiquidGlassBackdrop(navigationBackdrop, liquidGlassEnabled),
+                  .captureLiquidGlassBackdrop(navigationBackdrop, navigationTabs.isNotEmpty()),
               key = { page -> visibleTabs[page].name },
               beyondViewportPageCount = 1,
               userScrollEnabled = !isPermissionDenied,
@@ -584,6 +604,7 @@ object MainScreen : Screen {
                 MainTab.NETWORK -> NetworkStreamingScreen.Content()
                 MainTab.JELLYFIN -> app.gyrolet.mpvrx.ui.browser.jellyfin.JellyfinContent(viewModel = jellyfinViewModel)
                 MainTab.SNAPSHOTS -> app.gyrolet.mpvrx.ui.framecapture.SnapshotScreen.Content()
+                MainTab.PROFILE -> app.gyrolet.mpvrx.ui.browser.profile.ProfileScreen.Content()
               }
             }
           }
@@ -616,7 +637,7 @@ object MainScreen : Screen {
                 Modifier
                   .fillMaxWidth()
                   .navigationBarsPadding()
-                  .padding(bottom = 12.dp),
+                  .padding(bottom = 8.dp),
             ) {
               val containerWidth = maxWidth
               val density = LocalDensity.current
@@ -635,16 +656,29 @@ object MainScreen : Screen {
                 selectedTab = selectedTab,
                 onTabSelected = onTabSelected,
                 pagerState = pagerState,
+                hazeBackdrop = navigationBackdrop,
+                liquidGlassEnabled = liquidGlassEnabled,
                 modifier = Modifier
                   .layout { measurable, constraints ->
-                    val margin = 16.dp.roundToPx()
-                    val placeable = measurable.measure(
-                      constraints.copy(minWidth = 0, maxWidth = (constraints.maxWidth - margin * 2).coerceAtLeast(0)),
-                    )
+                    val margin = 28.dp.roundToPx()
+                    val paneWidth =
+                      if (isDualPaneFolderSelected && selectedTab == MainTab.HOME) {
+                        (constraints.maxWidth * 0.4f).roundToInt()
+                      } else {
+                        constraints.maxWidth
+                      }
+                    val availableWidth = (paneWidth - margin * 2).coerceAtLeast(0)
+                    val maxNuvioWidth = minOf(400.dp.roundToPx(), availableWidth)
+                    val placeable =
+                      measurable.measure(
+                        constraints.copy(minWidth = 0, maxWidth = maxNuvioWidth),
+                      )
                     layout(constraints.maxWidth, placeable.height) {
-                      // Place using the actual width, avoiding springs chasing animated measurements.
-                      val start = (constraints.maxWidth * centerFraction.value - placeable.width / 2f)
-                        .roundToInt().coerceAtLeast(margin)
+                      val desired =
+                        (constraints.maxWidth * centerFraction.value - placeable.width / 2f)
+                          .roundToInt()
+                      val maxStart = (paneWidth - margin - placeable.width).coerceAtLeast(margin)
+                      val start = desired.coerceIn(margin, maxStart)
                       placeable.placeRelative(start, 0)
                     }
                   }
@@ -652,7 +686,7 @@ object MainScreen : Screen {
                     val width = with(density) { coords.size.width.toDp() }
                     NavigationBarState.navbarWidth = width
                     NavigationBarState.navbarLeftOffset =
-                      (containerWidth * centerFraction.value - width / 2).coerceAtLeast(16.dp)
+                      (containerWidth * centerFraction.value - width / 2).coerceAtLeast(28.dp)
                   },
               )
             }
@@ -670,10 +704,12 @@ internal fun ExpressivePillNavigationBar(
   onTabSelected: (MainScreen.MainTab) -> Unit,
   modifier: Modifier = Modifier,
   pagerState: PagerState? = null,
+  hazeBackdrop: HazeState? = null,
+  liquidGlassEnabled: Boolean = false,
 ) {
   if (visibleTabs.isEmpty()) return
-  val initialFocusRequester = rememberTvInitialFocusRequester(visibleTabs.isNotEmpty())
 
+  val initialFocusRequester = rememberTvInitialFocusRequester(visibleTabs.isNotEmpty())
   val position =
     if (pagerState != null) {
       (pagerState.currentPage + pagerState.currentPageOffsetFraction).coerceIn(
@@ -684,66 +720,72 @@ internal fun ExpressivePillNavigationBar(
       visibleTabs.indexOf(selectedTab).coerceAtLeast(0).toFloat()
     }
 
-  fun activeTabWidth(tab: MainScreen.MainTab) =
-    when (tab) {
-      MainScreen.MainTab.HOME -> 92.dp
-      MainScreen.MainTab.MUSIC -> 92.dp
-      MainScreen.MainTab.RECENTS -> 104.dp
-      MainScreen.MainTab.PLAYLISTS -> 108.dp
-      MainScreen.MainTab.CLOUD -> 100.dp
-      MainScreen.MainTab.NETWORK -> 106.dp
-      MainScreen.MainTab.JELLYFIN -> 100.dp
-      MainScreen.MainTab.SNAPSHOTS -> 100.dp
-    }
-
-  val inactiveTabWidth = 44.dp
-  val spacing = 4.dp
-  val startPadding = 6.dp
-  val tabWidths =
-    visibleTabs.mapIndexed { index, tab ->
-      val fraction = (1f - kotlin.math.abs(position - index)).coerceIn(0f, 1f)
-      androidx.compose.ui.unit.lerp(inactiveTabWidth, activeTabWidth(tab), fraction)
-    }
-  val tabOffsets =
-    buildList {
-      var offset = startPadding
-      tabWidths.forEach { width ->
-        add(offset)
-        offset += width + spacing
+  val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
+  val accentColor = MaterialTheme.colorScheme.primary
+  val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
+  val selectedSurface = accentColor.copy(alpha = 0.15f)
+  val hazeStyle =
+    remember(surfaceColor) {
+      HazeBlurStyle {
+        // Matches Nuvio Android's floating bar blur treatment.
+        blurRadius(24.dp)
+        noiseFactor(0f)
+        backgroundColor(surfaceColor.copy(alpha = 0.55f))
+        colorEffects(listOf(HazeColorEffect.tint(surfaceColor.copy(alpha = 0.12f))))
+        fallbackColorEffect(HazeColorEffect.tint(surfaceColor.copy(alpha = 0.82f)))
       }
     }
-  val pageFloor = position.toInt().coerceIn(visibleTabs.indices)
-  val pageCeil = (pageFloor + 1).coerceIn(visibleTabs.indices)
-  val pageFraction = (position - pageFloor).coerceIn(0f, 1f)
-  val indicatorLeft = androidx.compose.ui.unit.lerp(tabOffsets[pageFloor], tabOffsets[pageCeil], pageFraction)
-  val indicatorWidth = androidx.compose.ui.unit.lerp(tabWidths[pageFloor], tabWidths[pageCeil], pageFraction)
 
-  LiquidGlassSurface(
-    modifier = modifier,
-    shape = CircleShape,
-    style = LiquidGlassStyle.Navigation,
-    glassColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.32f),
-    fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-  ) {
-    Box(
+  val rimModifier =
+    Modifier.drawWithCache {
+      val strokeWidth = 0.75.dp.toPx()
+      val rim =
+        Brush.verticalGradient(
+          listOf(
+            Color.White.copy(alpha = 0.27f),
+            Color.White.copy(alpha = 0.02f),
+          ),
+        )
+      onDrawWithContent {
+        drawContent()
+        drawRoundRect(
+          brush = rim,
+          topLeft = Offset(strokeWidth / 2f, strokeWidth / 2f),
+          size = Size(size.width - strokeWidth, size.height - strokeWidth),
+          cornerRadius = CornerRadius((size.height - strokeWidth) / 2f),
+          style = Stroke(strokeWidth),
+        )
+      }
+    }
+
+  val trackContent: @Composable () -> Unit = {
+    BoxWithConstraints(
       modifier =
         Modifier
-          .wrapContentWidth()
-          .padding(horizontal = startPadding, vertical = 6.dp),
+          .fillMaxSize()
+          .padding(4.dp),
     ) {
+      val tabWidth = maxWidth / visibleTabs.size
+      val travelFraction =
+        kotlin.math.abs(position - kotlin.math.round(position)).coerceIn(0f, 0.5f) * 2f
+
       Box(
         modifier =
           Modifier
-            .offset(x = indicatorLeft - startPadding)
-            .width(indicatorWidth)
-            .height(44.dp)
+            .offset(x = tabWidth * position)
+            .width(tabWidth)
+            .fillMaxHeight()
+            .graphicsLayer {
+              // Nuvio's selected jelly pill subtly stretches while travelling between tabs.
+              scaleX = 1f + 0.08f * travelFraction
+              scaleY = 1f - 0.035f * travelFraction
+            }
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.primaryContainer),
+            .background(selectedSurface),
       )
 
       Row(
-        modifier = Modifier.selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(spacing, Alignment.CenterHorizontally),
+        modifier = Modifier.fillMaxSize().selectableGroup(),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         visibleTabs.forEachIndexed { index, tab ->
@@ -759,59 +801,100 @@ internal fun ExpressivePillNavigationBar(
                 MainScreen.MainTab.NETWORK -> stringResource(R.string.ui_network)
                 MainScreen.MainTab.JELLYFIN -> stringResource(R.string.ui_jellyfin)
                 MainScreen.MainTab.SNAPSHOTS -> stringResource(R.string.ui_snapshots)
+                MainScreen.MainTab.PROFILE -> stringResource(R.string.ui_profile)
               }
             val contentColor =
               androidx.compose.ui.graphics.lerp(
-                MaterialTheme.colorScheme.onSurfaceVariant,
-                MaterialTheme.colorScheme.onPrimaryContainer,
+                mutedColor,
+                accentColor,
                 activeFraction,
               )
 
             Box(
               modifier =
                 Modifier
-                  .width(tabWidths[index])
-                  .height(44.dp)
+                  .weight(1f)
+                  .fillMaxHeight()
                   .then(if (tab == selectedTab) Modifier.tvInitialFocus(initialFocusRequester) else Modifier)
-                  .tvFocusHighlight(CircleShape, focusedScale = 1.06f)
+                  .tvFocusHighlight(CircleShape, focusedScale = 1.04f)
                   .clip(CircleShape)
                   .selectable(
                     selected = tab == selectedTab,
                     role = Role.Tab,
                     interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(bounded = true),
+                    indication = null,
                   ) {
                     onTabSelected(tab)
                   },
               contentAlignment = Alignment.Center,
             ) {
-              Row(
-                modifier = Modifier.padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
               ) {
                 MainTabIcon(tab, contentColor, label)
-                if (activeFraction > 0.05f) {
-                  Spacer(modifier = Modifier.width(androidx.compose.ui.unit.lerp(0.dp, 6.dp, activeFraction)))
-                  Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = contentColor,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Clip,
-                    modifier =
-                      Modifier.graphicsLayer {
-                        alpha = ((activeFraction - 0.25f) / 0.75f).coerceIn(0f, 1f)
-                      },
-                  )
-                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                  text = label,
+                  style =
+                    MaterialTheme.typography.labelSmall.copy(
+                      fontSize = 13.sp,
+                      lineHeight = 16.sp,
+                      fontWeight = if (activeFraction > 0.5f) FontWeight.Bold else FontWeight.Normal,
+                    ),
+                  color = contentColor,
+                  maxLines = 1,
+                  softWrap = false,
+                  overflow = TextOverflow.Ellipsis,
+                  textAlign = TextAlign.Center,
+                  modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                )
               }
             }
           }
         }
       }
+    }
+  }
+
+  val baseModifier =
+    modifier
+      .widthIn(max = 400.dp)
+      .fillMaxWidth()
+      .height(64.dp)
+
+  if (liquidGlassEnabled) {
+    LiquidGlassSurface(
+      modifier = baseModifier,
+      shape = CircleShape,
+      style = LiquidGlassStyle.Navigation,
+      glassColor = surfaceColor.copy(alpha = 0.24f),
+      fallbackColor = surfaceColor.copy(alpha = 0.82f),
+      contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+      Box(Modifier.matchParentSize().then(rimModifier)) {
+        trackContent()
+      }
+    }
+  } else {
+    Box(
+      modifier =
+        baseModifier
+          .shadow(8.dp, CircleShape)
+          .clip(CircleShape)
+          .then(
+            if (hazeBackdrop != null) {
+              Modifier.hazeBlur(
+                input = HazeInput.Sources(hazeBackdrop),
+                style = hazeStyle,
+              )
+            } else {
+              Modifier.background(surfaceColor.copy(alpha = 0.82f))
+            },
+          )
+          .then(rimModifier),
+    ) {
+      trackContent()
     }
   }
 }
@@ -822,6 +905,14 @@ private fun MainTabIcon(
   tint: Color,
   contentDescription: String?,
 ) {
+  if (tab == MainScreen.MainTab.PROFILE) {
+    app.gyrolet.mpvrx.ui.browser.profile.ProfileAvatar(
+      size = MainNavigationIconSize,
+      tint = tint,
+      contentDescription = contentDescription,
+    )
+    return
+  }
   val icon = when (tab) {
     MainScreen.MainTab.HOME -> Icons.RoundedFilled.Home
     MainScreen.MainTab.MUSIC -> Icons.RoundedFilled.Audiotrack
@@ -831,25 +922,57 @@ private fun MainTabIcon(
     MainScreen.MainTab.NETWORK -> Icons.RoundedFilled.BringYourOwnIp
     MainScreen.MainTab.JELLYFIN -> null
     MainScreen.MainTab.SNAPSHOTS -> Icons.RoundedFilled.Image
+    MainScreen.MainTab.PROFILE -> Icons.RoundedFilled.AccountCircle
   }
   if (icon == null) {
     androidx.compose.material3.Icon(
       painter = painterResource(R.drawable.ic_jellyfin),
       contentDescription = contentDescription,
       tint = tint,
-      modifier = Modifier.size(22.dp),
+      modifier = Modifier.size(MainNavigationIconSize),
     )
   } else {
     Icon(
       icon,
       contentDescription = contentDescription,
       tint = tint,
-      modifier = Modifier.size(22.dp),
+      modifier = Modifier.size(MainNavigationIconSize),
     )
   }
 }
 
+private val MainNavigationIconSize = 28.dp
+
+/**
+ * Bottom-navigation tab order. Home is the permanent root so Back never exits directly from another
+ * tab. The Profile tab absorbs Recents, Playlists and Snapshots, which stay reachable from inside it.
+ */
+internal fun mainNavigationTabs(
+  showMusic: Boolean,
+  showProfile: Boolean,
+  showRecents: Boolean,
+  showPlaylists: Boolean,
+  showNetwork: Boolean,
+  showJellyfin: Boolean,
+  showSnapshots: Boolean,
+  showCloud: Boolean = false,
+): List<MainScreen.MainTab> =
+  buildList {
+    add(MainScreen.MainTab.HOME)
+    if (showCloud) add(MainScreen.MainTab.CLOUD)
+    if (showMusic) add(MainScreen.MainTab.MUSIC)
+    if (!showProfile && showRecents) add(MainScreen.MainTab.RECENTS)
+    if (!showProfile && showPlaylists) add(MainScreen.MainTab.PLAYLISTS)
+    if (showNetwork) add(MainScreen.MainTab.NETWORK)
+    if (showJellyfin) add(MainScreen.MainTab.JELLYFIN)
+    if (!showProfile && showSnapshots) add(MainScreen.MainTab.SNAPSHOTS)
+    if (showProfile) add(MainScreen.MainTab.PROFILE)
+  }
+
 val LocalNavigationBarHeight = compositionLocalOf { 0.dp }
+
+// True for a screen hosted as a bottom-navigation page; false when the same screen is pushed on the back stack.
+val LocalIsMainTabPage = compositionLocalOf { false }
 
 // CompositionLocal for main navigation bar
 val LocalMainNavigationBar =

@@ -107,6 +107,7 @@ class MediaPlaybackService :
     const val ACTION_NOTIFICATION_PREVIOUS = "app.gyrolet.mpvrx.action.NOTIFICATION_PREVIOUS"
     const val ACTION_NOTIFICATION_PLAY_PAUSE = "app.gyrolet.mpvrx.action.NOTIFICATION_PLAY_PAUSE"
     const val ACTION_NOTIFICATION_NEXT = "app.gyrolet.mpvrx.action.NOTIFICATION_NEXT"
+    const val ACTION_NOTIFICATION_SHUFFLE = "app.gyrolet.mpvrx.action.NOTIFICATION_SHUFFLE"
     const val ACTION_NOTIFICATION_FAVORITE = "app.gyrolet.mpvrx.action.NOTIFICATION_FAVORITE"
     const val ACTION_NOTIFICATION_MEDIA_FAVORITE = "app.gyrolet.mpvrx.action.NOTIFICATION_MEDIA_FAVORITE"
     const val ACTION_NOTIFICATION_CLOSE = "app.gyrolet.mpvrx.action.NOTIFICATION_CLOSE"
@@ -502,6 +503,14 @@ class MediaPlaybackService :
         }
         ACTION_NOTIFICATION_NEXT -> {
           playNextFromSession()
+          if (foregroundReady) return START_NOT_STICKY
+        }
+        ACTION_NOTIFICATION_SHUFFLE -> {
+          if (canHandleTransportAction()) {
+            val queueState = PlaybackSession.queue.value
+            PlaybackSession.setShuffleEnabled(!queueState.shuffleEnabled)
+            refreshTransportControls()
+          }
           if (foregroundReady) return START_NOT_STICKY
         }
         ACTION_NOTIFICATION_FAVORITE -> {
@@ -1016,6 +1025,7 @@ class MediaPlaybackService :
   private fun refreshTransportControls() {
     updateMediaSessionPlaybackState()
     updateNotification()
+    MediaPlayerWidget.requestUpdate(this)
   }
 
   private fun togglePlaybackFromNotification() {

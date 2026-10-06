@@ -2572,6 +2572,19 @@
   <string name="ui_snapshots">スナップショット</string>
   <string name="pref_nav_snapshots_title">スナップショットタブを表示</string>
   <string name="pref_nav_snapshots_summary">下部ナビゲーションバーにスナップショットを表示または非表示</string>
+  <string name="ui_profile">プロフィール</string>
+  <string name="pref_nav_profile_title">プロフィールタブを表示</string>
+  <string name="pref_nav_profile_summary">履歴、プレイリスト、スナップショットを1つのタブにまとめる</string>
+  <string name="pref_nav_in_profile_tab_summary">プロフィールタブに含まれています</string>
+  <string name="profile_view_all">すべて表示</string>
+  <string name="profile_edit">プロフィールを編集</string>
+  <string name="profile_display_name">表示名</string>
+  <string name="profile_choose_photo">写真を選択</string>
+  <string name="profile_remove_photo">写真を削除</string>
+  <string name="profile_remove_from_history">履歴から削除</string>
+  <string name="profile_recents_empty_message">再生した項目がここに表示されます</string>
+  <string name="profile_playlists_empty_message">作成したプレイリストがここに表示されます</string>
+  <string name="playlist_audio_empty_description">音楽プレイリストを作成するか、音楽タブで曲をお気に入りに追加してください</string>
   <string name="snapshot_save_button">スナップショットに保存</string>
   <string name="snapshot_saved">スナップショットに保存しました</string>
   <string name="snapshot_database_write_failed">ギャラリーには保存しましたが、アプリ内の記録に失敗しました。</string>
@@ -2653,6 +2666,7 @@
   <string name="watch_stats_last_seven_days">過去 7 日間</string>
   <string name="watch_stats_top_media">よく視聴するメディア</string>
   <string name="watch_stats_empty">メディアを再生すると統計が記録されます。</string>
+  <string name="watch_stats_reset_confirm">再生統計をすべてリセットしますか？履歴、視聴済みの状態、プレイリストは保持されます。</string>
   <string name="pref_debug_log_size_title">ログサイズ上限</string>
   <string name="pref_debug_log_size_summary">ログ表示と共有診断に最大 %1$d MB を保持します。</string>
   <string name="onboarding_configuration_title">mpvRx ストレージの設定</string>

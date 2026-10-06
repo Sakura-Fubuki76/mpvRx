@@ -631,16 +631,22 @@ class ThumbnailRepository(
     if (ZipArchiveMedia.isPlaybackUri(video.uri.toString())) return null
     val mode = browserPreferences.thumbnailMode.get()
     val dimension = thumbnailMaxSize()
+    // Entries saved without media metadata (e.g. songs added to a playlist) arrive flagged as video.
+    val isAudio =
+      video.isAudio ||
+        app.gyrolet.mpvrx.utils.storage.FileTypeUtils.isAudioFile(File(canonicalLocalPath(video)))
 
-    if (video.isAudio || mode == ThumbnailMode.Smart || mode == ThumbnailMode.EmbeddedThumbnail) {
+    if (isAudio || mode == ThumbnailMode.Smart || mode == ThumbnailMode.EmbeddedThumbnail) {
       // Opening a MediaMetadataRetriever here means a second demuxer on the very file the native
       // decode below is about to open. Smart mode wants a real frame anyway, so only pay for the
       // probe when a sidecar image is provably there. Audio and EmbeddedThumbnail keep it: there
       // is no native frame to fall back to.
-      if (mode != ThumbnailMode.Smart || EmbeddedArtworkCandidates.hasSidecarArtwork(canonicalLocalPath(video))) {
+      if (isAudio || mode != ThumbnailMode.Smart || EmbeddedArtworkCandidates.hasSidecarArtwork(canonicalLocalPath(video))) {
         generateEmbeddedArtwork(video)?.let { return it }
       }
-      if (video.isAudio) return null
+      if (isAudio) {
+        return loadMediaStoreAudioArtwork(video, dimension)
+      }
     }
 
     generateWithFastThumbnails(video, mode, dimension)?.let {
@@ -649,6 +655,41 @@ class ThumbnailRepository(
 
     return extractLocalVideoFrame(video, dimension, dimension)
   }
+
+  /** MediaStore's indexed cover, which also covers formats the retriever cannot read art from. */
+  private fun loadMediaStoreAudioArtwork(
+    video: Video,
+    sizePx: Int,
+  ): Bitmap? =
+    runCatching {
+      val resolver = context.contentResolver
+      val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+      val mediaStoreId =
+        video.uri
+          .takeIf { it.scheme == "content" && it.authority == MediaStore.AUTHORITY }
+          ?.let { runCatching { android.content.ContentUris.parseId(it) }.getOrNull() }
+      val (audioId, albumId) =
+        resolver.query(
+          collection,
+          arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.ALBUM_ID),
+          if (mediaStoreId != null) "${MediaStore.Audio.Media._ID}=?" else "${MediaStore.Audio.Media.DATA}=?",
+          arrayOf(mediaStoreId?.toString() ?: canonicalLocalPath(video)),
+          null,
+        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getLong(0) to cursor.getLong(1) else null }
+          ?: return null
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        resolver.loadThumbnail(
+          android.content.ContentUris.withAppendedId(collection, audioId),
+          android.util.Size(sizePx, sizePx),
+          null,
+        )
+      } else {
+        resolver
+          .openInputStream(
+            android.content.ContentUris.withAppendedId(Uri.parse("content://media/external/audio/albumart"), albumId),
+          )?.use(BitmapFactory::decodeStream)
+      }
+    }.getOrNull()
 
   private fun generateEmbeddedArtwork(video: Video): Bitmap? =
     runCatching {

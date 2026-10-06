@@ -624,40 +624,6 @@ object AppearancePreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              val watchedThreshold by browserPreferences.watchedThreshold.collectAsState()
-              val effectiveThreshold = watchedThreshold.coerceAtLeast(0)
-              val thresholdDisplayValue = if (effectiveThreshold == 0) 0f else effectiveThreshold.toFloat()
-              SliderPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_watched_threshold_title),
-                value = thresholdDisplayValue,
-                onValueChange = { browserPreferences.watchedThreshold.set(it.roundToInt()) },
-                sliderValue = thresholdDisplayValue,
-                onSliderValueChange = { browserPreferences.watchedThreshold.set(it.roundToInt()) },
-                title = {
-                  Text(
-                    text = stringResource(id = R.string.pref_appearance_watched_threshold_title),
-                  )
-                },
-                valueRange = 0f..100f,
-                valueSteps = 20,
-                summary = {
-                  Text(
-                    text =
-                      if (effectiveThreshold == 0) {
-                        stringResource(R.string.pref_appearance_watched_threshold_summary_infinite)
-                      } else {
-                        stringResource(
-                          id = R.string.pref_appearance_watched_threshold_summary,
-                          effectiveThreshold,
-                        )
-                      },
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
               val deleteFolderAllContents by browserPreferences.deleteFolderAllContents.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_delete_folder_all_contents),
@@ -871,12 +837,10 @@ object AppearancePreferencesScreen : Screen {
           item {
             PreferenceCard {
               val showMusicTab by preferences.showMusicTab.collectAsState()
-              val showRecentsTab by preferences.showRecentsTab.collectAsState()
-              val showPlaylistsTab by preferences.showPlaylistsTab.collectAsState()
               val showCloudTab by preferences.showCloudTab.collectAsState()
+              val showProfileTab by preferences.showProfileTab.collectAsState()
               val showNetworkTab by preferences.showNetworkTab.collectAsState()
               val showJellyfinTab by preferences.showJellyfinTab.collectAsState()
-              val showSnapshotTab by preferences.showSnapshotTab.collectAsState()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_nav_music_title),
@@ -894,28 +858,13 @@ object AppearancePreferencesScreen : Screen {
               PreferenceDivider()
 
               SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_recents_title),
-                value = showRecentsTab,
-                onValueChange = preferences.showRecentsTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_recents_title)) },
+                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_profile_title),
+                value = showProfileTab,
+                onValueChange = preferences.showProfileTab::set,
+                title = { Text(text = stringResource(id = R.string.pref_nav_profile_title)) },
                 summary = {
                   Text(
-                    text = stringResource(id = R.string.pref_nav_recents_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_playlists_title),
-                value = showPlaylistsTab,
-                onValueChange = preferences.showPlaylistsTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_playlists_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(id = R.string.pref_nav_playlists_summary),
+                    text = stringResource(id = R.string.pref_nav_profile_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -955,21 +904,6 @@ object AppearancePreferencesScreen : Screen {
                 summary = {
                   Text(
                     text = stringResource(id = R.string.pref_nav_jellyfin_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_nav_snapshots_title),
-                value = showSnapshotTab,
-                onValueChange = preferences.showSnapshotTab::set,
-                title = { Text(text = stringResource(id = R.string.pref_nav_snapshots_title)) },
-                summary = {
-                  Text(
-                    text = stringResource(id = R.string.pref_nav_snapshots_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },

@@ -67,10 +67,13 @@ fun SplashContent(
   }
   if (!mounted) return
 
-  val alpha by animateFloatAsState(
+  // Fade only the branded content. The fullscreen background stays fully opaque until this
+  // composable unmounts, otherwise the real UI shows through as a dim/ghost overlay during the
+  // final splash frames.
+  val contentAlpha by animateFloatAsState(
     targetValue = if (visible) 1f else 0f,
     animationSpec = tween(durationMillis = SPLASH_FADE_OUT_DURATION_MS, easing = FastOutSlowInEasing),
-    label = "splashAlpha",
+    label = "splashContentAlpha",
   )
 
   // A short grow-in gives the icon some life; it settles well before the fade starts.
@@ -86,13 +89,14 @@ fun SplashContent(
     modifier =
       modifier
         .fillMaxSize()
-        // background, not surface: this must match the canvas the app is about to draw on, so the
-        // handover does not flash a second shade.
-        .background(MaterialTheme.colorScheme.background)
-        .alpha(alpha),
+        // Keep this background opaque for the entire handoff. Only the logo/text fade below;
+        // fading the background itself exposes the already-rendered UI underneath and creates a
+        // visible translucent overlay at the end of the splash animation.
+        .background(MaterialTheme.colorScheme.background),
     contentAlignment = Alignment.Center,
   ) {
     Column(
+      modifier = Modifier.alpha(contentAlpha),
       horizontalAlignment = Alignment.CenterHorizontally,
       verticalArrangement = Arrangement.spacedBy(SPLASH_LABEL_SPACING),
     ) {

@@ -2578,6 +2578,19 @@
   <string name="ui_snapshots">快照</string>
   <string name="pref_nav_snapshots_title">显示快照标签页</string>
   <string name="pref_nav_snapshots_summary">在底部导航栏中显示或隐藏快照</string>
+  <string name="ui_profile">个人资料</string>
+  <string name="pref_nav_profile_title">显示“个人资料”标签页</string>
+  <string name="pref_nav_profile_summary">将最近、播放列表和快照合并到一个标签页</string>
+  <string name="pref_nav_in_profile_tab_summary">已包含在“个人资料”标签页中</string>
+  <string name="profile_view_all">查看全部</string>
+  <string name="profile_edit">编辑个人资料</string>
+  <string name="profile_display_name">显示名称</string>
+  <string name="profile_choose_photo">选择照片</string>
+  <string name="profile_remove_photo">移除照片</string>
+  <string name="profile_remove_from_history">从历史记录中移除</string>
+  <string name="profile_recents_empty_message">你播放的内容将显示在这里</string>
+  <string name="profile_playlists_empty_message">你创建的播放列表将显示在这里</string>
+  <string name="playlist_audio_empty_description">创建音乐播放列表，或在音乐标签页中收藏歌曲</string>
   <string name="snapshot_save_button">保存到快照</string>
   <string name="snapshot_saved">已保存到快照</string>
   <string name="snapshot_database_write_failed">已保存到相册，但应用内记录失败。</string>
@@ -2659,6 +2672,7 @@
   <string name="watch_stats_last_seven_days">最近 7 天</string>
   <string name="watch_stats_top_media">观看最多</string>
   <string name="watch_stats_empty">播放一些媒体后即可生成统计。</string>
+  <string name="watch_stats_reset_confirm">重置所有播放统计？历史记录、观看状态和播放列表将保留。</string>
   <string name="pref_debug_log_size_title">日志大小限制</string>
   <string name="pref_debug_log_size_summary">日志查看器和共享诊断最多保留 %1$d MB。</string>
   <string name="onboarding_configuration_title">设置 mpvRx 存储</string>

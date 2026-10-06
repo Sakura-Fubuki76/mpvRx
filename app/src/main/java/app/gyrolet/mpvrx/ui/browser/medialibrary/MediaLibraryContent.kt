@@ -151,6 +151,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
   val savedMediaType by browserPreferences.mediaLibraryType.collectAsState()
   val playlistMode by playerPreferences.playlistMode.collectAsState()
   val mediaType = if (forceAudio) MediaLibraryType.Audio else if (includeAudioBrowser) savedMediaType else MediaLibraryType.Video
+  val musicCoverArtSize by browserPreferences.musicCoverArtSize.collectAsState()
   val sortedVideos =
     remember(videos, videoSortType, videoSortOrder) {
       SortUtils.sortVideos(videos, videoSortType, videoSortOrder)
@@ -688,6 +689,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               modifier = Modifier.fillMaxSize(),
               showFloatingBottomBar = showFloatingBottomBar,
               mediaLayoutMode = mediaLayoutMode,
+              musicCoverArtSize = musicCoverArtSize,
               isFabExpanded = isFabExpanded.value,
               onFabExpandedChange = { isFabExpanded.value = it },
             )
@@ -759,6 +761,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
         onSortOrderChange = { browserPreferences.videoSortOrder.set(it) },
         isFolderView = false,
         enableViewModeOptions = !forceAudio,
+        isAudio = mediaType == MediaLibraryType.Audio,
       )
     }
 

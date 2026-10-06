@@ -285,7 +285,8 @@ class PlaylistRepository(
         continue
       }
       var effectiveIsAudio = playlist.isAudio
-      if (!effectiveIsAudio) {
+      // Favorites lists are per media type; reclassifying one would leave its type without one.
+      if (!effectiveIsAudio && !isProtectedPlaylist(playlist)) {
         val items = playlistDao.getPlaylistItems(playlist.id)
         if (items.isNotEmpty()) {
           val hasAudioItems = items.any { app.gyrolet.mpvrx.utils.storage.FileTypeUtils.isAudioFile(java.io.File(it.filePath)) }
@@ -303,6 +304,11 @@ class PlaylistRepository(
   }
 
   suspend fun getPlaylistById(playlistId: Int): PlaylistEntity? = playlistDao.getPlaylistById(playlistId)
+
+  /** Persists the audio flag for playlists whose entries turned out to be audio. */
+  suspend fun reclassifyAudioPlaylists() {
+    classifyAndFilterPlaylists(playlistDao.getAllPlaylists(), targetIsAudio = true)
+  }
 
   suspend fun removeDeletedZipPlaylists() = withContext(Dispatchers.IO) {
     playlistWriteMutex.withLock {

@@ -181,9 +181,9 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
     }
   }
 
-  fun visibleText(includeDeviceInfo: Boolean = false): String =
+  fun allCapturedText(includeDeviceInfo: Boolean = false): String =
     buildDebugLogText(
-      entries = filteredEntries,
+      entries = liveEntries,
       includeDeviceInfo = includeDeviceInfo,
       maxBytes = logSizeMb.coerceIn(1, 10) * 1024 * 1024,
     )
@@ -260,21 +260,32 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
               onDismissRequest = { menuExpanded = false },
             ) {
               DropdownMenuItem(
-                text = { Text("Share visible logs") },
+                text = { Text("Share Logs File") },
                 leadingIcon = { Icon(Icons.RoundedFilled.Share, contentDescription = null) },
-                enabled = filteredEntries.isNotEmpty(),
+                enabled = liveEntries.isNotEmpty(),
                 onClick = {
                   menuExpanded = false
-                  shareDebugLogs(context, visibleText(includeDeviceInfo = true))
+                  val text = allCapturedText(includeDeviceInfo = true)
+                  scope.launch {
+                    val file =
+                      withContext(Dispatchers.IO) {
+                        createDebugLogsShareFile(context, text)
+                      }
+                    if (file != null) {
+                      shareDebugLogsFile(context, file, chooserTitle = "Share logs file")
+                    } else {
+                      Toast.makeText(context, "Could not prepare logs file", Toast.LENGTH_LONG).show()
+                    }
+                  }
                 },
               )
               DropdownMenuItem(
                 text = { Text("Save logs to config folder") },
                 leadingIcon = { Icon(Icons.RoundedFilled.Download, contentDescription = null) },
-                enabled = filteredEntries.isNotEmpty(),
+                enabled = liveEntries.isNotEmpty(),
                 onClick = {
                   menuExpanded = false
-                  val text = visibleText(includeDeviceInfo = true)
+                  val text = allCapturedText(includeDeviceInfo = true)
                   scope.launch {
                     val saved = withContext(Dispatchers.IO) { saveDebugLogsToConfigDir(context, text) }
                     val message =
@@ -290,15 +301,15 @@ internal fun DebugLogsScreen(onNavigateBack: () -> Unit) {
                 },
               )
               DropdownMenuItem(
-                text = { Text("Copy visible logs") },
+                text = { Text("Copy All Logs") },
                 leadingIcon = { Icon(Icons.RoundedFilled.ContentCopy, contentDescription = null) },
-                enabled = filteredEntries.isNotEmpty(),
+                enabled = liveEntries.isNotEmpty(),
                 onClick = {
                   menuExpanded = false
                   SafeClipboard.copyPlainText(
                     context = context,
                     label = "mpvrx_debug_logs",
-                    text = visibleText(),
+                    text = allCapturedText(),
                   )
                 },
               )
@@ -655,44 +666,33 @@ private fun buildDebugLogText(
   return (prefix + DebugLogReader.trimTextToByteBudget(logs, logBudget)).trimEnd()
 }
 
-private fun shareDebugLogs(
+private fun createDebugLogsShareFile(
   context: Context,
   text: String,
-) {
-  if (text.isBlank()) return
-  val byteCount = text.toByteArray(Charsets.UTF_8).size
-  if (byteCount > 256 * 1024) {
-    shareDebugLogsAsFile(context, text, chooserTitle = "Share debug logs")
-    return
-  }
+): File? {
+  if (text.isBlank()) return null
 
-  context.startActivity(
-    Intent.createChooser(
-      Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, text)
-      },
-      "Share debug logs",
-    ),
-  )
+  return runCatching {
+    val shareDirectory = File(context.cacheDir, SHARE_DIR_NAME).apply { mkdirs() }
+    val file = File(shareDirectory, "$DEBUG_LOG_FILE_PREFIX${System.currentTimeMillis()}.txt")
+    file.writeText(text)
+
+    shareDirectory
+      .listFiles { candidate -> candidate.isFile && candidate.name.startsWith(DEBUG_LOG_FILE_PREFIX) }
+      ?.sortedByDescending(File::lastModified)
+      ?.drop(DEBUG_LOG_KEEP)
+      ?.forEach { candidate -> candidate.delete() }
+
+    file
+  }.getOrNull()
 }
 
-private fun shareDebugLogsAsFile(
+private fun shareDebugLogsFile(
   context: Context,
-  text: String,
-  chooserTitle: String = "Share debug logs",
+  file: File,
+  chooserTitle: String = "Share logs file",
 ) {
-  if (text.isBlank()) return
-
-  val shareDirectory = File(context.cacheDir, SHARE_DIR_NAME).apply { mkdirs() }
-  val file = File(shareDirectory, "$DEBUG_LOG_FILE_PREFIX${System.currentTimeMillis()}.txt")
-  file.writeText(text)
-
-  shareDirectory
-    .listFiles { candidate -> candidate.isFile && candidate.name.startsWith(DEBUG_LOG_FILE_PREFIX) }
-    ?.sortedByDescending(File::lastModified)
-    ?.drop(DEBUG_LOG_KEEP)
-    ?.forEach { candidate -> candidate.delete() }
+  if (!file.isFile) return
 
   val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
   context.startActivity(

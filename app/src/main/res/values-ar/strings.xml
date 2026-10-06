@@ -2605,6 +2605,19 @@
   <string name="ui_snapshots">اللقطات</string>
   <string name="pref_nav_snapshots_title">إظهار علامة تبويب اللقطات</string>
   <string name="pref_nav_snapshots_summary">إظهار أو إخفاء اللقطات في شريط التنقل السفلي</string>
+  <string name="ui_profile">الملف الشخصي</string>
+  <string name="pref_nav_profile_title">إظهار علامة تبويب الملف الشخصي</string>
+  <string name="pref_nav_profile_summary">دمج الأخيرة وقوائم التشغيل واللقطات في علامة تبويب واحدة</string>
+  <string name="pref_nav_in_profile_tab_summary">مضمّنة في علامة تبويب الملف الشخصي</string>
+  <string name="profile_view_all">عرض الكل</string>
+  <string name="profile_edit">تعديل الملف الشخصي</string>
+  <string name="profile_display_name">الاسم المعروض</string>
+  <string name="profile_choose_photo">اختيار صورة</string>
+  <string name="profile_remove_photo">إزالة الصورة</string>
+  <string name="profile_remove_from_history">إزالة من السجل</string>
+  <string name="profile_recents_empty_message">ستظهر هنا العناصر التي تشغّلها</string>
+  <string name="profile_playlists_empty_message">ستظهر هنا قوائم التشغيل التي تنشئها</string>
+  <string name="playlist_audio_empty_description">أنشئ قائمة تشغيل موسيقية أو أضف أغاني إلى المفضلة من علامة تبويب الموسيقى</string>
   <string name="snapshot_save_button">حفظ في اللقطات</string>
   <string name="snapshot_saved">تم الحفظ في اللقطات</string>
   <string name="snapshot_database_write_failed">تم الحفظ في المعرض، لكن تعذّر تسجيله في التطبيق.</string>
@@ -2686,6 +2699,7 @@
   <string name="watch_stats_last_seven_days">آخر 7 أيام</string>
   <string name="watch_stats_top_media">الأكثر مشاهدة</string>
   <string name="watch_stats_empty">شغّل بعض الوسائط لبدء إنشاء الإحصاءات.</string>
+  <string name="watch_stats_reset_confirm">هل تريد إعادة ضبط كل إحصاءات التشغيل؟ سيُحتفظ بالسجل وحالة المشاهدة وقوائم التشغيل.</string>
   <string name="pref_debug_log_size_title">حد حجم السجل</string>
   <string name="pref_debug_log_size_summary">الاحتفاظ بما يصل إلى %1$d م.ب في عارض السجلات والتشخيصات المشتركة.</string>
   <string name="onboarding_configuration_title">إعداد تخزين mpvRx</string>

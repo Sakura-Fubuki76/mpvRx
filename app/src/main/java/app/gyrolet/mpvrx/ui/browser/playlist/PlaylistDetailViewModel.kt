@@ -309,7 +309,7 @@ class PlaylistDetailViewModel(
               val fileExists = file.exists()
               val isAudioFile = FileTypeUtils.isAudioFile(file)
               val matchedVideo = allVideos.find { video -> video.path == item.filePath }
-              val video = matchedVideo ?: run {
+              val video = matchedVideo?.let { if (isAudioFile && !it.isAudio) it.copy(isAudio = true) else it } ?: run {
                 Video(
                   id = item.id.toLong(),
                   title = item.fileName,

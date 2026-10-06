@@ -739,20 +739,6 @@ object AdvancedPreferencesScreen : Screen {
 
               PreferenceDivider()
 
-              Preference(
-                title = { Text(stringResource(R.string.watch_stats_title)) },
-                summary = {
-                  Text(
-                    stringResource(R.string.watch_stats_summary),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-                icon = { Icon(Icons.RoundedFilled.History, contentDescription = null) },
-                onClick = { backStack.navigateTo(WatchStatsScreen) },
-              )
-
-              PreferenceDivider()
-
               val playbackHistorySummary =
                 if (recentlyPlayedCount > 0) {
                   stringResource(R.string.pref_clear_playback_history_recently_played, recentlyPlayedCount)

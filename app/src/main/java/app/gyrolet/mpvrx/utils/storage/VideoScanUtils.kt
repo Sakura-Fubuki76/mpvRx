@@ -49,12 +49,10 @@ object VideoScanUtils : KoinComponent {
   private const val METADATA_BATCH_SIZE = 32
 
   /**
-   * MediaStore's per-video rotation column.
+   * Optional MediaStore per-video rotation column.
    *
-   * The platform exposes no public constant for it: `MediaStore.Media.ROTATION` covers images only
-   * and `MediaStore.Video.VideoColumns` has never declared one, so the raw column name is used and
-   * read defensively via [android.database.Cursor.getColumnIndex], which returns -1 when the
-   * provider or OS version does not carry it.
+   * Providers differ: some expose `rotation`, while newer Android/vendor providers reject it.
+   * The query retries without this column when the provider does not support it.
    */
   private const val VIDEO_ROTATION_COLUMN = "rotation"
 
@@ -181,7 +179,7 @@ object VideoScanUtils : KoinComponent {
     noMediaPathFilter: NoMediaPathFilter,
     publisher: ProgressiveResultsPublisher<Video>,
   ) {
-    val projection =
+    val baseProjection =
       arrayOf(
         MediaStore.Video.Media._ID,
         MediaStore.Video.Media.DISPLAY_NAME,
@@ -193,8 +191,8 @@ object VideoScanUtils : KoinComponent {
         MediaStore.Video.Media.MIME_TYPE,
         MediaStore.Video.Media.WIDTH,
         MediaStore.Video.Media.HEIGHT,
-        VIDEO_ROTATION_COLUMN,
       )
+    val projectionWithRotation = baseProjection + VIDEO_ROTATION_COLUMN
 
     val normalizedFolderPath = normalizeStoragePath(folderPath) ?: return
     val normalizedFolderKey = storagePathKey(normalizedFolderPath) ?: return
@@ -202,14 +200,27 @@ object VideoScanUtils : KoinComponent {
     val selectionArgs = arrayOf("$normalizedFolderKey/%")
 
     try {
-      context.contentResolver
-        .query(
-          MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-          projection,
-          selection,
-          selectionArgs,
-          "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
-        )?.use { cursor ->
+      val cursor =
+        try {
+          context.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            projectionWithRotation,
+            selection,
+            selectionArgs,
+            "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
+          )
+        } catch (_: IllegalArgumentException) {
+          // Some Android MediaStore providers reject the optional rotation column.
+          // Retry without it so the entire folder scan is not discarded.
+          context.contentResolver.query(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+            baseProjection,
+            selection,
+            selectionArgs,
+            "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
+          )
+        }
+      cursor?.use { cursor ->
           val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
           val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DISPLAY_NAME)
           val dataColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.DATA)

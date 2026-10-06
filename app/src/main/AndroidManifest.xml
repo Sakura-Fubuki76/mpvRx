@@ -96,6 +96,18 @@
                 android:resource="@xml/media_player_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".ui.player.MediaPlayerPillWidget"
+            android:exported="false"
+            android:label="@string/media_widget_pill_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/media_player_pill_widget_info" />
+        </receiver>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

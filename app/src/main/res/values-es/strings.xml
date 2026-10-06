@@ -2579,6 +2579,19 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="ui_snapshots">Capturas</string>
   <string name="pref_nav_snapshots_title">Mostrar pestaña de capturas</string>
   <string name="pref_nav_snapshots_summary">Mostrar u ocultar Capturas en la barra de navegación inferior</string>
+  <string name="ui_profile">Perfil</string>
+  <string name="pref_nav_profile_title">Mostrar pestaña Perfil</string>
+  <string name="pref_nav_profile_summary">Combinar Recientes, Listas y Capturas en una sola pestaña</string>
+  <string name="pref_nav_in_profile_tab_summary">Incluido en la pestaña Perfil</string>
+  <string name="profile_view_all">Ver todo</string>
+  <string name="profile_edit">Editar perfil</string>
+  <string name="profile_display_name">Nombre visible</string>
+  <string name="profile_choose_photo">Elegir foto</string>
+  <string name="profile_remove_photo">Quitar foto</string>
+  <string name="profile_remove_from_history">Quitar del historial</string>
+  <string name="profile_recents_empty_message">Lo que reproduzcas aparecerá aquí</string>
+  <string name="profile_playlists_empty_message">Las listas que crees aparecerán aquí</string>
+  <string name="playlist_audio_empty_description">Crea una lista de música o marca canciones como favoritas desde la pestaña Música</string>
   <string name="snapshot_save_button">Guardar en Capturas</string>
   <string name="snapshot_saved">Guardado en Capturas</string>
   <string name="snapshot_database_write_failed">Guardado en la galería, pero el registro en la aplicación ha fallado.</string>
@@ -2660,6 +2673,7 @@ Reinicia la aplicación para que se apliquen todos los cambios.</string>
   <string name="watch_stats_last_seven_days">Últimos 7 días</string>
   <string name="watch_stats_top_media">Más reproducido</string>
   <string name="watch_stats_empty">Reproduce contenido para empezar a crear estadísticas.</string>
+  <string name="watch_stats_reset_confirm">¿Restablecer todas las estadísticas de reproducción? Se conservarán el historial, el estado de visualización y las listas.</string>
   <string name="pref_debug_log_size_title">Límite del registro</string>
   <string name="pref_debug_log_size_summary">Conserva hasta %1$d MB en el visor y los diagnósticos compartidos.</string>
   <string name="onboarding_configuration_title">Configurar almacenamiento de mpvRx</string>

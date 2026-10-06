@@ -2579,6 +2579,19 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="ui_snapshots">Captures</string>
   <string name="pref_nav_snapshots_title">Afficher l\'onglet Captures</string>
   <string name="pref_nav_snapshots_summary">Afficher ou masquer Captures dans la barre de navigation inférieure</string>
+  <string name="ui_profile">Profil</string>
+  <string name="pref_nav_profile_title">Afficher l\'onglet Profil</string>
+  <string name="pref_nav_profile_summary">Regrouper Récents, Playlists et Captures dans un seul onglet</string>
+  <string name="pref_nav_in_profile_tab_summary">Inclus dans l\'onglet Profil</string>
+  <string name="profile_view_all">Tout afficher</string>
+  <string name="profile_edit">Modifier le profil</string>
+  <string name="profile_display_name">Nom affiché</string>
+  <string name="profile_choose_photo">Choisir une photo</string>
+  <string name="profile_remove_photo">Supprimer la photo</string>
+  <string name="profile_remove_from_history">Retirer de l\'historique</string>
+  <string name="profile_recents_empty_message">Les éléments lus apparaîtront ici</string>
+  <string name="profile_playlists_empty_message">Les playlists que vous créez apparaîtront ici</string>
+  <string name="playlist_audio_empty_description">Créez une playlist musicale ou ajoutez des titres aux favoris depuis l\'onglet Musique</string>
   <string name="snapshot_save_button">Enregistrer dans Captures</string>
   <string name="snapshot_saved">Enregistré dans Captures</string>
   <string name="snapshot_database_write_failed">Enregistré dans la galerie, mais l\'enregistrement dans l\'application a échoué.</string>
@@ -2660,6 +2673,7 @@ Veuillez redémarrer l’application pour appliquer toutes les modifications.</s
   <string name="watch_stats_last_seven_days">7 derniers jours</string>
   <string name="watch_stats_top_media">Les plus regardés</string>
   <string name="watch_stats_empty">Lisez des médias pour commencer à créer vos statistiques.</string>
+  <string name="watch_stats_reset_confirm">Réinitialiser toutes les statistiques de lecture ? Votre historique, les éléments vus et les playlists seront conservés.</string>
   <string name="pref_debug_log_size_title">Limite de taille des journaux</string>
   <string name="pref_debug_log_size_summary">Conserve jusqu’à %1$d Mo dans le visualiseur et les diagnostics partagés.</string>
   <string name="onboarding_configuration_title">Configurer le stockage mpvRx</string>

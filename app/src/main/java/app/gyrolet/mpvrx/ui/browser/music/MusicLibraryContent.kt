@@ -1278,18 +1278,22 @@ fun LocalAlbumArtImage(
     }
 
     LaunchedEffect(uri, video, widthPx, heightPx) {
-      bitmap = withContext(Dispatchers.IO) {
+      val loadedBitmap = withContext(Dispatchers.IO) {
         try {
-          val embeddedArtwork = video?.let { thumbnailRepository.getThumbnail(it, widthPx, heightPx) }
-          (embeddedArtwork ?: uri?.let { source ->
+          // MediaStore album art is normally the cheapest and most authoritative audio cover.
+          // Fall back to embedded/sidecar extraction for files whose indexed cover is unavailable.
+          val mediaStoreArtwork = uri?.let { source ->
             context.contentResolver.openInputStream(source)?.use { stream -> BitmapFactory.decodeStream(stream) }
-          })?.asImageBitmap()
+          }
+          (mediaStoreArtwork ?: video?.let { thumbnailRepository.getThumbnail(it, widthPx, heightPx) })?.asImageBitmap()
         } catch (error: kotlinx.coroutines.CancellationException) {
           throw error
         } catch (_: Exception) {
           null
         }
       }
+      // Do not blank an already-rendered cover if a transient rescan/reload fails.
+      if (loadedBitmap != null || bitmap == null) bitmap = loadedBitmap
     }
 
     val loaded = bitmap

@@ -171,6 +171,25 @@ fun AudioMiniPlayer(modifier: Modifier = Modifier) {
 
       Spacer(modifier = Modifier.width(8.dp))
 
+      // Previous Track Action Button
+      IconButton(
+        onClick = {
+          context.startService(
+            Intent(context, MediaPlaybackService::class.java).setAction(
+              MediaPlaybackService.ACTION_NOTIFICATION_PREVIOUS,
+            ),
+          )
+        },
+        modifier = Modifier.size(36.dp),
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.SkipPrevious,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurface,
+          modifier = Modifier.size(24.dp),
+        )
+      }
+
       // Play / Pause Action Button
       IconButton(
         onClick = {

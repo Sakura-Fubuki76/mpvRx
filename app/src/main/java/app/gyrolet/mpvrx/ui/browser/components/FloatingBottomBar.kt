@@ -43,6 +43,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.presentation.components.LiquidGlassBackdrop
 import app.gyrolet.mpvrx.presentation.components.LiquidGlassStyle
 import app.gyrolet.mpvrx.presentation.components.LiquidGlassSurface
 import app.gyrolet.mpvrx.presentation.components.rememberLiquidGlassBackdrop
@@ -51,11 +52,10 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.theme.AppMotion
-import com.kyant.backdrop.backdrops.LayerBackdrop
 import org.koin.compose.koinInject
 
 @Composable
-internal fun rememberBrowserBottomBarBackdrop(): LayerBackdrop? {
+internal fun rememberBrowserBottomBarBackdrop(): LiquidGlassBackdrop? {
   val preferences = koinInject<AppearancePreferences>()
   val enabled by preferences.liquidGlassEnabled.collectAsState()
   return rememberLiquidGlassBackdrop().takeIf { enabled }
@@ -69,6 +69,14 @@ private data class BarLayoutParams(
   val rowPaddingVertical: androidx.compose.ui.unit.Dp,
   val surfacePaddingHorizontal: androidx.compose.ui.unit.Dp,
   val surfacePaddingVertical: androidx.compose.ui.unit.Dp,
+)
+
+/** A screen-specific action rendered before Delete in [BrowserBottomBar]. */
+data class BrowserBottomBarAction(
+  val icon: AppIcon,
+  val label: String,
+  val onClick: () -> Unit,
+  val tint: Color? = null,
 )
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -94,7 +102,10 @@ fun BrowserBottomBar(
   showRename: Boolean = true,
   showDelete: Boolean = true,
   showAddToPlaylist: Boolean = true,
-  backdrop: LayerBackdrop? = null,
+  backdrop: LiquidGlassBackdrop? = null,
+  extraActions: List<BrowserBottomBarAction> = emptyList(),
+  deleteIcon: AppIcon = Icons.RoundedFilled.Delete,
+  deleteLabel: String = "Delete",
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -113,6 +124,7 @@ fun BrowserBottomBar(
   var lastShowAddToQueue by remember { mutableStateOf(onAddToQueueClick != null) }
   var lastShowPin by remember { mutableStateOf(onPinClick != null) }
   var lastUnpinSelected by remember { mutableStateOf(unpinSelected) }
+  var lastExtraActions by remember { mutableStateOf(extraActions) }
 
   if (isSelectionMode) {
     lastShowCopy = showCopy
@@ -125,6 +137,7 @@ fun BrowserBottomBar(
     lastShowAddToQueue = onAddToQueueClick != null
     lastShowPin = onPinClick != null
     lastUnpinSelected = unpinSelected
+    lastExtraActions = extraActions
   }
 
   val effectiveShowCopy = if (isSelectionMode) showCopy else lastShowCopy
@@ -137,6 +150,7 @@ fun BrowserBottomBar(
   val effectiveShowAddToQueue = if (isSelectionMode) onAddToQueueClick != null else lastShowAddToQueue
   val effectiveShowPin = if (isSelectionMode) onPinClick != null else lastShowPin
   val effectiveUnpinSelected = if (isSelectionMode) unpinSelected else lastUnpinSelected
+  val effectiveExtraActions = if (isSelectionMode) extraActions else lastExtraActions
 
   AnimatedVisibility(
     visible = isSelectionMode,
@@ -181,7 +195,7 @@ fun BrowserBottomBar(
           effectiveShowPin,
           effectiveShowAddToPlaylist,
           effectiveShowDelete,
-        ).count { it }
+        ).count { it } + effectiveExtraActions.size
 
       val layoutParams =
         when {
@@ -363,11 +377,22 @@ fun BrowserBottomBar(
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
+            effectiveExtraActions.forEach { action ->
+              BrowserBottomBarButton(
+                true,
+                action.onClick,
+                action.icon,
+                action.label,
+                layoutParams.buttonSize,
+                layoutParams.iconSize,
+                tint = action.tint ?: MaterialTheme.colorScheme.primary,
+              )
+            }
             BrowserBottomBarButton(
               effectiveShowDelete,
               onDeleteClick,
-              Icons.RoundedFilled.Delete,
-              "Delete",
+              deleteIcon,
+              deleteLabel,
               layoutParams.buttonSize,
               layoutParams.iconSize,
               tint = MaterialTheme.colorScheme.error,

@@ -2483,6 +2483,19 @@
   <string name="ui_snapshots">स्नैपशॉट</string>
   <string name="pref_nav_snapshots_title">स्नैपशॉट टैब दिखाएं</string>
   <string name="pref_nav_snapshots_summary">निचले नेविगेशन बार में स्नैपशॉट दिखाएं या छुपाएं</string>
+  <string name="ui_profile">प्रोफ़ाइल</string>
+  <string name="pref_nav_profile_title">प्रोफ़ाइल टैब दिखाएं</string>
+  <string name="pref_nav_profile_summary">हाल के, प्लेलिस्ट और स्नैपशॉट को एक टैब में मिलाएं</string>
+  <string name="pref_nav_in_profile_tab_summary">प्रोफ़ाइल टैब में शामिल</string>
+  <string name="profile_view_all">सभी देखें</string>
+  <string name="profile_edit">प्रोफ़ाइल संपादित करें</string>
+  <string name="profile_display_name">प्रदर्शित नाम</string>
+  <string name="profile_choose_photo">फ़ोटो चुनें</string>
+  <string name="profile_remove_photo">फ़ोटो हटाएं</string>
+  <string name="profile_remove_from_history">इतिहास से हटाएं</string>
+  <string name="profile_recents_empty_message">आप जो चलाएंगे वह यहां दिखेगा</string>
+  <string name="profile_playlists_empty_message">आपकी बनाई प्लेलिस्ट यहां दिखेंगी</string>
+  <string name="playlist_audio_empty_description">संगीत प्लेलिस्ट बनाएं या संगीत टैब से गानों को पसंदीदा में जोड़ें</string>
   <string name="snapshot_save_button">स्नैपशॉट में सहेजें</string>
   <string name="snapshot_saved">स्नैपशॉट में सहेजा गया</string>
   <string name="snapshot_database_write_failed">गैलरी में सहेजा गया, लेकिन ऐप में रिकॉर्ड विफल रहा।</string>
@@ -2564,6 +2577,7 @@
   <string name="watch_stats_last_seven_days">पिछले 7 दिन</string>
   <string name="watch_stats_top_media">सबसे अधिक देखा गया</string>
   <string name="watch_stats_empty">आँकड़े बनाने के लिए कुछ मीडिया चलाएँ।</string>
+  <string name="watch_stats_reset_confirm">सभी प्लेबैक आँकड़े रीसेट करें? आपका इतिहास, देखे गए आइटम की स्थिति और प्लेलिस्ट बनी रहेंगी।</string>
   <string name="pref_debug_log_size_title">लॉग आकार सीमा</string>
   <string name="pref_debug_log_size_summary">लॉग दर्शक और साझा निदान में अधिकतम %1$d MB रखें।</string>
   <string name="onboarding_configuration_title">mpvRx स्टोरेज सेट करें</string>

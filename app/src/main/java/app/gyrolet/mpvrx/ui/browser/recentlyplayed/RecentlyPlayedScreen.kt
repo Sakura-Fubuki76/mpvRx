@@ -112,6 +112,7 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.ui.utils.rememberTabNavigation
 import app.gyrolet.mpvrx.utils.media.MediaUtils
 import app.gyrolet.mpvrx.utils.sort.SortUtils
@@ -276,7 +277,12 @@ object RecentlyPlayedScreen : Screen {
           isInSelectionMode = selectionManager.isInSelectionMode,
           selectedCount = selectionManager.selectedCount,
           totalCount = filteredRecentItems.size,
-          onBackClick = null, // No back button for recently played screen
+          onBackClick =
+            if (app.gyrolet.mpvrx.ui.browser.LocalIsMainTabPage.current) {
+              null
+            } else {
+              { backStack.popSafely() }
+            },
           onCancelSelection = { selectionManager.clear() },
           onSortClick = { showSortDialog = true },
           onSettingsClick = {

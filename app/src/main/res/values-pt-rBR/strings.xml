@@ -2579,6 +2579,19 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_snapshots">Capturas</string>
   <string name="pref_nav_snapshots_title">Mostrar aba de capturas</string>
   <string name="pref_nav_snapshots_summary">Mostrar ou ocultar Capturas na barra de navegação inferior</string>
+  <string name="ui_profile">Perfil</string>
+  <string name="pref_nav_profile_title">Mostrar aba Perfil</string>
+  <string name="pref_nav_profile_summary">Combinar Recentes, Playlists e Capturas em uma única aba</string>
+  <string name="pref_nav_in_profile_tab_summary">Incluído na aba Perfil</string>
+  <string name="profile_view_all">Ver tudo</string>
+  <string name="profile_edit">Editar perfil</string>
+  <string name="profile_display_name">Nome de exibição</string>
+  <string name="profile_choose_photo">Escolher foto</string>
+  <string name="profile_remove_photo">Remover foto</string>
+  <string name="profile_remove_from_history">Remover do histórico</string>
+  <string name="profile_recents_empty_message">Os itens que você reproduzir aparecerão aqui</string>
+  <string name="profile_playlists_empty_message">As playlists que você criar aparecerão aqui</string>
+  <string name="playlist_audio_empty_description">Crie uma playlist de música ou favorite músicas na aba Música</string>
   <string name="snapshot_save_button">Salvar em Capturas</string>
   <string name="snapshot_saved">Salvo em Capturas</string>
   <string name="snapshot_database_write_failed">Salvo na galeria, mas o registro no aplicativo falhou.</string>
@@ -2660,6 +2673,7 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="watch_stats_last_seven_days">Últimos 7 dias</string>
   <string name="watch_stats_top_media">Mais reproduzidos</string>
   <string name="watch_stats_empty">Reproduza alguma mídia para começar a criar estatísticas.</string>
+  <string name="watch_stats_reset_confirm">Redefinir todas as estatísticas de reprodução? Seu histórico, status de visualização e playlists serão mantidos.</string>
   <string name="pref_debug_log_size_title">Limite do tamanho dos logs</string>
   <string name="pref_debug_log_size_summary">Mantém até %1$d MB no visualizador e nos diagnósticos compartilhados.</string>
   <string name="onboarding_configuration_title">Configurar armazenamento do mpvRx</string>

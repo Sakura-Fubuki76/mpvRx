@@ -121,6 +121,7 @@ import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionScreen
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionViewModel
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
+import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.ui.utils.rememberTabNavigation
 import app.gyrolet.mpvrx.utils.media.SharedUrlExtractor
 import app.gyrolet.mpvrx.utils.media.MediaUtils
@@ -368,7 +369,12 @@ object NetworkStreamingScreen : Screen {
                 isInSelectionMode = false,
                 selectedCount = 0,
                 totalCount = connections.size + recentLinks.size + allMediaGroups.size + resolvedFolderBookmarks.size,
-                onBackClick = null,
+                onBackClick =
+                  if (app.gyrolet.mpvrx.ui.browser.LocalIsMainTabPage.current) {
+                    null
+                  } else {
+                    { backstack.popSafely() }
+                  },
                 onCancelSelection = { },
                 onSortClick = null,
                 onSearchClick = null,

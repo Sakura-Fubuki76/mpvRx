@@ -2579,6 +2579,19 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_snapshots">Schnappschüsse</string>
   <string name="pref_nav_snapshots_title">Schnappschüsse-Tab anzeigen</string>
   <string name="pref_nav_snapshots_summary">Schnappschüsse in der unteren Navigationsleiste ein- oder ausblenden</string>
+  <string name="ui_profile">Profil</string>
+  <string name="pref_nav_profile_title">Profil-Tab anzeigen</string>
+  <string name="pref_nav_profile_summary">Zuletzt, Playlists und Schnappschüsse in einem Tab zusammenfassen</string>
+  <string name="pref_nav_in_profile_tab_summary">Im Profil-Tab enthalten</string>
+  <string name="profile_view_all">Alle anzeigen</string>
+  <string name="profile_edit">Profil bearbeiten</string>
+  <string name="profile_display_name">Anzeigename</string>
+  <string name="profile_choose_photo">Foto auswählen</string>
+  <string name="profile_remove_photo">Foto entfernen</string>
+  <string name="profile_remove_from_history">Aus Verlauf entfernen</string>
+  <string name="profile_recents_empty_message">Abgespielte Elemente werden hier angezeigt</string>
+  <string name="profile_playlists_empty_message">Von dir erstellte Playlists werden hier angezeigt</string>
+  <string name="playlist_audio_empty_description">Erstelle eine Musik-Playlist oder markiere Songs im Musik-Tab als Favoriten</string>
   <string name="snapshot_save_button">In Schnappschüssen speichern</string>
   <string name="snapshot_saved">In Schnappschüssen gespeichert</string>
   <string name="snapshot_database_write_failed">In der Galerie gespeichert, aber der Eintrag in der App ist fehlgeschlagen.</string>
@@ -2660,6 +2673,7 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="watch_stats_last_seven_days">Letzte 7 Tage</string>
   <string name="watch_stats_top_media">Meistgesehen</string>
   <string name="watch_stats_empty">Spiele Medien ab, um Statistiken zu erstellen.</string>
+  <string name="watch_stats_reset_confirm">Alle Wiedergabestatistiken zurücksetzen? Verlauf, Wiedergabestatus und Playlists bleiben erhalten.</string>
   <string name="pref_debug_log_size_title">Protokollgrößenlimit</string>
   <string name="pref_debug_log_size_summary">Bis zu %1$d MB im Protokollbetrachter und in geteilten Diagnosen behalten.</string>
   <string name="onboarding_configuration_title">mpvRx-Speicher einrichten</string>

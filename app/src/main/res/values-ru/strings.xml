@@ -2593,6 +2593,19 @@
   <string name="ui_snapshots">Кадры</string>
   <string name="pref_nav_snapshots_title">Показывать вкладку «Кадры»</string>
   <string name="pref_nav_snapshots_summary">Показывать или скрывать «Кадры» на нижней панели навигации</string>
+  <string name="ui_profile">Профиль</string>
+  <string name="pref_nav_profile_title">Показывать вкладку «Профиль»</string>
+  <string name="pref_nav_profile_summary">Объединить «Недавние», «Плейлисты» и «Кадры» в одну вкладку</string>
+  <string name="pref_nav_in_profile_tab_summary">Входит во вкладку «Профиль»</string>
+  <string name="profile_view_all">Показать все</string>
+  <string name="profile_edit">Изменить профиль</string>
+  <string name="profile_display_name">Отображаемое имя</string>
+  <string name="profile_choose_photo">Выбрать фото</string>
+  <string name="profile_remove_photo">Удалить фото</string>
+  <string name="profile_remove_from_history">Удалить из истории</string>
+  <string name="profile_recents_empty_message">Здесь появится то, что вы воспроизводите</string>
+  <string name="profile_playlists_empty_message">Здесь появятся созданные вами плейлисты</string>
+  <string name="playlist_audio_empty_description">Создайте музыкальный плейлист или добавьте песни в избранное на вкладке «Музыка»</string>
   <string name="snapshot_save_button">Сохранить в «Кадры»</string>
   <string name="snapshot_saved">Сохранено в «Кадры»</string>
   <string name="snapshot_database_write_failed">Сохранено в галерее, но запись в приложении не удалась.</string>
@@ -2674,6 +2687,7 @@
   <string name="watch_stats_last_seven_days">Последние 7 дней</string>
   <string name="watch_stats_top_media">Самые просматриваемые</string>
   <string name="watch_stats_empty">Запустите воспроизведение, чтобы начать сбор статистики.</string>
+  <string name="watch_stats_reset_confirm">Сбросить всю статистику воспроизведения? История, статус просмотра и плейлисты будут сохранены.</string>
   <string name="pref_debug_log_size_title">Ограничение размера журналов</string>
   <string name="pref_debug_log_size_summary">Хранить до %1$d МБ в просмотрщике и общих диагностических данных.</string>
   <string name="onboarding_configuration_title">Настройка хранилища mpvRx</string>
