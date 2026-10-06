@@ -10,9 +10,14 @@ import java.io.InputStream
 
 class AlistWebDavClientTest {
   private fun connection(id: Long) = NetworkConnection(id, "storage", NetworkProtocol.WEBDAV, "example.test", 80, path = "/prefix/dav/mount")
-  private class Fake(private val available: Boolean) : NetworkClient {
+  private class Fake(private val available: Boolean, private val size: Long = 100L) : NetworkClient {
     var lists = 0
     var streams = 0
+    var sizes = 0
+    override suspend fun getFileSize(path: String): Result<Long> {
+      sizes++
+      return if (available) Result.success(size) else Result.failure(IllegalStateException("No API"))
+    }
     override suspend fun connect() = Result.success(Unit)
     override suspend fun disconnect() {}
     override fun isConnected() = true
@@ -45,5 +50,25 @@ class AlistWebDavClientTest {
     assertTrue(client.listFiles("/").isSuccess)
     client.getFileStream("/video.mp4", 0).getOrThrow().close()
     assertEquals(1, api.streams); assertEquals(0, dav.streams)
+  }
+  @Test fun sizeUsesApiEvenBeforeDirectoryDiscovery() = runBlocking {
+    val dav = Fake(false); val api = Fake(true, 1246971922L)
+    val client = AlistWebDavClient(connection(74), dav, api)
+    assertEquals(1246971922L, client.getFileSize("/video.mkv").getOrThrow())
+    assertEquals(1, api.sizes); assertEquals(0, dav.sizes)
+  }
+  @Test fun failedAndInvalidApiSizesFallBackToDav() = runBlocking {
+    for ((id, api) in listOf(75L to Fake(false), 76L to Fake(true, -1L))) {
+      val dav = Fake(true, 500L)
+      assertEquals(500L, AlistWebDavClient(connection(id), dav, api).getFileSize("/video.mkv").getOrThrow())
+      assertEquals(1, api.sizes); assertEquals(1, dav.sizes)
+    }
+  }
+  @Test fun knownNonAlistServerSkipsApiSizeProbe() = runBlocking {
+    val dav = Fake(true); val api = Fake(false)
+    val client = AlistWebDavClient(connection(77), dav, api)
+    client.listFiles("/").getOrThrow()
+    assertEquals(100L, client.getFileSize("/video.mkv").getOrThrow())
+    assertEquals(0, api.sizes); assertEquals(1, dav.sizes)
   }
 }

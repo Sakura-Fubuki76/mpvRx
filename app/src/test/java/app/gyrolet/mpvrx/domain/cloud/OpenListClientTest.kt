@@ -12,6 +12,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OpenListClientTest {
+  @Test fun fileSizeRequiresAnExplicitNonnegative64BitValue() = runBlocking {
+    for ((data, expected) in listOf(
+      "{\"size\":3000000000}" to 3000000000L,
+      "{\"size\":0}" to 0L,
+      "{}" to null,
+      "{\"size\":-1}" to null,
+      "{\"size\":\"unknown\"}" to null,
+    )) {
+      val client = OpenListClient(connection.copy(isAnonymous = true), OkHttpClient.Builder().addInterceptor { chain ->
+        Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
+          .body("{\"code\":200,\"data\":$data}".toResponseBody()).build()
+      }.build())
+      val result = client.getFileSize("/video.mkv")
+      if (expected == null) assertTrue(result.isFailure) else assertEquals(expected, result.getOrThrow())
+    }
+  }
   private val connection = NetworkConnection(id = 10, name = "test", protocol = NetworkProtocol.OPENLIST,
     host = "example.test", port = 80, username = "alice", password = "secret", path = "/mount")
 

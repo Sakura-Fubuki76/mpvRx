@@ -45,6 +45,16 @@ class AlistWebDavClient(
   override val supportsSearch: Boolean get() = supported() != false
   override suspend fun searchFiles(path: String, query: String) = api.searchFiles(path, query)
   override suspend fun getThumbnailBytes(path: String) = if (supported() != false) api.getThumbnailBytes(path) else Result.success(null)
+  override suspend fun getFileSize(path: String): Result<Long> {
+    if (supported() != false) {
+      val result = api.getFileSize(path)
+      val size = result.getOrNull()
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("size.api", connection.id, path, "success=${size != null && size >= 0L}")
+      if (size != null && size >= 0L) return result
+    }
+    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("size.dav", connection.id, path)
+    return dav.getFileSize(path)
+  }
   override suspend fun getFileStream(path: String, offset: Long): Result<java.io.InputStream> {
     if (supported() == true) api.getFileStream(path, offset).let {
       app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("stream.api", connection.id, path, "success=${it.isSuccess} offset=$offset")

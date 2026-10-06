@@ -99,7 +99,11 @@ class OpenListClient(
     files.values.toList()
   }
 
-  override suspend fun getFileSize(path: String): Result<Long> = result { get(path).long("size") }
+  override suspend fun getFileSize(path: String): Result<Long> = result {
+    val size = (get(path)["size"] as? JsonPrimitive)?.longOrNull
+    require(size != null && size >= 0L) { "OpenList did not provide a valid file size" }
+    size
+  }
   override suspend fun getThumbnailBytes(path: String): Result<ByteArray?> = result {
     repeat(2) { attempt ->
       val data = get(path)
