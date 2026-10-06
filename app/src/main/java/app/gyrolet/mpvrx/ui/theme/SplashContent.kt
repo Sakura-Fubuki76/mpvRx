@@ -101,7 +101,7 @@ fun SplashContent(
       verticalArrangement = Arrangement.spacedBy(SPLASH_LABEL_SPACING),
     ) {
       Image(
-        painter = painterResource(R.mipmap.ic_launcher_foreground),
+        painter = painterResource(R.drawable.ic_splash_portrait),
         contentDescription = null,
         modifier =
           Modifier
@@ -125,6 +125,6 @@ internal const val SPLASH_FADE_OUT_DURATION_MS = 320
 internal const val SPLASH_ICON_ENTER_DURATION_MS = 420
 
 private const val SPLASH_ICON_ENTER_FROM_SCALE = 0.86f
-private val SPLASH_ICON_SIZE = 96.dp
+private val SPLASH_ICON_SIZE = 128.dp
 private val SPLASH_LABEL_SPACING = 20.dp
 private val SPLASH_LABEL_PADDING = 24.dp
