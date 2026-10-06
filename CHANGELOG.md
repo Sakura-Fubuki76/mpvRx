@@ -2,7 +2,15 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## Unreleased
+## 2.7.5 - Artwork, Playback and Cloud Compatibility
+
+- Added new character artwork for adaptive launcher icons, themed icons and transparent system/app splash screens. Launcher shapes are supplied by the device.
+- Screen-swipe seeking now shows only the timeline, sprite preview and time feedback, then hides them automatically after release. Direct timeline dragging retains normal controls.
+- Resolve WebDAV file sizes through the OpenList API when available, with WebDAV fallback and validation of missing or invalid sizes. Existing metadata caches are retained.
+- Prefer high-resolution Japanese Anime logos and library posters, and reuse verified series logos for seasons and episode ranges.
+- Added separate home/detail poster selection and logo matching, with Bangumi/TMDB artwork association and improved matching controls.
+- Preserve Anime card watch progress when returning from details.
+- Integrated upstream floating navigation, the Profile hub, playlist improvements and playback/splash startup fixes.
 
 ### Translations
 
