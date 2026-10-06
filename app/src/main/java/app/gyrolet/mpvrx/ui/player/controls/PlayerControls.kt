@@ -1729,7 +1729,7 @@ is PlayerUpdates.FrameInfo -> {
 
           AnimatedVisibility(
             visible =
-              (controlsShown || (!isPortrait && seekBarShown && !isHorizontalSeekActive)) &&
+              (controlsShown || isHorizontalSeekActive || (!isPortrait && seekBarShown)) &&
                 !areControlsLocked,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },

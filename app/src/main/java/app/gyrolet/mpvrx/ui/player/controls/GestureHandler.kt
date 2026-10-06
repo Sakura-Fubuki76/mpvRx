@@ -1372,6 +1372,8 @@ fun GestureHandler(
                         hasStartedSeeking = true
                         initialVideoPosition = position?.toFloat() ?: 0f
                         pendingSeekPosition = initialVideoPosition
+                        // Screen scrubbing exposes the timeline without opening the full control panel.
+                        viewModel.autoHideControls()
 
                         // Pause before seeking to prevent decoder stalls
                         wasPlayerAlreadyPaused = paused ?: false
@@ -1394,7 +1396,6 @@ fun GestureHandler(
                       // Keep the live preview bounded and keyframe-only while scrubbing. The final
                       // exact seek is issued once on gesture release below.
                       viewModel.seekPreviewTo(clampedPosition)
-                      viewModel.showControls()
 
                       // Format and display time position updates
                       val currentPos = clampedPosition.toInt()
@@ -1429,6 +1430,7 @@ fun GestureHandler(
                     viewModel.unpause()
                   }
                   viewModel.playerUpdate.update { PlayerUpdates.None }
+                  viewModel.hideSeekBar()
                 }
                 releaseGesture(GestureOwner.HORIZONTAL_SEEK)
                 break
@@ -1445,10 +1447,13 @@ fun GestureHandler(
                 viewModel.unpause()
               }
 
-              // Keep the chip visible briefly after the gesture settles.
+              // Briefly retain the timeline; an older gesture must not clear a newer one.
+              val completedUpdate = viewModel.playerUpdate.value
               coroutineScope.launch {
                 delay(300)
-                viewModel.playerUpdate.update { PlayerUpdates.None }
+                if (viewModel.playerUpdate.compareAndSet(completedUpdate, PlayerUpdates.None)) {
+                  viewModel.hideSeekBar()
+                }
               }
             }
             releaseGesture(GestureOwner.HORIZONTAL_SEEK)
