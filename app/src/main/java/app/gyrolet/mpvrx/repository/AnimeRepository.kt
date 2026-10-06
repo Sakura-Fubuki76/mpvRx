@@ -409,7 +409,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
           val item = json.decodeFromString<AnimeSubject>(cached.payload)
           val now = System.currentTimeMillis()
           val ttl = if (item.artworkBinding != null) 30L * 24 * 60 * 60_000 else 24 * 60 * 60_000L
-          if (item.artworkSchemaVersion == 5 && now - item.artworkFetchedAt < ttl) return@withLock null
+          if (item.artworkSchemaVersion == 6 && now - item.artworkFetchedAt < ttl) return@withLock null
           val attempt = id to credential.hashCode()
           if (now - (artworkAttempts[attempt] ?: 0) < 5 * 60_000L) return@withLock null
           artworkAttempts[attempt] = now
@@ -423,7 +423,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
             val enriched = latest.copy(titleLogo = result?.logo.orEmpty(),
               tmdbId = result?.id ?: 0, artworkFetchedAt = System.currentTimeMillis(),
               artworkCover = result?.cover.orEmpty(), artworkBackdrop = result?.backdrop.orEmpty(),
-              artworkPoster = result?.poster.orEmpty(), artworkBinding = result?.binding, artworkSchemaVersion = 5)
+              artworkPoster = result?.poster.orEmpty(), artworkBinding = result?.binding, artworkSchemaVersion = 6)
             dao.putSubject(cached.copy(payload = json.encodeToString(AnimeSubject.serializer(), enriched)))
             CloudTrace.event("anime.artwork", 0, id.toString(), "tmdb=${enriched.tmdbId} scope=${enriched.artworkBinding?.scope} season=${enriched.artworkBinding?.season} episodes=${enriched.artworkBinding?.episodes?.size ?: 0} logo=${enriched.titleLogo.isNotBlank()}")
           }

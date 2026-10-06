@@ -122,13 +122,14 @@ internal class TmdbArtworkClient(private val http: OkHttpClient) {
       }
     }
     val binding = selectTmdbBinding(matches) ?: return null
-    // Episode ranges and special collections do not have their own poster/logo endpoint.
-    if (binding.episodes.isNotEmpty()) return TmdbArtwork(binding.id, "", "", "", "", binding)
     val seriesImages = request("${binding.type}/${binding.id}/images", credential, emptyMap())
+    // Verified seasons and episode ranges may share the series logo.
+    val logo = selectTmdbLogo(seriesImages.tmdbRows("logos"))
+      .takeIf { it.startsWith('/') }?.let { "https://image.tmdb.org/t/p/original$it" }.orEmpty()
+    // Episode ranges have no dedicated poster endpoint; retain their Bangumi cover.
+    if (binding.episodes.isNotEmpty()) return TmdbArtwork(binding.id, logo, "", "", "", binding)
     val images = if (binding.scope != "work" && binding.season != null) request("tv/${binding.id}/season/${binding.season}/images", credential, emptyMap()) else seriesImages
-    // A series logo may name a different installment. Only exact standalone identities use it.
-    val logo = if (binding.scope == "work") selectTmdbLogo(seriesImages.tmdbRows("logos")) else ""
-    return TmdbArtwork(binding.id, logo.takeIf { it.startsWith('/') }?.let { "https://image.tmdb.org/t/p/original$it" }.orEmpty(),
+    return TmdbArtwork(binding.id, logo,
       selectTmdbTextlessImage(images, "posters"), if (binding.scope == "work") selectTmdbTextlessImage(seriesImages, "backdrops") else "",
       selectTmdbPoster(images), binding)
   }
