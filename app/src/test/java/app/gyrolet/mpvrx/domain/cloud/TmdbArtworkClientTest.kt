@@ -41,13 +41,24 @@ class TmdbArtworkClientTest {
     assertEquals(series, selectTmdbArtworkSubject(subject, listOf(series)))
     assertEquals(2L, subject.id)
   }
-  @Test fun logosPreferChineseThenJapaneseAndRejectUnsupportedSvg() {
+  @Test fun logosPreferJapaneseThenChineseAndRejectUnsupportedSvg() {
     val en = row("""{"file_path":"/en.png","iso_639_1":"en","vote_average":9}""")
     val ja = row("""{"file_path":"/ja.png","iso_639_1":"ja","vote_average":3}""")
     val zh = row("""{"file_path":"/zh.png","iso_639_1":"zh","vote_average":2}""")
     val svg = row("""{"file_path":"/zh.svg","iso_639_1":"zh","vote_average":10}""")
-    assertEquals("/zh.png", selectTmdbLogo(listOf(en, ja, zh, svg)))
+    assertEquals("/ja.png", selectTmdbLogo(listOf(en, ja, zh, svg)))
+    assertEquals("/zh.png", selectTmdbLogo(listOf(en, zh, svg)))
     assertEquals("/ja.png", selectTmdbLogo(listOf(en, ja, svg)))
     assertEquals("", selectTmdbLogo(listOf(svg)))
   }
+  @Test fun localizedArtworkPrioritizesJapaneseThenResolutionBeforeVotes() {
+    val low = row("""{"file_path":"/low.png","iso_639_1":"ja","width":500,"height":200,"vote_count":100,"vote_average":10}""")
+    val high = row("""{"file_path":"/high.png","iso_639_1":"ja","width":1500,"height":600,"vote_count":0,"vote_average":0}""")
+    val zh = row("""{"file_path":"/zh.png","iso_639_1":"zh","width":3000,"height":1200,"vote_count":100}""")
+    assertEquals("/high.png", selectTmdbLogo(listOf(zh, low, high)))
+    val posters = JsonObject(mapOf("posters" to JsonArray(listOf(zh, low, high))))
+    assertTrue(selectTmdbPoster(posters).endsWith("/high.png"))
+    assertTrue(selectTmdbPoster(JsonObject(mapOf("posters" to JsonArray(listOf(zh, low))))).endsWith("/low.png"))
+  }
+
 }

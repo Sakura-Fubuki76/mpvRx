@@ -36,16 +36,21 @@ internal fun tmdbAcceptsGenre(subject: AnimeSubject, genres: List<Int>): Boolean
 internal fun JsonObject.tmdbText(key: String): String = get(key)?.jsonPrimitive?.contentOrNull.orEmpty()
 internal fun JsonObject.tmdbRows(key: String): List<JsonObject> = get(key)?.jsonArray.orEmpty().map { it.jsonObject }
 
-internal fun selectTmdbLogo(rows: List<JsonObject>): String {
-  fun languageRank(row: JsonObject) = when (row["iso_639_1"]?.jsonPrimitive?.contentOrNull) {
-    "zh" -> 4; "ja" -> 3; null -> 2; "en" -> 1; else -> 0
-  }
-  return rows.filter { it["file_path"]?.jsonPrimitive?.contentOrNull?.endsWith(".png", true) == true }
-    .sortedWith(compareByDescending<JsonObject>(::languageRank)
-      .thenByDescending { it["vote_average"]?.jsonPrimitive?.doubleOrNull ?: 0.0 }
-      .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 })
-    .firstOrNull()?.get("file_path")?.jsonPrimitive?.contentOrNull.orEmpty()
+/** Prefer Japanese assets, then resolution within a language, before popularity. */
+private fun tmdbArtworkLanguageRank(row: JsonObject): Int = when (row["iso_639_1"]?.jsonPrimitive?.contentOrNull) {
+  "ja" -> 4; "zh" -> 3; "en" -> 2; null -> 1; else -> 0
 }
+
+private val tmdbLocalizedArtworkOrder = compareByDescending<JsonObject>(::tmdbArtworkLanguageRank)
+  .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 }
+  .thenByDescending { it["height"]?.jsonPrimitive?.intOrNull ?: 0 }
+  .thenByDescending { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }
+  .thenByDescending { it["vote_average"]?.jsonPrimitive?.doubleOrNull ?: 0.0 }
+  .thenBy { it.tmdbText("file_path") }
+
+internal fun selectTmdbLogo(rows: List<JsonObject>): String =
+  rows.filter { it.tmdbText("file_path").startsWith('/') && it.tmdbText("file_path").endsWith(".png", true) }
+    .sortedWith(tmdbLocalizedArtworkOrder).firstOrNull()?.tmdbText("file_path").orEmpty()
 
 internal fun selectTmdbTextlessImage(images: JsonObject, kind: String): String {
     val rows = images[kind]?.jsonArray.orEmpty().map { it.jsonObject }
@@ -62,14 +67,9 @@ private fun preferClearTmdbImages(rows: List<JsonObject>): List<JsonObject> =
   rows.filter { (it["width"]?.jsonPrimitive?.intOrNull ?: 0) >= 1280 }.ifEmpty { rows }
 
 internal fun selectTmdbPoster(images: JsonObject): String {
-  fun languageRank(row: JsonObject) = when (row["iso_639_1"]?.jsonPrimitive?.contentOrNull) {
-    "zh" -> 4; "ja" -> 3; "en" -> 2; null -> 0; else -> 1
-  }
-  val rows = images["posters"]?.jsonArray.orEmpty().map { it.jsonObject }
-    .filter { it["iso_639_1"]?.jsonPrimitive?.contentOrNull != null && it["file_path"]?.jsonPrimitive?.contentOrNull?.startsWith('/') == true }
-  val path = preferClearTmdbImages(rows).sortedWith(compareByDescending<JsonObject>(::languageRank)
-    .thenByDescending { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }
-    .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 }).firstOrNull()?.get("file_path")?.jsonPrimitive?.contentOrNull
+  val path = images.tmdbRows("posters")
+    .filter { it["iso_639_1"]?.jsonPrimitive?.contentOrNull != null && it.tmdbText("file_path").startsWith('/') }
+    .sortedWith(tmdbLocalizedArtworkOrder).firstOrNull()?.tmdbText("file_path")
   return path?.let { "https://image.tmdb.org/t/p/w780$it" }.orEmpty()
 }
 
@@ -128,7 +128,7 @@ internal class TmdbArtworkClient(private val http: OkHttpClient) {
     val images = if (binding.scope != "work" && binding.season != null) request("tv/${binding.id}/season/${binding.season}/images", credential, emptyMap()) else seriesImages
     // A series logo may name a different installment. Only exact standalone identities use it.
     val logo = if (binding.scope == "work") selectTmdbLogo(seriesImages.tmdbRows("logos")) else ""
-    return TmdbArtwork(binding.id, logo.takeIf { it.startsWith('/') }?.let { "https://image.tmdb.org/t/p/w500$it" }.orEmpty(),
+    return TmdbArtwork(binding.id, logo.takeIf { it.startsWith('/') }?.let { "https://image.tmdb.org/t/p/original$it" }.orEmpty(),
       selectTmdbTextlessImage(images, "posters"), if (binding.scope == "work") selectTmdbTextlessImage(seriesImages, "backdrops") else "",
       selectTmdbPoster(images), binding)
   }
@@ -155,11 +155,13 @@ internal class TmdbArtworkClient(private val http: OkHttpClient) {
     fun choices(images: JsonObject, label: String): List<AnimeArtworkChoice> = images.tmdbRows(if (logo) "logos" else "posters")
       .filter { it.tmdbText("file_path").startsWith('/') && (!logo || it.tmdbText("file_path").endsWith(".png", true)) &&
         (target != AnimeArtworkTarget.LIBRARY_POSTER || it["iso_639_1"]?.jsonPrimitive?.contentOrNull != null) }
-      .sortedWith(compareByDescending<JsonObject> { target == AnimeArtworkTarget.DETAIL_POSTER && it["iso_639_1"] == JsonNull }
-        .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 }
-        .thenByDescending { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }).map { row ->
+      .sortedWith(if (target == AnimeArtworkTarget.DETAIL_POSTER)
+        compareByDescending<JsonObject> { it["iso_639_1"] == JsonNull }
+          .thenByDescending { it["width"]?.jsonPrimitive?.intOrNull ?: 0 }
+          .thenByDescending { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }
+        else tmdbLocalizedArtworkOrder).map { row ->
         val path = row.tmdbText("file_path")
-        AnimeArtworkChoice("https://image.tmdb.org/t/p/${if (logo) "w500" else if (target == AnimeArtworkTarget.LIBRARY_POSTER) "w780" else "original"}$path",
+        AnimeArtworkChoice("https://image.tmdb.org/t/p/${if (logo) "original" else if (target == AnimeArtworkTarget.LIBRARY_POSTER) "w780" else "original"}$path",
           "https://image.tmdb.org/t/p/${if (logo) "w300" else "w185"}$path",
           listOf(label, row.tmdbText("iso_639_1").ifBlank { "—" }, "${row.tmdbText("width")}×${row.tmdbText("height")}").filter { it.isNotBlank() }.joinToString(" · "), row["iso_639_1"]?.jsonPrimitive?.contentOrNull)
       }
