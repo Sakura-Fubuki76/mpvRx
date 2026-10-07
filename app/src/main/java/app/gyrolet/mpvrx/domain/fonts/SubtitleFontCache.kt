@@ -28,7 +28,7 @@ object SubtitleFontCache {
 
   private val lock = Mutex()
   private val json = Json { ignoreUnknownKeys = true }
-  @Serializable private data class SourceFont(val uri: String, val name: String, val size: Long, val modified: Long)
+  @Serializable private data class SourceFont(val uri: String, val name: String, val size: Long, val modified: Long, val bankName: String = "")
   @Serializable private data class Sources(val roots: List<String>, val checkedAt: Long, val files: List<SourceFont>, val traversalVersion: Int = 0)
   @Serializable private data class Entry(val name: String, val size: Long, val modified: Long, val families: Set<String>, val decodingVersion: Int = 0)
 
@@ -62,9 +62,7 @@ object SubtitleFontCache {
           ?: Entry(file.relativeTo(bank).invariantSeparatorsPath, file.length(), file.lastModified(), FontNameReader.names(file), decodingVersion = 2)
       }
       if (entries != old.values.toList()) {
-        val pending = File(context.filesDir, "font-names.json.tmp")
-        pending.writeText(json.encodeToString(entries))
-        java.nio.file.Files.move(pending.toPath(), manifest.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+        writeFontIndex(context, entries)
       }
       for (family in requestedNames) {
         val found = entries.count { entry -> AssFontNames.matches(File(entry.name).name, family) || entry.families.any { it.equals(family.removePrefix("@"), true) } }
@@ -79,6 +77,7 @@ object SubtitleFontCache {
       for (entry in matches) {
         val source = File(bank, entry.name)
         val target = File(active, fontStorageName(entry.name))
+        if (java.nio.file.Files.isSymbolicLink(source.toPath()) && linkReadableFont(source, target)) continue
         if (target.exists() && target.length() == entry.size && target.lastModified() == entry.modified) continue
         target.delete()
         runCatching { Os.link(source.path, target.path) }.getOrElse { source.copyTo(target, overwrite = true) }
@@ -94,7 +93,7 @@ object SubtitleFontCache {
     if (roots.isEmpty()) return
     val catalogFile = File(context.filesDir, "font-sources.json")
     val cached = runCatching { json.decodeFromString<Sources>(catalogFile.readText()) }.getOrNull()
-    val fresh = cached != null && cached.traversalVersion == 2 && cached.roots == roots && System.currentTimeMillis() - cached.checkedAt in 0..86400000L
+    val fresh = cached != null && cached.traversalVersion == 3 && cached.roots == roots && System.currentTimeMillis() - cached.checkedAt in 0..86400000L
     if (!fresh && !allowSourceScan) return
     val catalog = if (fresh) cached!! else {
       val files = mutableListOf<SourceFont>()
@@ -117,7 +116,8 @@ object SubtitleFontCache {
                 val name = it.getString(1) ?: continue
                 if (it.getString(2) == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) pending.add(id)
                 else if (isFontFile(name)) files += SourceFont(
-                  android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, it.getLong(3), it.getLong(4))
+                  android.provider.DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(), name, it.getLong(3), it.getLong(4),
+                  fontStorageName(id.removePrefix("$documentId/")))
               }
             }
           } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -138,34 +138,61 @@ object SubtitleFontCache {
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { complete = false /* Keep existing bank and retry the incomplete catalog later. */ }
       }
-      Sources(roots, System.currentTimeMillis(), files, traversalVersion = 2).also {
+      Sources(roots, System.currentTimeMillis(), files, traversalVersion = 3).also {
         if (complete) {
-          val pending = File(context.filesDir, "font-sources.json.tmp")
-          pending.writeText(json.encodeToString(it))
-          java.nio.file.Files.move(pending.toPath(), catalogFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          val pending = java.nio.file.Files.createTempFile(context.filesDir.toPath(), ".font-sources-", ".tmp")
+          try {
+            pending.toFile().writeText(json.encodeToString(it))
+            java.nio.file.Files.move(pending, catalogFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+          } finally { java.nio.file.Files.deleteIfExists(pending) }
         }
         CloudTrace.event("fonts.source.scanned", detail = "directories=${seen.size} files=${files.size} complete=$complete")
       }
+    }
+    var relinked = 0
+    for (font in if (allowSourceScan) catalog.files else emptyList()) {
+      kotlinx.coroutines.currentCoroutineContext().ensureActive()
+      if (font.name.contains('/') || font.name.contains('\\')) continue
+      // Convert only aliases already imported by older builds. New, unrequested fonts stay outside the bank.
+      for (name in listOf(font.bankName, fontStorageName("${font.uri}/${font.name}")).filter(String::isNotBlank).distinct()) {
+        val target = File(bank, name)
+        if (target.isFile && !java.nio.file.Files.isSymbolicLink(target.toPath()) &&
+            FontDocumentStorage.linkExisting(context, Uri.parse(font.uri), target)) relinked++
+      }
+    }
+    if (relinked > 0) {
+      FontDocumentStorage.relinkActive(context)
+      CloudTrace.event("fonts.bank.linked", detail = "files=$relinked")
     }
     for (font in catalog.files.filter { font -> names.any { AssFontNames.matches(font.name, it) } }) {
       kotlinx.coroutines.currentCoroutineContext().ensureActive()
       if (font.name.contains('/') || font.name.contains('\\')) continue
       val target = File(bank, fontStorageName("${font.uri}/${font.name}"))
-      if (target.exists() && target.length() == font.size && font.modified > 0 && target.lastModified() == font.modified) continue
-      val pending = File(bank, ".${font.name}.tmp")
-      try {
-        context.contentResolver.openInputStream(Uri.parse(font.uri))?.use { input ->
-          pending.outputStream().use { input.copyTo(it) }
-        } ?: continue
-        java.nio.file.Files.move(pending.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-        if (font.modified > 0) target.setLastModified(font.modified)
-      } finally { pending.delete() }
+      FontDocumentStorage.store(context, Uri.parse(font.uri), target, font.size, font.modified)
     }
   }
 
   suspend fun prewarmSources(context: Context) = withContext(Dispatchers.IO) {
     // Source traversal never holds the font selection lock and never gates subtitle registration.
     importRequestedFonts(context, File(context.filesDir, "font-bank"), emptySet(), allowSourceScan = true)
+    // Name-table parsing belongs to background warm-up after replacing legacy copies with links.
+    val bank = File(context.filesDir, "font-bank")
+    val old = runCatching { json.decodeFromString<List<Entry>>(File(context.filesDir, "font-names.json").readText()) }
+      .getOrDefault(emptyList()).filter { it.decodingVersion == 2 }.associateBy { it.name }
+    val entries = fontBankFiles(bank).map { file ->
+      val name = file.relativeTo(bank).invariantSeparatorsPath
+      old[name]?.takeIf { it.size == file.length() && it.modified == file.lastModified() }
+        ?: Entry(name, file.length(), file.lastModified(), FontNameReader.names(file), decodingVersion = 2)
+    }
+    if (entries != old.values.toList()) writeFontIndex(context, entries)
+  }
+
+  private fun writeFontIndex(context: Context, entries: List<Entry>) {
+    val pending = java.nio.file.Files.createTempFile(context.filesDir.toPath(), ".font-names-", ".tmp")
+    try {
+      pending.toFile().writeText(json.encodeToString(entries))
+      java.nio.file.Files.move(pending, File(context.filesDir, "font-names.json").toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    } finally { java.nio.file.Files.deleteIfExists(pending) }
   }
 
   suspend fun prepareMedia(context: Context, item: PlaybackItem, preferredFamily: String, cachedOnly: Boolean = true, expectedGeneration: Long? = null): String {

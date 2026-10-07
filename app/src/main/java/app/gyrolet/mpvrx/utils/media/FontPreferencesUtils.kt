@@ -18,7 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Copies font files from the selected directory to the app's internal storage. */
+/** Index local fonts using private symlinks; copy only sources requiring provider access. */
 @SuppressLint("UseKtx")
 fun copyFontsFromDirectory(context: Context, uriString: String): Int {
   return runCatching {
@@ -35,16 +35,11 @@ fun copyFontsFromDirectory(context: Context, uriString: String): Int {
       }, { node ->
         if (app.gyrolet.mpvrx.domain.fonts.isFontFile(node.document.name.orEmpty())) {
           val target = File(destinationDir, app.gyrolet.mpvrx.domain.fonts.fontStorageName(node.relative))
-          val pending = File(destinationDir, ".${target.name}.tmp")
-          try {
-            context.contentResolver.openInputStream(node.document.uri)?.use { input ->
-              pending.outputStream().use { input.copyTo(it) }
-              java.nio.file.Files.move(pending.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-              copied++
-            }
-          } finally { pending.delete() }
+          if (app.gyrolet.mpvrx.domain.fonts.FontDocumentStorage.store(context, node.document.uri,
+              target, node.document.length(), node.document.lastModified())) copied++
         }
       })
+    app.gyrolet.mpvrx.domain.fonts.FontDocumentStorage.relinkActive(context)
     File(context.filesDir, "font-sources.json").delete()
     copied
   }.onFailure { Log.e("SubtitlesPreferences", "Error copying fonts", it) }.getOrDefault(0)

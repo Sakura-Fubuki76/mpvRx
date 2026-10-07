@@ -515,10 +515,12 @@ object PlaybackStartupAssets : KoinComponent {
         } }
       }, { node ->
         if (app.gyrolet.mpvrx.domain.fonts.isFontFile(node.document.name.orEmpty()) &&
-            copyDocumentToFileIfNeeded(node.document,
-              File(destinationDir, app.gyrolet.mpvrx.domain.fonts.fontStorageName(node.relative)))) copiedCount++
+            app.gyrolet.mpvrx.domain.fonts.FontDocumentStorage.store(context, node.document.uri,
+              File(destinationDir, app.gyrolet.mpvrx.domain.fonts.fontStorageName(node.relative)),
+              node.document.length(), node.document.lastModified())) copiedCount++
       })
 
+    app.gyrolet.mpvrx.domain.fonts.FontDocumentStorage.relinkActive(context)
     return copiedCount
   }
 
