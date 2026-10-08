@@ -57,13 +57,15 @@ class OpenListClient(
   override fun isConnected(): Boolean = connected
   override val supportsSearch: Boolean get() = true
 
-  override suspend fun listFiles(path: String): Result<List<NetworkFile>> = result {
+  override suspend fun listFiles(path: String): Result<List<NetworkFile>> = listFiles(path, false)
+
+  override suspend fun listFiles(path: String, forceRefresh: Boolean): Result<List<NetworkFile>> = result {
     val directory = NetworkPath.from(path)
     val files = linkedMapOf<String, NetworkFile>()
     var page = 1
     do {
       val data = api("fs/list", buildJsonObject {
-        put("path", fullPath(path)); put("password", ""); put("page", page); put("per_page", 200); put("refresh", false)
+        put("path", fullPath(path)); put("password", ""); put("page", page); put("per_page", 200); put("refresh", forceRefresh && page == 1)
       })
       val items = data["content"] as? JsonArray ?: JsonArray(emptyList())
       items.forEach { item ->

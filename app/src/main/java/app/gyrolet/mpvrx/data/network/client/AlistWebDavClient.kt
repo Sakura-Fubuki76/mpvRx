@@ -32,8 +32,11 @@ class AlistWebDavClient(
     it.revision == connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode() && (it.supported || System.currentTimeMillis() - it.checkedAt < 600_000)
   }?.supported
   override suspend fun listFiles(path: String): Result<List<app.gyrolet.mpvrx.domain.network.NetworkFile>> {
+    return listFiles(path, false)
+  }
+  override suspend fun listFiles(path: String, forceRefresh: Boolean): Result<List<app.gyrolet.mpvrx.domain.network.NetworkFile>> {
     if (supported() != false) {
-      val result = api.listFiles(path)
+      val result = api.listFiles(path, forceRefresh)
       if (capabilities.size > 128) capabilities.clear()
       capabilities[connection.id] = Capability(connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode(), result.isSuccess, System.currentTimeMillis())
       app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("alist.list", connection.id, path, "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0}")

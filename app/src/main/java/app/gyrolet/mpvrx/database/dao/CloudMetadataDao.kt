@@ -102,6 +102,8 @@ abstract class CloudMetadataDao {
 
   @Transaction
   open suspend fun replaceDirectory(state: CloudDirectoryStateEntity, items: List<CloudDirectoryItemEntity>) {
+    val previous = getDirectory(state.connectionId, state.path)
+    if (previous.toSet() != items.toSet()) invalidateFolderAncestors(state.connectionId, state.path)
     val retained = items.map { it.path }.toSet()
     getDirectory(state.connectionId, state.path).filter { it.path !in retained }.forEach {
       deleteVideoSubtree(state.connectionId, it.path)
@@ -113,6 +115,9 @@ abstract class CloudMetadataDao {
     insertItems(items)
     putState(state)
   }
+
+  @Query("UPDATE cloud_folder_metadata SET scanComplete = 0, updatedAt = 0 WHERE connectionId = :id AND (path = '/' OR path = :path OR substr(:path, 1, length(path) + 1) = path || '/')")
+  abstract suspend fun invalidateFolderAncestors(id: Long, path: String)
 
   @Query("DELETE FROM cloud_video_metadata WHERE connectionId = :id AND (path = :path OR substr(path, 1, length(:path) + 1) = :path || '/')")
   abstract suspend fun deleteVideoSubtree(id: Long, path: String)

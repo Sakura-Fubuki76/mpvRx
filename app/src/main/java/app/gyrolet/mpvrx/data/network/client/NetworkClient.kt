@@ -38,6 +38,8 @@ interface NetworkClient {
    */
   suspend fun listFiles(path: String): Result<List<NetworkFile>>
 
+  suspend fun listFiles(path: String, forceRefresh: Boolean): Result<List<NetworkFile>> = listFiles(path)
+
   val supportsSearch: Boolean get() = false
   suspend fun searchFiles(path: String, query: String): Result<List<NetworkFile>> =
     Result.failure(UnsupportedOperationException("Server search is unavailable"))

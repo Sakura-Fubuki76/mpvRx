@@ -125,7 +125,7 @@ class NetworkBrowserViewModel(
         .collectLatest { enabled ->
           Log.d("CloudBatch", "directory connection=${connection.id} files=${files.size} enabled=$enabled")
           cloudMetadata.scanStorage(connection, repository, enabled,
-            "true|true", force = forceStorageScan)
+            "true|true", force = forceStorageScan, validateDirectories = currentPath == "/")
           cloudMetadata.cacheMissingMetadata(connection, files,
             app.gyrolet.mpvrx.domain.cloud.MetadataRequestPriority.FOREGROUND, enabled)
 
@@ -189,22 +189,16 @@ class NetworkBrowserViewModel(
           if (startWork) scheduleThumbnails(connection, sorted, forceStorageScan)
         }
 
-        val isCloud = connection.protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)
         val cached = cloudMetadata.cachedDirectory(connectionId, currentPath)
         if (cached != null) {
           publish(cached, startWork = !forceStorageScan)
           // A cached listing, including an empty directory, is immediately usable.
           _isLoading.value = false
           app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.cache", connectionId, currentPath, "items=${cached.size}")
-          if (isCloud && !forceStorageScan && cloudMetadata.cachedDirectory(connectionId, currentPath, freshOnly = true) != null) {
-            app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.skip", connectionId, currentPath, "reason=fresh_persistent_directory")
-            if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery)
-            return@launch
-          }
         }
 
         repository
-          .listFiles(connection, currentPath)
+          .listFiles(connection, currentPath, forceRefresh = forceStorageScan)
           .onSuccess { fileList ->
             if (generation == loadGeneration) {
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)

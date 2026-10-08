@@ -284,6 +284,7 @@ class NetworkRepository(
   suspend fun listFiles(
     connection: NetworkConnection,
     path: String,
+    forceRefresh: Boolean = false,
   ): Result<List<NetworkFile>> =
     withContext(Dispatchers.IO) {
       clientLifecycleMutex.withLock {
@@ -313,7 +314,7 @@ class NetworkRepository(
           }
 
           val readyClient = checkNotNull(client)
-          readyClient.listFiles(path).also { result ->
+          readyClient.listFiles(path, forceRefresh).also { result ->
             result.exceptionOrNull()?.let { error ->
               if (error is CancellationException) throw error
               val stillConnected = readyClient.isConnected()

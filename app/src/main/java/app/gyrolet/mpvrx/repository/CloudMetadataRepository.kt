@@ -55,25 +55,27 @@ class CloudMetadataRepository(
   private val locks = Array(64) { Mutex() }
 
   private val storageScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
-  private data class StorageScan(val revision: String, val job: kotlinx.coroutines.Job, var completedAt: Long = 0)
+  private data class StorageScan(val revision: String, val job: kotlinx.coroutines.Job, var completedAt: Long = 0,
+    val validatesDirectories: Boolean = false)
   private val storageScans = java.util.concurrent.ConcurrentHashMap<Long, StorageScan>()
 
   /** Survives directory navigation; starts at the connection root, not the visible folder. */
   @Synchronized
   fun scanStorage(connection: NetworkConnection, network: NetworkRepository, includeThumbnails: Boolean,
-    strategy: String = "", force: Boolean = false) {
+    strategy: String = "", force: Boolean = false, validateDirectories: Boolean = false) {
     if (connection.protocol !in setOf(app.gyrolet.mpvrx.domain.network.NetworkProtocol.WEBDAV, app.gyrolet.mpvrx.domain.network.NetworkProtocol.OPENLIST)) return
     val revision = "${connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode()}|$includeThumbnails|$strategy"
     val indexKey = "completeTree.v2.${connection.id}"
     val indexIdentity = app.gyrolet.mpvrx.domain.cloud.cloudIndexIdentity(connection)
     val revalidateTree = indexVersions.getString(indexKey, null) != indexIdentity
     val previous = storageScans[connection.id]
-    if (!force && previous?.revision == revision && (previous.job.isActive ||
-      previous.completedAt > 0 && System.currentTimeMillis() - previous.completedAt < 30 * 60_000)) {
+    if (!force && previous?.revision == revision &&
+      ((previous.job.isActive && (!validateDirectories || previous.validatesDirectories)) ||
+      (!validateDirectories && previous.completedAt > 0 && System.currentTimeMillis() - previous.completedAt < 30 * 60_000))) {
       CloudTrace.event("storage.skip", connection.id, detail = "reason=${if (previous.job.isActive) "running" else "fresh_complete"}")
       return
     }
-    CloudTrace.event("storage.schedule", connection.id, detail = "thumbnails=$includeThumbnails force=$force treeUpgrade=$revalidateTree replacing=${previous != null}")
+    CloudTrace.event("storage.schedule", connection.id, detail = "thumbnails=$includeThumbnails force=$force validateDirectories=$validateDirectories treeUpgrade=$revalidateTree replacing=${previous != null}")
     previous?.job?.cancel()
     val job = storageScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
       try {
@@ -98,12 +100,13 @@ class CloudMetadataRepository(
             if (!revalidateTree) submit(warm)
             CloudTrace.event("storage.warm", connection.id, detail = "cachedVideos=${warm.size}")
             val rootIndex = dao.getFolder(connection.id, "/")
-            if (!force && !revalidateTree && rootIndex?.scanComplete == true && app.gyrolet.mpvrx.domain.cloud.isCloudDirectoryFresh(rootIndex.updatedAt)) {
+            if (!force && !revalidateTree && !validateDirectories && rootIndex?.scanComplete == true && app.gyrolet.mpvrx.domain.cloud.isCloudDirectoryFresh(rootIndex.updatedAt)) {
               fileCount = persisted.size
               CloudTrace.event("storage.index.skip", connection.id, detail = "reason=fresh_persistent_tree videos=${warm.size}")
               return@enumerate true
             }
-            val complete = scanFolders(connection, listOf("/"), network, forceRefresh = force || revalidateTree) { listed ->
+            val complete = scanFolders(connection, listOf("/"), network, forceRefresh = force || revalidateTree,
+              bypassCache = force || revalidateTree || validateDirectories || rootIndex?.scanComplete == false) { listed ->
               val videos = listed.filter { video(it) && discovered.add(revision(it)) }
               submit(videos)
             }
@@ -141,7 +144,8 @@ class CloudMetadataRepository(
         android.util.Log.w("CloudBatch", "Storage scan failed; retaining cache", error)
       }
     }
-    storageScans[connection.id] = StorageScan(revision, job)
+    storageScans[connection.id] = StorageScan(revision, job,
+      validatesDirectories = force || revalidateTree || validateDirectories)
     job.start()
   }
 
@@ -156,15 +160,21 @@ class CloudMetadataRepository(
     }
   }
 
-  suspend fun saveDirectory(connectionId: Long, rawPath: String, files: List<NetworkFile>) = withContext(Dispatchers.IO) {
+  suspend fun saveDirectory(connectionId: Long, rawPath: String, files: List<NetworkFile>, fromScan: Boolean = false) = withContext(Dispatchers.IO) {
     val path = NetworkPath.from(rawPath).value
+    val items = files.map {
+      CloudDirectoryItemEntity(connectionId, path, NetworkPath.from(it.path).value,
+        it.name, it.size, it.lastModified, it.isDirectory, it.mimeType)
+    }
+    val changed = dao.getDirectory(connectionId, path).toSet() != items.toSet()
     dao.replaceDirectory(
       CloudDirectoryStateEntity(connectionId, path, System.currentTimeMillis()),
-      files.map {
-        CloudDirectoryItemEntity(connectionId, path, NetworkPath.from(it.path).value,
-          it.name, it.size, it.lastModified, it.isDirectory, it.mimeType)
-      },
+      items,
     )
+    if (changed && !fromScan) {
+      cancelStorage(connectionId)
+      CloudTrace.event("directory.changed", connectionId, path, "items=${items.size} scanInvalidated=true")
+    }
   }
 
   suspend fun cachedFilesBelow(connectionId: Long, path: String): List<NetworkFile> = withContext(Dispatchers.IO) {
@@ -250,24 +260,25 @@ class CloudMetadataRepository(
   }
 
   suspend fun scanFolders(connection: NetworkConnection, paths: List<String>, network: NetworkRepository, forceRefresh: Boolean = false,
+    bypassCache: Boolean = forceRefresh,
     onListed: suspend (List<NetworkFile>) -> Unit = {}): Boolean {
     val scanner = app.gyrolet.mpvrx.domain.cloud.CloudFolderScanner(connection.id, { path ->
       val current = network.getConnectionById(connection.id)
       if (current == null || current.isDeleted || current.copy(lastConnected = 0, name = "", autoConnect = false) !=
         connection.copy(lastConnected = 0, name = "", autoConnect = false)) throw CancellationException("Storage settings changed")
-      if (!forceRefresh) {
+      if (!bypassCache) {
         cachedDirectory(connection.id, path, freshOnly = true)?.let { cached ->
           CloudTrace.event("directory.cache", connection.id, path, "items=${cached.size} fresh=true")
           onListed(cached)
           return@CloudFolderScanner Result.success(cached)
         }
       }
-      CloudTrace.event("directory.begin", connection.id, path)
-      network.listFiles(connection, path).also { result ->
+      CloudTrace.event("directory.begin", connection.id, path, "forceRefresh=$forceRefresh bypassCache=$bypassCache")
+      network.listFiles(connection, path, forceRefresh = forceRefresh).also { result ->
         CloudTrace.event("directory.result", connection.id, path,
           "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0} error=${result.exceptionOrNull()?.javaClass?.simpleName ?: "none"}")
         currentCoroutineContext().ensureActive()
-        result.getOrNull()?.let { saveDirectory(connection.id, path, it); onListed(it) }
+        result.getOrNull()?.let { saveDirectory(connection.id, path, it, fromScan = true); onListed(it) }
       }
     }, {
       dao.putScannedFolder(it)
