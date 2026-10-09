@@ -83,8 +83,13 @@ class CloudKeyframeExtractor(
     // flat; a normal frame is returned as-is.
     if (!isMostlySolidThumbnail(primary.bitmap)) return primary
 
-    val retry = extractAt(streamUrl, stableKey, ext, solidFallbackPercent) ?: return primary
     primary.bitmap.recycle()
+    val retry = extractAt(streamUrl, stableKey, ext, solidFallbackPercent) ?: return null
+    // Let the caller try another decoder instead of permanently caching a failed flat frame.
+    if (isMostlySolidThumbnail(retry.bitmap)) {
+      retry.bitmap.recycle()
+      return null
+    }
     return retry
   }
 

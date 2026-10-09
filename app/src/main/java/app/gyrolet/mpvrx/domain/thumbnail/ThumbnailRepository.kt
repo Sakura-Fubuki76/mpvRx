@@ -844,13 +844,19 @@ class ThumbnailRepository(
       runCatching {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
-        BitmapFactory.decodeFile(
+        val bitmap = BitmapFactory.decodeFile(
           file.absolutePath,
           BitmapFactory.Options().apply {
             inSampleSize = calculateThumbnailSampleSize(bounds.outWidth, bounds.outHeight, if (network) 1080 else thumbnailMaxSize())
             inPreferredConfig = Bitmap.Config.RGB_565
           },
         )
+        if (network && file.length() <= 4096 && key.contains("|Smart_embedded_v2|") &&
+            bitmap != null && isMostlySolidThumbnail(bitmap)) {
+          bitmap.recycle()
+          android.util.Log.w("CloudThumbnail", "cache.reject solid=true key=${file.name.take(12)}")
+          null
+        } else bitmap
       }.getOrNull()
     }
 
@@ -1334,7 +1340,13 @@ class ThumbnailRepository(
 
   fun isNetworkThumbnailCached(connection: NetworkConnection, file: app.gyrolet.mpvrx.domain.network.NetworkFile): Boolean {
     val identity = networkThumbnailIdentity(file.path, connection, file.size, file.lastModified)
-    return File(networkDiskDir, keyToFileName(networkThumbnailDiskKey(identity))).length() > 0
+    val key = networkThumbnailDiskKey(identity)
+    val cached = File(networkDiskDir, keyToFileName(key))
+    if (cached.length() <= 0) return false
+    if (cached.length() > 4096 || browserPreferences.thumbnailMode.get() != ThumbnailMode.Smart) return true
+    val bitmap = readBitmapFromDisk(key, network = true) ?: return false
+    bitmap.recycle()
+    return true
   }
 
   private suspend fun getOpenListApiThumbnail(connection: NetworkConnection, path: String, width: Int, height: Int): Bitmap? {
@@ -1456,14 +1468,41 @@ class ThumbnailRepository(
       // Index-based extraction downloads only the container index and one frame, while the
       // streaming retriever below has to pull far more of the file — so try it first and keep the
       // existing chain as the fallback for every container we cannot index.
-      extractKeyframeByIndex(localUrl, path, connection, strategy, fileSize, lastModified)
-        ?: extractNetworkVideoFrame(
+      val diagnosticKey = keyToFileName(networkThumbnailDiskKey(networkThumbnailIdentity(path, connection, fileSize, lastModified))).take(12)
+      fun acceptFrame(bitmap: Bitmap?, stage: String): Bitmap? {
+        val smart = strategy is ThumbnailStrategy.Hybrid || strategy is ThumbnailStrategy.EmbeddedOrHybrid
+        val solid = bitmap != null && smart && isMostlySolidThumbnail(bitmap)
+        android.util.Log.i("CloudThumbnail", "extract connection=${connection.id} key=$diagnosticKey stage=$stage available=${bitmap != null} solid=$solid")
+        if (solid) { bitmap.recycle(); return null }
+        return bitmap
+      }
+      val extension = app.gyrolet.mpvrx.domain.cloud.cloudMediaExtension(path)
+      val layout = if (extension in setOf("mp4", "m4v", "mov")) {
+        app.gyrolet.mpvrx.domain.cloud.FragmentedMp4Support.inspect(localUrl,
+          networkThumbnailIdentity(path, connection, fileSize, lastModified), context)
+      } else null
+      if (layout?.fragmented == true && (strategy is ThumbnailStrategy.Hybrid || strategy is ThumbnailStrategy.EmbeddedOrHybrid)) {
+        // Android's retriever cannot reliably seek an fMP4 without a sample table. Decode a
+        // bounded, complete first video fragment locally instead of scanning the whole movie.
+        val clip = app.gyrolet.mpvrx.domain.cloud.FragmentedMp4Support.previewClip(localUrl, layout,
+          File(context.cacheDir, "network_fragment_previews")) ?: return null
+        try {
+          for (position in listOf(0.0, 10.0, 2.0, 5.0, 20.0)) {
+            val bitmap = FastThumbnails.generateAsync(clip.path, position,
+              maxOf(targetWidth, targetHeight, MAX_THUMBNAIL_SIZE).coerceAtMost(1080), useHwDec = false)
+            acceptFrame(bitmap, "fragment-$position")?.let { return it }
+          }
+          return null
+        } finally { clip.delete() }
+      }
+      acceptFrame(extractKeyframeByIndex(localUrl, path, connection, strategy, fileSize, lastModified), "index")
+        ?: acceptFrame(extractNetworkVideoFrame(
           url = localUrl,
           strategy = strategy,
           targetWidth = targetWidth.takeIf { it > 0 },
           targetHeight = targetHeight.takeIf { it > 0 },
-        )
-        ?: generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight)
+        ), "retriever")
+        ?: acceptFrame(generateFastNetworkThumbnail(localUrl, targetWidth, targetHeight), "mpv")
     } catch (cancellation: CancellationException) {
       throw cancellation
     } catch (_: Exception) {

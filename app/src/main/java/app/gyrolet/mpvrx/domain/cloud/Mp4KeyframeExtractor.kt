@@ -247,9 +247,10 @@ class Mp4KeyframeExtractor(
   suspend fun loadParsedMoov(
     url: String,
     stableKey: String? = null,
+    includeFragments: Boolean = false,
   ): ParsedMoov? {
     val cacheKey = stableKey?.let { moovCacheKey(it) } ?: moovCacheKey(url)
-    getCachedMoov(cacheKey)?.let {
+    getCachedMoov(cacheKey)?.takeIf { !includeFragments || it.moovInfo?.keyframes?.isNotEmpty() == true }?.let {
       log { "MOOV cache hit: bytes=${it.moovByteSize} duration=${it.durationMs ?: 0}" }
       return it
     }
@@ -260,7 +261,7 @@ class Mp4KeyframeExtractor(
     val lock = moovLocks.computeIfAbsent(cacheKey) { Mutex() }
     return try {
       lock.withLock {
-        getCachedMoov(cacheKey)?.let {
+        getCachedMoov(cacheKey)?.takeIf { !includeFragments || it.moovInfo?.keyframes?.isNotEmpty() == true }?.let {
           log { "MOOV cache hit after wait: bytes=${it.moovByteSize} duration=${it.durationMs ?: 0}" }
           return@withLock it
         }
@@ -280,7 +281,17 @@ class Mp4KeyframeExtractor(
         val moovData =
           downloadMoovAtom(url, contentLength)
             ?: return@withLock null
-        val moovInfo = parseMoov(moovData)
+        var moovInfo = parseMoov(moovData)
+        val fragmentedTrack = if (includeFragments && moovInfo?.keyframes?.isEmpty() == true) FragmentedMp4Index.track(moovData.bytes) else null
+        if (fragmentedTrack != null && moovInfo != null) {
+          val start = System.nanoTime()
+          val samples = FragmentedMp4Index.scan(contentLength, fragmentedTrack) { at, size -> httpRange(url, at, size) }
+          android.util.Log.i("CloudMp4", "sprite.fragmentIndex samples=${samples?.size ?: 0} elapsedMs=${(System.nanoTime() - start) / 1000000}")
+          if (samples == null) return@withLock null
+          moovInfo = moovInfo.copy(keyframes = samples.mapIndexed { index, sample ->
+            KeyframeEntry(index + 1, sample.timeMs, sample.offset, sample.size)
+          })
+        }
         val durationMs = parseMoovDurationMs(moovData) ?: moovInfo?.durationMs()
         val parsed =
           ParsedMoov(
@@ -288,6 +299,7 @@ class Mp4KeyframeExtractor(
             moovByteSize = moovData.bytes.size,
             moovInfo = moovInfo,
             durationMs = durationMs,
+            videoTrackNumber = fragmentedTrack?.id ?: 0,
           )
         putCachedMoov(cacheKey, parsed)
 
@@ -876,6 +888,12 @@ class Mp4KeyframeExtractor(
         log { "  FAIL: no codec config data found" }
         offset = trakEnd
         continue
+      }
+
+      if (FragmentedMp4Index.track(data) != null) {
+        val scale = if (mdhdTimescale > 0) mdhdTimescale else mvhdTimescale
+        return MoovInfo(scale, if (mvhdTimescale > 0) mvhdDuration * scale / mvhdTimescale else 0,
+          codec.mime, width, height, rotation, codec.nalUnits, codec.nalLengthSize, emptyList())
       }
 
       val keyframeIndices = mutableListOf<Int>()

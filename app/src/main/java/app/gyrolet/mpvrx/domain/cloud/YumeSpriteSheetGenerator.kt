@@ -125,10 +125,13 @@ class YumeSpriteSheetGenerator(
             cacheDir.mkdirs()
             val spriteFile = File(cacheDir, "$cacheKey.webp")
             val metaFile = File(cacheDir, "$cacheKey.json")
+            val extension = sourceExtension ?: source.substringBefore('?').substringAfterLast('.')
+            val fragmented = context != null && source.startsWith("http") && extension.lowercase() in setOf("mp4", "mov", "m4v") &&
+                FragmentedMp4Support.inspect(source, cacheKey, context)?.fragmented == true
 
             if (spriteFile.exists() && spriteFile.length() > 0 && metaFile.exists()) {
                 val meta = readMetadata(metaFile)
-                if (meta != null && meta.durationMs == durationMs && meta.isComplete()) {
+                if (meta != null && meta.durationMs == durationMs && meta.isComplete() && (!fragmented || meta.fragmentIndexVersion >= 1)) {
                     CloudTrace.event("sprite.cache.hit", detail = "frames=${meta.frameCount}")
                     return@withContext YumeSpriteResult(spriteFile, meta)
                 }
@@ -143,7 +146,7 @@ class YumeSpriteSheetGenerator(
             val isContentUri = source.startsWith("content://", ignoreCase = true)
 
             val sourcePath = sourceExtension?.let { "video.$it" } ?: source.substringBefore('?')
-            val isMp4 = sourcePath.endsWith(".mp4", ignoreCase = true) ||
+            val isMp4 = sourcePath.endsWith(".mp4", ignoreCase = true) || sourcePath.endsWith(".m4v", ignoreCase = true) ||
                 sourcePath.endsWith(".mov", ignoreCase = true)
             val isMkv = sourcePath.endsWith(".mkv", ignoreCase = true) ||
                 sourcePath.endsWith(".webm", ignoreCase = true)
@@ -182,7 +185,7 @@ class YumeSpriteSheetGenerator(
         val parsed = if (isLocal) {
             mp4Extractor.loadParsedMoovFromFile(source)
         } else {
-            mp4Extractor.loadParsedMoov(source)
+            mp4Extractor.loadParsedMoov(source, stableKey = cacheKey, includeFragments = true)
         }
         if (parsed == null) {
             Logger.w("BUG4_SpriteSheet", "parsed is null for ${source.take(100)}, falling back to MediaExtractor")
@@ -236,6 +239,7 @@ class YumeSpriteSheetGenerator(
             thumbHeight = thumbH,
             intervalMs = intervalMs,
             durationMs = durationMs,
+            fragmentIndexVersion = if (parsed.videoTrackNumber > 0) 1 else 0,
         )
 
         val spriteSheet = Bitmap.createBitmap(
@@ -914,6 +918,11 @@ class YumeSpriteSheetGenerator(
                         forceNV21 = false,
                     ) ?: return@decodeOneFrameToImage
 
+                    if (bitmap.isMostlySolidColor()) {
+                        bitmap.recycle()
+                        return@decodeOneFrameToImage
+                    }
+
                     if (needsRot) {
                         val matrix = android.graphics.Matrix()
                         matrix.postRotate(rotation.toFloat())
@@ -1091,6 +1100,7 @@ data class YumeSpriteMetadata(
     val intervalMs: Double,
     val durationMs: Long,
     val validCells: List<Int>? = null,
+    val fragmentIndexVersion: Int = 0,
 ) {
     fun isComplete(): Boolean = frameCount in 1..(cols * rows) &&
         validCells?.size == frameCount && validCells?.toSet() == (0 until frameCount).toSet()
@@ -1104,6 +1114,7 @@ data class YumeSpriteMetadata(
         append("\"thumbHeight\":$thumbHeight,")
         append("\"intervalMs\":$intervalMs,")
         append("\"durationMs\":$durationMs,")
+        append("\"fragmentIndexVersion\":$fragmentIndexVersion,")
         append("\"validCells\":\"${validCells?.joinToString(";").orEmpty()}\"")
         append("}")
     }
@@ -1126,6 +1137,7 @@ data class YumeSpriteMetadata(
                 thumbHeight = map["thumbHeight"]?.toInt() ?: YumeSpriteSheetGenerator.THUMB_HEIGHT,
                 intervalMs = map["intervalMs"]?.toDouble() ?: 0.0,
                 durationMs = map["durationMs"]?.toLong() ?: 0L,
+                fragmentIndexVersion = map["fragmentIndexVersion"]?.toInt() ?: 0,
                 validCells = map["validCells"]?.trim('"')?.split(';')?.mapNotNull { it.toIntOrNull() },
             )
         }
