@@ -38,7 +38,10 @@ class AlistWebDavClient(
     if (supported() != false) {
       val result = api.listFiles(path, forceRefresh)
       if (capabilities.size > 128) capabilities.clear()
-      capabilities[connection.id] = Capability(connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode(), result.isSuccess, System.currentTimeMillis())
+      // A missing/temporarily unavailable child is not evidence that a previously identified
+      // OpenList server lost its API. Whole-tree refreshes encounter these independently.
+      val apiSupported = result.isSuccess || supported() == true
+      capabilities[connection.id] = Capability(connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode(), apiSupported, System.currentTimeMillis())
       app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("alist.list", connection.id, path, "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0}")
       if (result.isSuccess) return result
     }

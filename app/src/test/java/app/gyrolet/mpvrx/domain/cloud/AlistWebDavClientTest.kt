@@ -11,6 +11,7 @@ import java.io.InputStream
 class AlistWebDavClientTest {
   private fun connection(id: Long) = NetworkConnection(id, "storage", NetworkProtocol.WEBDAV, "example.test", 80, path = "/prefix/dav/mount")
   private class Fake(private val available: Boolean, private val size: Long = 100L) : NetworkClient {
+    var failedDirectory: String? = null
     var lists = 0
     var streams = 0
     var sizes = 0
@@ -23,7 +24,7 @@ class AlistWebDavClientTest {
     override fun isConnected() = true
     override suspend fun listFiles(path: String): Result<List<NetworkFile>> {
       lists++
-      return if (available) Result.success(listOf(NetworkFile("video.mp4", "$path/video.mp4", 100, false))) else Result.failure(IllegalStateException("No API"))
+      return if (available && path != failedDirectory) Result.success(listOf(NetworkFile("video.mp4", "$path/video.mp4", 100, false))) else Result.failure(IllegalStateException("No API"))
     }
     override suspend fun getFileStream(path: String, offset: Long): Result<InputStream> {
       streams++
@@ -70,5 +71,21 @@ class AlistWebDavClientTest {
     client.listFiles("/").getOrThrow()
     assertEquals(100L, client.getFileSize("/video.mkv").getOrThrow())
     assertEquals(0, api.sizes); assertEquals(1, dav.sizes)
+  }
+  @Test fun failedChildListingDoesNotDisableIdentifiedApiAcrossSessions() = runBlocking {
+    val dav = Fake(true); val api = Fake(true)
+    val connection = connection(78)
+    val client = AlistWebDavClient(connection, dav, api)
+    client.listFiles("/").getOrThrow()
+    api.failedDirectory = "/deleted-child"
+    client.listFiles("/deleted-child", true).getOrThrow()
+    assertEquals(1, dav.lists)
+    val reopened = AlistWebDavClient(connection, dav, api)
+    assertEquals(100L, reopened.getFileSize("/video.mp4").getOrThrow())
+    reopened.getFileStream("/video.mp4", 0).getOrThrow().close()
+    reopened.listFiles("/next").getOrThrow()
+    assertEquals(1, api.sizes); assertEquals(0, dav.sizes)
+    assertEquals(1, api.streams); assertEquals(0, dav.streams)
+    assertEquals(3, api.lists)
   }
 }
