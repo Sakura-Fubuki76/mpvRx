@@ -1102,6 +1102,12 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       true
     }
 
+  fun networkReadAgeMs(expectedGeneration: Long): Long? = nativeLock.withLock {
+    if (_state.value.generation != expectedGeneration) return@withLock null
+    val registration = activeNetworkStream ?: return@withLock null
+    registration.proxy?.primaryReadAgeMs(registration.streamId)
+  }
+
   fun isCurrentGeneration(generation: Long): Boolean = generation > 0L && _state.value.generation == generation
 
   fun isPositionRestorePending(generation: Long): Boolean =

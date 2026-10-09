@@ -5704,8 +5704,16 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
 
     playbackLoadWatchdogJob =
       lifecycleScope.launch {
+        val started = android.os.SystemClock.elapsedRealtime()
         delay(playbackLoadTimeoutMs(request.item))
-        val current = PlaybackSession.state.value
+        var current = PlaybackSession.state.value
+        while (pendingMediaLoadRecovery == request && isCurrentMediaRequest(request.requestGeneration) &&
+          current.generation == request.generation && current.phase == PlaybackPhase.LOADING &&
+          canExtendPlaybackLoad(android.os.SystemClock.elapsedRealtime() - started, PlaybackSession.networkReadAgeMs(request.generation))) {
+          Log.i("PlaybackPerf", "load.progress.extend generation=${request.generation} elapsedMs=${android.os.SystemClock.elapsedRealtime() - started}")
+          delay(15_000L)
+          current = PlaybackSession.state.value
+        }
         if (pendingMediaLoadRecovery != request ||
           !isCurrentMediaRequest(request.requestGeneration) ||
           current.generation != request.generation ||

@@ -97,6 +97,7 @@ class NetworkStreamingProxy private constructor() :
     // them onto one; entries are dropped the moment their probe completes, so it cannot grow.
     val sizeProbes = ConcurrentHashMap<NetworkPath, Deferred<Long>>()
     val clientMutex = Mutex()
+    val lastPrimaryReadNs = java.util.concurrent.atomic.AtomicLong()
 
     @Volatile
     var client: NetworkClient? = null
@@ -173,6 +174,12 @@ class NetworkStreamingProxy private constructor() :
   fun unregisterStream(streamId: String) {
     val token = tokenByRegistration.remove(streamId) ?: return
     streamsByToken.remove(token)?.let(::closeAsync)
+  }
+
+  fun primaryReadAgeMs(streamId: String): Long? {
+    val token = tokenByRegistration[streamId] ?: return null
+    val last = streamsByToken[token]?.lastPrimaryReadNs?.get()?.takeIf { it > 0 } ?: return null
+    return (System.nanoTime() - last) / 1_000_000
   }
 
   override fun serve(session: IHTTPSession): Response {
@@ -306,6 +313,7 @@ class NetworkStreamingProxy private constructor() :
     return object : java.io.FilterInputStream(stream) {
       private var first = true
       private fun record(bytes: Int) {
+        if (bytes > 0 && path == streamInfo.primaryPath) streamInfo.lastPrimaryReadNs.set(System.nanoTime())
         if (first && bytes != 0) {
           first = false
           app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("proxy.first.byte", streamInfo.connectionId, path.value,
