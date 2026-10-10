@@ -52,9 +52,10 @@ class CloudSpriteRepository(
       else local?.path ?: item.playableUri
     // The original generator owns its background task. A cancelled waiter must keep the proxy
     // alive until generation finishes; tie cleanup to the generator's in-flight task instead.
+    CloudTrace.diagnostic("sprite.prepare", key, "connection=${source?.connectionId ?: 0} durationMs=$durationMs")
     val result = generator.generate(url, if (registered) null else item.headers, source?.let { dao.getVideo(it.connectionId, it.relativePath)?.durationMs }?.takeIf { it > 0 } ?: durationMs, directory, key, context,
       onGenerationFinished = { if (registered) proxy.unregisterStream(streamId) }, sourceExtension = cloudMediaExtension(path)) ?: return@withContext
-    if (wantedId != item.stableId) return@withContext
+    if (wantedId != item.stableId) { CloudTrace.diagnostic("sprite.detached", key); return@withContext }
     val bitmap = BitmapFactory.decodeFile(result.file.path) ?: return@withContext
     val meta = result.metadata
     _current.value = CloudSpriteSheet(item.stableId, bitmap, SpriteSheetMetadata(
@@ -62,5 +63,6 @@ class CloudSpriteRepository(
       timesMs = List(meta.frameCount) { (it * meta.intervalMs).toLong() }, durationMs = meta.durationMs,
       intervalMs = meta.intervalMs, validCells = meta.validCells))
     CloudTrace.event("sprite.ready", source?.connectionId ?: 0, detail = "frames=${meta.frameCount} size=${meta.thumbWidth}x${meta.thumbHeight}")
+    CloudTrace.diagnostic("sprite.ready", key, "valid=${meta.validCells?.size ?: 0} frames=${meta.frameCount}")
   }
 }

@@ -6,6 +6,8 @@ internal object FragmentedMp4Index {
   data class Track(val id: Long, val timescale: Long, val defaults: Defaults)
   data class Sample(val timeMs: Long, val offset: Long, val size: Int)
   data class Fragment(val samples: List<Sample>, val nextDecodeTime: Long)
+  data class Progress(val stage: String, val offset: Long, val total: Long, val fragments: Int,
+    val samples: Int, val requests: Int, val bytes: Long, val elapsedMs: Long, val reason: String = "")
   private data class Box(val type: String, val start: Int, val end: Int)
 
   fun track(moov: ByteArray): Track? = safely {
@@ -33,13 +35,23 @@ internal object FragmentedMp4Index {
     null
   }
 
-  fun scan(contentLength: Long, track: Track, read: (Long, Int) -> ByteArray?): List<Sample>? = safely { scanRanges(contentLength, track, read) }
+  fun scan(contentLength: Long, track: Track, onProgress: (Progress) -> Unit = {},
+    read: (Long, Int) -> ByteArray?): List<Sample>? = scanRanges(contentLength, track, onProgress, read)
 
-  private fun scanRanges(contentLength: Long, track: Track, read: (Long, Int) -> ByteArray?): List<Sample>? {
+  private fun scanRanges(contentLength: Long, track: Track, onProgress: (Progress) -> Unit,
+    read: (Long, Int) -> ByteArray?): List<Sample>? {
     val samples = mutableListOf<Sample>()
     var offset = 0L
     var decodeTime = 0L
     var atoms = 0
+    var fragments = 0
+    var requests = 0
+    var downloaded = 0L
+    val started = System.nanoTime()
+    var lastReport = started
+    fun emit(stage: String, reason: String = "") = onProgress(Progress(stage, offset, contentLength,
+      fragments, samples.size, requests, downloaded, (System.nanoTime() - started) / 1_000_000, reason))
+    fun fail(reason: String): List<Sample>? { emit("failed", reason); return null }
     var window = byteArrayOf()
     var windowStart = -1L
     fun range(at: Long, size: Int): ByteArray? {
@@ -48,29 +60,39 @@ internal object FragmentedMp4Index {
         return window.copyOfRange(relative.toInt(), relative.toInt() + size)
       }
       val count = minOf(contentLength - at, maxOf(8192, size).toLong()).toInt()
+      requests++
       window = read(at, count) ?: return null
+      downloaded += window.size
       windowStart = at
       return window.takeIf { it.size >= size }?.copyOfRange(0, size)
     }
-    while (offset < contentLength) {
-      if (++atoms > 100000 || contentLength - offset < 8) return null
-      val header = range(offset, minOf(16, contentLength - offset).toInt()) ?: return null
+    emit("begin")
+    try { while (offset < contentLength) {
+      if (++atoms > 100000 || contentLength - offset < 8) return fail("invalid_atom_boundary")
+      val header = range(offset, minOf(16, contentLength - offset).toInt()) ?: return fail("header_range_failed")
       val rawSize = u32(header, 0)
       val size = when (rawSize) { 0L -> contentLength - offset; 1L -> u64(header, 8); else -> rawSize }
       val headerSize = if (rawSize == 1L) 16 else 8
-      if (size < headerSize || size > contentLength - offset) return null
+      if (size < headerSize || size > contentLength - offset) return fail("invalid_atom_size")
       if (type(header, 4) == "moof") {
-        if (size > 1024 * 1024) return null
-        val bytes = range(offset, size.toInt()) ?: return null
-        val fragment = fragment(bytes, offset, track, decodeTime) ?: return null
-        if (fragment.samples.any { it.offset < 0 || it.size <= 0 || it.offset > contentLength - it.size }) return null
+        if (size > 1024 * 1024) return fail("fragment_too_large")
+        val bytes = range(offset, size.toInt()) ?: return fail("fragment_range_failed")
+        val fragment = fragment(bytes, offset, track, decodeTime) ?: return fail("fragment_parse_failed")
+        if (fragment.samples.any { it.offset < 0 || it.size <= 0 || it.offset > contentLength - it.size }) return fail("sample_outside_file")
         samples += fragment.samples
+        fragments++
         decodeTime = fragment.nextDecodeTime
-        if (samples.size > 250000) return null
+        if (samples.size > 250000) return fail("too_many_samples")
       }
       offset += size
-    }
-    return samples.sortedBy { it.timeMs }.takeIf { it.isNotEmpty() }
+      if (System.nanoTime() - lastReport >= 10_000_000_000L) {
+        emit("progress"); lastReport = System.nanoTime()
+      }
+    } } catch (_: IllegalArgumentException) { return fail("invalid_metadata") }
+      catch (_: IndexOutOfBoundsException) { return fail("truncated_metadata") }
+    if (samples.isEmpty()) return fail("no_sync_samples")
+    emit("complete")
+    return samples.sortedBy { it.timeMs }
   }
 
   fun fragment(bytes: ByteArray, offset: Long, track: Track, previousDecodeTime: Long): Fragment? = safely {

@@ -79,6 +79,7 @@ class YumeSpriteSheetGenerator(
         onGenerationFinished: () -> Unit = {},
         sourceExtension: String? = null,
     ): YumeSpriteResult? {
+        CloudTrace.diagnostic("sprite.request", cacheKey, "durationMs=$durationMs")
         val inFlightKey = "${cacheDir.absolutePath}|$cacheKey"
         var created = false
         val deferred = inFlightGenerations[inFlightKey] ?: synchronized(inFlightGenerations) {
@@ -99,6 +100,7 @@ class YumeSpriteSheetGenerator(
         }
 
         if (!created) {
+            CloudTrace.diagnostic("sprite.join", cacheKey, "completed=${deferred.isCompleted}")
             Logger.d(TAG, "Join in-flight sprite sheet generation for $cacheKey")
         }
 
@@ -121,6 +123,8 @@ class YumeSpriteSheetGenerator(
         context: Context? = null,
         sourceExtension: String? = null,
     ): YumeSpriteResult? = withContext(Dispatchers.IO) {
+        val started = System.nanoTime()
+        CloudTrace.diagnostic("sprite.begin", cacheKey)
         try {
             cacheDir.mkdirs()
             val spriteFile = File(cacheDir, "$cacheKey.webp")
@@ -128,16 +132,19 @@ class YumeSpriteSheetGenerator(
             val extension = sourceExtension ?: source.substringBefore('?').substringAfterLast('.')
             val fragmented = context != null && source.startsWith("http") && extension.lowercase() in setOf("mp4", "mov", "m4v") &&
                 FragmentedMp4Support.inspect(source, cacheKey, context)?.fragmented == true
+            CloudTrace.diagnostic("sprite.layout", cacheKey, "fragmented=$fragmented")
 
             if (spriteFile.exists() && spriteFile.length() > 0 && metaFile.exists()) {
                 val meta = readMetadata(metaFile)
                 if (meta != null && meta.durationMs == durationMs && meta.isComplete() && (!fragmented || meta.fragmentIndexVersion >= 1)) {
                     CloudTrace.event("sprite.cache.hit", detail = "frames=${meta.frameCount}")
+                    CloudTrace.diagnostic("sprite.cache.hit", cacheKey, "valid=${meta.validCells?.size ?: 0} version=${meta.fragmentIndexVersion}")
                     return@withContext YumeSpriteResult(spriteFile, meta)
                 }
             }
 
             CloudTrace.event("sprite.cache.miss")
+            CloudTrace.diagnostic("sprite.cache.miss", cacheKey)
             Logger.d(TAG, "Generating sprite sheet for $source, duration=${durationMs}ms")
 
             val isRemote = source.startsWith("http://", ignoreCase = true) ||
@@ -151,14 +158,17 @@ class YumeSpriteSheetGenerator(
             val isMkv = sourcePath.endsWith(".mkv", ignoreCase = true) ||
                 sourcePath.endsWith(".webm", ignoreCase = true)
 
-            if (isMp4 && (isRemote || !isContentUri)) {
+            val result = if (isMp4 && (isRemote || !isContentUri)) {
                 generateFromMoov(source, httpHeaders, durationMs, cacheDir, cacheKey)
             } else if (isRemote && isMkv) {
                 generateFromMkv(source, httpHeaders, durationMs, cacheDir, cacheKey, context)
             } else {
                 generateFromMediaExtractor(source, durationMs, spriteFile, metaFile, cacheDir, cacheKey, context)
             }
+            CloudTrace.diagnostic("sprite.end", cacheKey, "success=${result != null} valid=${result?.metadata?.validCells?.size ?: 0} elapsedMs=${(System.nanoTime() - started) / 1000000}")
+            result
         } catch (e: Exception) {
+            CloudTrace.diagnostic("sprite.failed", cacheKey, "error=${e.javaClass.simpleName} elapsedMs=${(System.nanoTime() - started) / 1000000}")
             if (e is CancellationException) throw e
             Logger.e(TAG, "Sprite sheet generation failed", e)
             null
@@ -181,6 +191,7 @@ class YumeSpriteSheetGenerator(
         Logger.d("BUG4_SpriteSheet", "generateFromMoov: isLocal=$isLocal source=${source.take(100)} httpHeaders=$httpHeaders")
         val okHttpClient = buildRequestClient(httpHeaders.takeUnless { isLocal })
         val mp4Extractor = Mp4KeyframeExtractor(okHttpClient)
+        CloudTrace.diagnostic("sprite.index.begin", cacheKey, "local=$isLocal")
 
         val parsed = if (isLocal) {
             mp4Extractor.loadParsedMoovFromFile(source)
@@ -188,6 +199,7 @@ class YumeSpriteSheetGenerator(
             mp4Extractor.loadParsedMoov(source, stableKey = cacheKey, includeFragments = true)
         }
         if (parsed == null) {
+            CloudTrace.diagnostic("sprite.fallback", cacheKey, "reason=index_unavailable backend=MediaExtractor")
             Logger.w("BUG4_SpriteSheet", "parsed is null for ${source.take(100)}, falling back to MediaExtractor")
             Logger.w(TAG, "Failed to parse moov for $source, falling back to MediaExtractor")
             return generateFromMediaExtractor(source, durationMs, spriteFile, metaFile, cacheDir, cacheKey)
@@ -196,12 +208,14 @@ class YumeSpriteSheetGenerator(
         val moovInfo = parsed.moovInfo
         Logger.d("BUG4_SpriteSheet", "parsed OK: moovInfo=${moovInfo != null} keyframes=${moovInfo?.keyframes?.size ?: 0} durationMs=${parsed.durationMs}")
         if (moovInfo == null || moovInfo.keyframes.isEmpty()) {
+            CloudTrace.diagnostic("sprite.fallback", cacheKey, "reason=no_keyframes backend=MediaExtractor")
             Logger.w("BUG4_SpriteSheet", "No keyframes in moov for ${source.take(100)}, falling back to MediaExtractor")
             Logger.w(TAG, "No keyframe index in moov for $source, falling back to MediaExtractor")
             return generateFromMediaExtractor(source, durationMs, spriteFile, metaFile, cacheDir, cacheKey)
         }
 
         val allKeyframes = moovInfo.keyframes
+        CloudTrace.diagnostic("sprite.index.ready", cacheKey, "samples=${allKeyframes.size} fragmented=${parsed.videoTrackNumber > 0} firstMs=${allKeyframes.first().timeMs} lastMs=${allKeyframes.last().timeMs}")
         var displayW = moovInfo.width
         var displayH = moovInfo.height
         val needsRotation = moovInfo.rotation == 90 || moovInfo.rotation == 270
@@ -278,6 +292,7 @@ class YumeSpriteSheetGenerator(
             // 边下边解码：每批下载完立即解码合成并释放 ByteArray，
             // 避免 100 帧数据同时驻留内存造成 OOM。
             for (batch in uniqueTargets.chunked(MAX_CONCURRENT_DOWNLOADS)) {
+                val downloadStarted = System.nanoTime()
                 val pairedData = coroutineScope {
                     batch.map { target ->
                         async {
@@ -296,6 +311,8 @@ class YumeSpriteSheetGenerator(
                 val successEntries = pairedData.mapNotNull { (target, data) ->
                     data?.let { target to it }
                 }
+                CloudTrace.diagnostic("sprite.batch.download", cacheKey, "round=$round requested=${batch.size} received=${successEntries.size} bytes=${pairedData.sumOf { it.second?.size?.toLong() ?: 0 }} elapsedMs=${(System.nanoTime() - downloadStarted) / 1000000}")
+                val decodeStarted = System.nanoTime()
                 decodedFrames += successEntries.size
                 val batchResult = decodeAndCompositeCandidates(
                     mp4Extractor = mp4Extractor,
@@ -313,6 +330,7 @@ class YumeSpriteSheetGenerator(
                 pendingGridIndices.removeAll(batchResult.compositedGridIndices)
                 roundNativeSolidSkipped += batchResult.nativeSolidSkippedCells
                 roundBitmapSolidSkipped += batchResult.bitmapSolidSkippedCells
+                CloudTrace.diagnostic("sprite.batch.decode", cacheKey, "round=$round valid=${batchResult.compositedGridIndices.size} solid=${batchResult.nativeSolidSkippedCells + batchResult.bitmapSolidSkippedCells} pending=${pendingGridIndices.size} elapsedMs=${(System.nanoTime() - decodeStarted) / 1000000}")
             }
             Logger.d(
                 TAG,
@@ -350,6 +368,7 @@ class YumeSpriteSheetGenerator(
 
         metadata = metadata.copy(validCells = targets.map { it.gridIndex }.filter { it !in pendingGridIndices })
         metadata.saveTo(metaFile)
+        CloudTrace.diagnostic("sprite.saved", cacheKey, "valid=${metadata.validCells?.size ?: 0} frames=${metadata.frameCount} bytes=${spriteFile.length()} elapsedMs=${System.currentTimeMillis() - saveStart}")
         CloudTrace.event("sprite.saved", detail = "frames=${metadata.frameCount} bytes=${spriteFile.length()}")
 
         val totalElapsed = System.currentTimeMillis() - startTime

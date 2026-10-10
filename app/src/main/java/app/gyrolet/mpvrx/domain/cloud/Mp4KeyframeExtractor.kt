@@ -250,13 +250,19 @@ class Mp4KeyframeExtractor(
     includeFragments: Boolean = false,
   ): ParsedMoov? {
     val cacheKey = stableKey?.let { moovCacheKey(it) } ?: moovCacheKey(url)
+    fun trace(stage: String, detail: String = "") { if (includeFragments) CloudTrace.diagnostic(stage, cacheKey, detail) }
+    trace("sprite.index.request")
     getCachedMoov(cacheKey)?.takeIf { !includeFragments || it.moovInfo?.keyframes?.isNotEmpty() == true }?.let {
       log { "MOOV cache hit: bytes=${it.moovByteSize} duration=${it.durationMs ?: 0}" }
+      trace("sprite.index.cache", "tier=memory samples=${it.moovInfo?.keyframes?.size ?: 0}")
       return it
     }
 
     MoovIndexCache.ensureLoadedFromDisk(cacheKey)
-    MoovIndexCache.get(cacheKey)?.parsed?.let { return it }
+    MoovIndexCache.get(cacheKey)?.parsed?.takeIf { !includeFragments || it.moovInfo?.keyframes?.isNotEmpty() == true }?.let {
+      trace("sprite.index.cache", "tier=disk samples=${it.moovInfo?.keyframes?.size ?: 0}")
+      return it
+    }
 
     val lock = moovLocks.computeIfAbsent(cacheKey) { Mutex() }
     return try {
@@ -267,6 +273,7 @@ class Mp4KeyframeExtractor(
         }
 
         val contentLength = httpHead(url)
+        trace("sprite.index.head", "length=${contentLength ?: -1}")
         Logger.d(
           "BUG4_HttpExtractor",
           "loadParsedMoov: HEAD contentLength=$contentLength url=${cacheKey.take(80)}",
@@ -281,11 +288,14 @@ class Mp4KeyframeExtractor(
         val moovData =
           downloadMoovAtom(url, contentLength)
             ?: return@withLock null
+        trace("sprite.index.moov", "bytes=${moovData.bytes.size}")
         var moovInfo = parseMoov(moovData)
         val fragmentedTrack = if (includeFragments && moovInfo?.keyframes?.isEmpty() == true) FragmentedMp4Index.track(moovData.bytes) else null
         if (fragmentedTrack != null && moovInfo != null) {
           val start = System.nanoTime()
-          val samples = FragmentedMp4Index.scan(contentLength, fragmentedTrack) { at, size -> httpRange(url, at, size) }
+          val samples = FragmentedMp4Index.scan(contentLength, fragmentedTrack, onProgress = { p ->
+            trace("sprite.index.${p.stage}", "offset=${p.offset} total=${p.total} fragments=${p.fragments} samples=${p.samples} requests=${p.requests} bytes=${p.bytes} elapsedMs=${p.elapsedMs} reason=${p.reason}")
+          }) { at, size -> httpRange(url, at, size) }
           android.util.Log.i("CloudMp4", "sprite.fragmentIndex samples=${samples?.size ?: 0} elapsedMs=${(System.nanoTime() - start) / 1000000}")
           if (samples == null) return@withLock null
           moovInfo = moovInfo.copy(keyframes = samples.mapIndexed { index, sample ->
@@ -499,6 +509,14 @@ class Mp4KeyframeExtractor(
     url: String,
     fileSize: Long,
   ): MoovData? {
+    // Fragmented and fast-start MP4 place moov before mdat. The tail-only probe never
+    // reached their fragment indexer and silently fell back to MediaExtractor.
+    val prefix = httpRange(url, 0, minOf(fileSize, 64 * 1024L).toInt())
+    prefix?.let { findHeaderMoov(it, fileSize) }?.let { (offset, size) ->
+      val bytes = if (size <= prefix.size - offset) prefix.copyOfRange(offset, offset + size)
+        else httpRange(url, offset.toLong(), size)
+      if (bytes?.size == size) return MoovData(bytes, offset.toLong())
+    }
     val probeSizes = listOf(64 * 1024, 256 * 1024, 1024 * 1024, 4 * 1024 * 1024, 8 * 1024 * 1024)
     Logger.d("BUG4_HttpExtractor", "downloadMoovAtom: url=${url.take(100)} fileSize=$fileSize")
     for (probeSize in probeSizes) {
