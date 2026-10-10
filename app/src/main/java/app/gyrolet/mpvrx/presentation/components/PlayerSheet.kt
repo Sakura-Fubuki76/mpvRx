@@ -50,7 +50,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.ZeroCornerSize
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Surface
@@ -82,7 +84,6 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
@@ -93,6 +94,18 @@ import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusReq
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusGroup
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
+import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
+import app.gyrolet.mpvrx.ui.liquidglass.liquidGlassEffects
+import app.gyrolet.mpvrx.ui.liquidglass.rememberLiquidGlassSettings
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.InnerShadow
+import com.kyant.backdrop.shadow.Shadow
+import org.koin.compose.koinInject
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.LocalMotionPolicy
 import app.gyrolet.mpvrx.ui.theme.MotionPolicy
@@ -106,7 +119,7 @@ import kotlin.math.roundToInt
 fun PlayerSheet(
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
-  tonalElevation: Dp = 1.dp,
+  tonalElevation: Dp = 0.dp,
   customMaxWidth: Dp? = null,
   customMaxHeight: Dp? = null,
   surfaceColor: Color? = null,
@@ -114,9 +127,15 @@ fun PlayerSheet(
   swipeOffset: Float = 0f,
   title: String? = null,
   actions: @Composable RowScope.() -> Unit = {},
+  useFrostedGlass: Boolean = true,
   content: @Composable () -> Unit,
 ) {
   val scope = rememberCoroutineScope()
+  val preferences = koinInject<AppearancePreferences>()
+  val liquidGlassEnabled by preferences.liquidGlassEnabled.collectAsState()
+  val playerBackdrop = LocalKyantPlayerBackdrop.current
+  val isFrosted = useFrostedGlass && liquidGlassEnabled && playerBackdrop != null
+  val glassSettings = rememberLiquidGlassSettings()
   // TV/remote: request focus INTO the sheet content when it opens, so the D-pad can navigate/select
   // its rows instead of being trapped behind the (hidden) first-layer player controls. Ported from
   // mpvEx-TV; rememberTvInitialFocusRequester retries across the entrance animation and is TV-gated.
@@ -190,26 +209,29 @@ fun PlayerSheet(
     label = "alpha",
   )
 
-  val internalOnDismissRequest = {
-    if (anchoredDraggableState.currentValue == 0) {
-      scope.launch {
+  val internalOnDismissRequest: () -> Unit = {
+    scope.launch {
+      try {
         anchoredDraggableState.animateTo(1)
+      } finally {
+        latestOnDismissRequest()
       }
     }
   }
   Box(
     modifier =
       Modifier
+        .fillMaxSize()
+        .background(Color.Black.copy(alpha))
         // Before clickable so it targets the scrim's own focus node, not the sheet's descendants.
         .focusProperties { canFocus = false }
         .clickable(
           interactionSource = remember { MutableInteractionSource() },
           indication = null,
           onClick = internalOnDismissRequest,
-          ).fillMaxSize()
-          .background(Color.Black.copy(alpha))
-          // Lifts the whole sheet above the keyboard instead of padding inside a height-capped surface.
-          .imePadding()
+        )
+        // Lifts the whole sheet above the keyboard instead of padding inside a height-capped surface.
+        .imePadding()
         .onSizeChanged {
           val anchors =
             DraggableAnchors {
@@ -220,6 +242,52 @@ fun PlayerSheet(
         },
     contentAlignment = Alignment.BottomCenter,
   ) {
+    val sheetShape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize)
+    val baseContainerColor = surfaceColor ?: MaterialTheme.colorScheme.surfaceContainerHigh
+    val frostedSurfaceColor = baseContainerColor.copy(alpha = 0.80f)
+    val rimHighlightBrush =
+      remember {
+        Brush.verticalGradient(
+          0.0f to Color.White.copy(alpha = 0.22f),
+          0.06f to Color.White.copy(alpha = 0.05f),
+          0.15f to Color.Transparent,
+        )
+      }
+
+    val glassModifier =
+      if (isFrosted) {
+        Modifier
+          .drawBackdrop(
+            backdrop = playerBackdrop,
+            shape = { sheetShape },
+            effects = {
+              liquidGlassEffects(
+                glassSettings,
+                blurRadius = 16.dp.toPx(),
+                refractionHeight = 12.dp.toPx(),
+                refractionAmount = 20.dp.toPx(),
+                vibrant = true,
+                refractionEnabled = !reducedMotion,
+              )
+            },
+            highlight = {
+              glassSettings.highlight(Highlight.Ambient.copy(alpha = if (reducedMotion) 0.15f else 0.30f))
+            },
+            shadow = {
+              glassSettings.shadow(Shadow(radius = 16.dp, color = Color.Black.copy(alpha = 0.25f)))
+            },
+            innerShadow = {
+              glassSettings.innerShadow(InnerShadow(radius = 2.dp, color = Color.White.copy(alpha = 0.12f)))
+            },
+            onDrawSurface = {
+              drawRect(glassSettings.surfaceColor(frostedSurfaceColor))
+            },
+          )
+          .border(1.dp, rimHighlightBrush, sheetShape)
+      } else {
+        Modifier
+      }
+
     Surface(
       modifier =
         Modifier
@@ -252,17 +320,21 @@ fun PlayerSheet(
             orientation = Orientation.Vertical,
           ).windowInsetsPadding(
             WindowInsets.systemBars
-              .only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
-          ),
-      shape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize),
-      color = surfaceColor ?: MaterialTheme.colorScheme.surface,
-      tonalElevation = tonalElevation,
+              .only(WindowInsetsSides.Horizontal),
+          )
+          .then(glassModifier),
+      shape = sheetShape,
+      color = if (isFrosted) Color.Transparent else (surfaceColor ?: MaterialTheme.colorScheme.surface),
+      tonalElevation = if (isFrosted) 0.dp else tonalElevation,
       content = {
         BackHandler(
           enabled = anchoredDraggableState.targetValue == 0,
           onBack = internalOnDismissRequest,
         )
-        CompositionLocalProvider(LocalMotionPolicy provides MotionPolicy(reduceMotion = reducedMotion)) {
+        CompositionLocalProvider(
+          LocalMotionPolicy provides MotionPolicy(reduceMotion = reducedMotion),
+          androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface,
+        ) {
           Column(
             // The keyboard already covers the navigation bar; its padding would push content under the IME.
             modifier =
@@ -353,23 +425,36 @@ fun PlayerSheetDragHandle() {
   }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlayerSheetHeader(
   title: String,
   modifier: Modifier = Modifier,
   actions: @Composable RowScope.() -> Unit = {},
 ) {
-  Box(
-    modifier = modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp),
+  Row(
+    modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    verticalAlignment = Alignment.CenterVertically,
   ) {
+    if (title.isNotBlank()) {
+      Text(
+        text = title,
+        modifier = Modifier.weight(1f).semantics { heading() },
+        style = MaterialTheme.typography.titleLargeEmphasized,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+    } else {
+      androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+    }
     Row(
-      modifier = Modifier.align(Alignment.CenterEnd),
       verticalAlignment = Alignment.CenterVertically,
       content = actions,
     )
   }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlayerSheetSectionHeader(
   title: String,
@@ -378,13 +463,12 @@ fun PlayerSheetSectionHeader(
   Text(
     text = title,
     modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).semantics { heading() },
-    style = MaterialTheme.typography.labelLarge,
-    fontWeight = FontWeight.SemiBold,
+    style = MaterialTheme.typography.labelLargeEmphasized,
     color = MaterialTheme.colorScheme.onSurfaceVariant,
   )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun PlayerSheetAction(
   icon: AppIcon,
@@ -397,7 +481,12 @@ fun PlayerSheetAction(
     tooltip = { PlainTooltip { Text(label) } },
     state = rememberTooltipState(),
   ) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
+    IconButton(
+      onClick = onClick,
+      enabled = enabled,
+      shapes = IconButtonDefaults.shapes(),
+      modifier = Modifier.size(48.dp),
+    ) {
       Icon(icon, contentDescription = label, modifier = Modifier.size(24.dp))
     }
   }

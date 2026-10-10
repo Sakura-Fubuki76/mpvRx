@@ -15,6 +15,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,8 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,12 +41,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.components.LiquidGlassBackdrop
-import app.gyrolet.mpvrx.presentation.components.LiquidGlassStyle
-import app.gyrolet.mpvrx.presentation.components.LiquidGlassSurface
+import app.gyrolet.mpvrx.presentation.components.LiquidGlassEditingBarSurface
 import app.gyrolet.mpvrx.presentation.components.rememberLiquidGlassBackdrop
 import app.gyrolet.mpvrx.ui.icons.AppIcon
 import app.gyrolet.mpvrx.ui.icons.Icon
@@ -105,7 +107,7 @@ fun BrowserBottomBar(
   backdrop: LiquidGlassBackdrop? = null,
   extraActions: List<BrowserBottomBarAction> = emptyList(),
   deleteIcon: AppIcon = Icons.RoundedFilled.Delete,
-  deleteLabel: String = "Delete",
+  deleteLabel: String = stringResource(R.string.delete),
 ) {
   val configuration = LocalConfiguration.current
   val isTablet = configuration.smallestScreenWidthDp >= 600
@@ -249,9 +251,7 @@ fun BrowserBottomBar(
               listOf(
                 BarLayoutParams(56.dp, 28.dp, 12.dp, 10.dp, 4.dp, 16.dp, 6.dp), // Large (Compact vertical)
                 BarLayoutParams(48.dp, 24.dp, 10.dp, 8.dp, 4.dp, 12.dp, 6.dp), // Medium (Compact vertical)
-                BarLayoutParams(42.dp, 22.dp, 8.dp, 6.dp, 2.dp, 8.dp, 4.dp), // Small (Compact vertical)
-                BarLayoutParams(36.dp, 18.dp, 6.dp, 4.dp, 2.dp, 6.dp, 4.dp), // Tiny (Compact vertical)
-                BarLayoutParams(32.dp, 18.dp, 2.dp, 4.dp, 2.dp, 4.dp, 2.dp), // Narrow
+                BarLayoutParams(48.dp, 24.dp, 4.dp, 4.dp, 2.dp, 4.dp, 2.dp),
               )
             options.firstOrNull { opt ->
               val totalWidth =
@@ -265,9 +265,7 @@ fun BrowserBottomBar(
               listOf(
                 BarLayoutParams(56.dp, 28.dp, 12.dp, 10.dp, 8.dp, 16.dp, 12.dp), // Large
                 BarLayoutParams(48.dp, 24.dp, 10.dp, 8.dp, 6.dp, 12.dp, 10.dp), // Medium
-                BarLayoutParams(42.dp, 22.dp, 8.dp, 6.dp, 4.dp, 8.dp, 8.dp), // Small
-                BarLayoutParams(36.dp, 18.dp, 6.dp, 4.dp, 4.dp, 6.dp, 6.dp), // Tiny
-                BarLayoutParams(32.dp, 18.dp, 2.dp, 4.dp, 4.dp, 4.dp, 4.dp), // Narrow
+                BarLayoutParams(48.dp, 24.dp, 4.dp, 4.dp, 4.dp, 4.dp, 4.dp),
               )
             options.firstOrNull { opt ->
               val totalWidth =
@@ -288,19 +286,17 @@ fun BrowserBottomBar(
               vertical = layoutParams.surfacePaddingVertical,
             ),
       ) {
-        LiquidGlassSurface(
-          shape = RoundedCornerShape(percent = 100),
-          style = LiquidGlassStyle.MiniPlayer,
-          glassColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.30f),
-          fallbackColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+        LiquidGlassEditingBarSurface(
           backdrop = backdrop,
         ) {
           Row(
             modifier =
-              Modifier.padding(
-                horizontal = layoutParams.rowPaddingHorizontal,
-                vertical = layoutParams.rowPaddingVertical,
-              ),
+              Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(
+                  horizontal = layoutParams.rowPaddingHorizontal,
+                  vertical = layoutParams.rowPaddingVertical,
+                ),
             horizontalArrangement = Arrangement.spacedBy(layoutParams.spacing),
             verticalAlignment = Alignment.CenterVertically,
           ) {
@@ -308,7 +304,7 @@ fun BrowserBottomBar(
               effectiveShowCopy,
               onCopyClick,
               Icons.RoundedFilled.ContentCopy,
-              "Copy",
+              stringResource(R.string.ui_copy),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
@@ -316,7 +312,7 @@ fun BrowserBottomBar(
               effectiveShowMove,
               onMoveClick,
               Icons.RoundedFilled.DriveFileMove,
-              "Move",
+              stringResource(R.string.snapshot_move),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
@@ -324,7 +320,7 @@ fun BrowserBottomBar(
               effectiveShowDownscale,
               onDownscaleClick,
               Icons.RoundedFilled.FitScreen,
-              "Compressor",
+              stringResource(R.string.ui_compressor),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
@@ -332,7 +328,7 @@ fun BrowserBottomBar(
               effectiveShowRename,
               onRenameClick,
               Icons.RoundedFilled.DriveFileRenameOutline,
-              "Rename",
+              stringResource(R.string.rename),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
@@ -340,7 +336,7 @@ fun BrowserBottomBar(
               effectiveShowPlayNext,
               onPlayNextClick ?: {},
               Icons.RoundedFilled.SkipNext,
-              "Play Next",
+              stringResource(R.string.video_swipe_play_next),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
@@ -348,7 +344,7 @@ fun BrowserBottomBar(
               effectiveShowAddToQueue,
               onAddToQueueClick ?: {},
               Icons.RoundedFilled.QueueMusic,
-              "Add to Queue",
+              stringResource(R.string.video_swipe_add_queue),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )
@@ -356,7 +352,7 @@ fun BrowserBottomBar(
               effectiveShowAddToPlaylist,
               onAddToPlaylistClick,
               Icons.RoundedFilled.PlaylistAdd,
-              "Add to Playlist",
+              stringResource(R.string.ui_add_to_playlist),
               layoutParams.buttonSize,
               layoutParams.iconSize,
             )

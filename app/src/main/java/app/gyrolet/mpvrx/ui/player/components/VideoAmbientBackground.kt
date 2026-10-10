@@ -130,9 +130,12 @@ fun rememberVideoAmbientFrame(
   orientation: Int,
   isSurfaceReadyProvider: () -> Boolean,
   isPlayingProvider: () -> Boolean,
+  retainFrameWhenInactive: Boolean = false,
   fallbackFrameProvider: suspend (Int) -> Bitmap?,
 ): VideoAmbientFrame {
-  var state by remember { mutableStateOf(VideoAmbientFrame()) }
+  var state by remember(surfaceView, playbackGeneration, hdrScreenMode, orientation) {
+    mutableStateOf(VideoAmbientFrame())
+  }
   val currentIsSurfaceReadyProvider by rememberUpdatedState(isSurfaceReadyProvider)
   val currentIsPlayingProvider by rememberUpdatedState(isPlayingProvider)
   val currentFallbackFrameProvider by rememberUpdatedState(fallbackFrameProvider)
@@ -145,14 +148,15 @@ fun rememberVideoAmbientFrame(
     playbackGeneration,
     hdrScreenMode,
     orientation,
+    retainFrameWhenInactive,
   ) {
-    state = VideoAmbientFrame()
+    if (!retainFrameWhenInactive) state = VideoAmbientFrame()
     if (!active) {
       return@LaunchedEffect
     }
 
     lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-      state = VideoAmbientFrame()
+      if (!retainFrameWhenInactive) state = VideoAmbientFrame()
       val pipeline = VideoAmbientPipeline()
       var unsupported = false
       try {
@@ -174,7 +178,7 @@ fun rememberVideoAmbientFrame(
         }
       } finally {
         pipeline.close()
-        if (!unsupported) state = VideoAmbientFrame()
+        if (!unsupported && !retainFrameWhenInactive) state = VideoAmbientFrame()
       }
     }
   }

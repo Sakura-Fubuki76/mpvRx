@@ -1,6 +1,30 @@
+import com.android.build.api.instrumentation.AsmClassVisitorFactory
+import com.android.build.api.instrumentation.ClassContext
+import com.android.build.api.instrumentation.ClassData
+import com.android.build.api.instrumentation.InstrumentationParameters
+import com.android.build.api.instrumentation.InstrumentationScope
 import com.android.build.api.variant.FilterConfiguration
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.commons.ClassRemapper
+import org.objectweb.asm.commons.Remapper
 import java.util.Properties
+
+// SMBJ-RPC uses a desktop-only exception for malformed replies. Remap the dependency's
+// references before D8/R8 so decoding failures stay catchable IOExceptions on Android.
+// This fixes the missing runtime type instead of suppressing R8's missing-class diagnostic.
+abstract class SmbRpcExceptionCompatibility : AsmClassVisitorFactory<InstrumentationParameters.None> {
+  override fun isInstrumentable(classData: ClassData): Boolean =
+    classData.className.startsWith("com.rapid7.client.dcerpc.")
+
+  override fun createClassVisitor(classContext: ClassContext, nextClassVisitor: ClassVisitor): ClassVisitor =
+    ClassRemapper(nextClassVisitor, object : Remapper() {
+      override fun map(internalName: String): String =
+        if (internalName == "java/rmi/UnmarshalException") {
+          "app/gyrolet/mpvrx/data/network/client/SmbRpcDecodeException"
+        } else internalName
+    })
+}
 
 val localProperties =
   Properties().apply {
@@ -34,6 +58,15 @@ plugins {
   alias(libs.plugins.ksp)
   alias(libs.plugins.room)
   alias(libs.plugins.ktlint)
+}
+
+androidComponents {
+  onVariants(selector().all()) { variant ->
+    variant.instrumentation.transformClassesWith(
+      SmbRpcExceptionCompatibility::class.java,
+      InstrumentationScope.ALL,
+    ) {}
+  }
 }
 
 android {
@@ -256,7 +289,6 @@ dependencies {
   implementation(libs.androidx.ui.graphics)
   implementation(libs.androidx.material3.android)
   implementation(libs.google.material)
-  implementation(libs.androidx.compose.material)
   implementation(libs.androidx.ui.tooling.preview)
   debugImplementation(libs.androidx.ui.tooling)
   debugImplementation(libs.leakcanary.android)
@@ -264,14 +296,11 @@ dependencies {
   implementation(libs.androidx.appcompat)
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.core.splashscreen)
-  implementation(libs.crashx)
   implementation(libs.kmp.vibrate)
   implementation(libs.androidx.compose.constraintlayout)
-  implementation(libs.androidx.preference.ktx)
   implementation(libs.androidx.constraintlayout)
   implementation(libs.composables.material.symbols.rounded.filled.android)
   implementation(libs.composables.material.symbols.rounded.filled.cmp)
-  implementation(libs.androidx.compose.animation.graphics)
   implementation(libs.mediasession)
   implementation(libs.androidx.documentfile)
   implementation(libs.androidx.palette)
@@ -316,6 +345,13 @@ dependencies {
 
   // Network protocol libraries
   implementation(libs.smbj)
+  implementation(libs.dcerpc) {
+    // Reuse the existing SMBJ/crypto stack and use Android's Guava flavor.
+    exclude(group = "com.hierynomus", module = "smbj")
+    exclude(group = "org.bouncycastle", module = "bcprov-jdk18on")
+    exclude(group = "com.google.guava", module = "guava")
+  }
+  implementation(libs.guava)
   implementation(libs.commons.net)
   implementation(libs.jsch)
   implementation(libs.sardine.android) {
@@ -323,12 +359,12 @@ dependencies {
   }
   implementation(libs.libarchive.android)
   implementation(libs.nanohttpd)
-  implementation(libs.lazycolumnscrollbar)
   implementation(libs.reorderable)
   implementation(libs.androidx.biometric)
   implementation(libs.telephoto.zoomable)
   implementation(libs.haze.blur)
-  implementation(libs.haze.glass)
+  implementation(libs.kyant.backdrop)
+  implementation(libs.kyant.shapes)
 
   // libtorrent4j's Java API plus the native library for every enabled APK ABI.
   implementation(libs.libtorrent4j)

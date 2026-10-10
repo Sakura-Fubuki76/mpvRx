@@ -1,4 +1,9 @@
 <resources>
+  <string name="pref_liquid_glass_material">Glass material</string>
+  <string name="pref_liquid_glass_frost">Frost</string>
+  <string name="generic_increase">Increase</string>
+  <string name="generic_decrease">Decrease</string>
+  <string name="generic_remove_from_favorites">Remove from favorites</string>
   <string name="app_name" translatable="false">mpvRx</string>
   <string name="generic_reset">Reset</string>
   <string name="generic_back">Back</string>
@@ -30,6 +35,30 @@
   <string name="pref_appearance_liquid_glass_title">Liquid glass</string>
   <string name="pref_appearance_liquid_glass_summary">Use translucent, refractive surfaces for the mini player and navigation</string>
   <string name="pref_appearance_liquid_glass_summary_unavailable">Available on Android 12 and above</string>
+  <string name="pref_appearance_category_liquid_glass">Liquid glass</string>
+  <string name="pref_liquid_glass_optics">Optics</string>
+  <string name="pref_liquid_glass_opacity">Backdrop opacity</string>
+  <string name="pref_liquid_glass_blur">Blur strength</string>
+  <string name="pref_liquid_glass_refraction_height">Refraction edge width</string>
+  <string name="pref_liquid_glass_refraction_amount">Refraction strength</string>
+  <string name="pref_liquid_glass_depth">Depth effect</string>
+  <string name="pref_liquid_glass_chromatic">Chromatic aberration</string>
+  <string name="pref_liquid_glass_lens_unavailable">Refraction requires Android 13 or newer</string>
+  <string name="pref_liquid_glass_colors">Color</string>
+  <string name="pref_liquid_glass_vibrancy">Vibrancy</string>
+  <string name="pref_liquid_glass_highlights">Highlights</string>
+  <string name="pref_liquid_glass_highlight_style">Highlight style</string>
+  <string name="pref_liquid_glass_component_default">Component default</string>
+  <string name="pref_liquid_glass_highlight_ambient">Ambient</string>
+  <string name="pref_liquid_glass_highlight_plain">Plain</string>
+  <string name="pref_liquid_glass_highlight_strength">Highlight strength</string>
+  <string name="pref_liquid_glass_highlight_width">Highlight width</string>
+  <string name="pref_liquid_glass_highlight_blur">Highlight softness</string>
+  <string name="pref_liquid_glass_shadows">Shadows</string>
+  <string name="pref_liquid_glass_shadow_strength">Shadow strength</string>
+  <string name="pref_liquid_glass_shadow_radius">Shadow softness</string>
+  <string name="pref_liquid_glass_inner_shadow_strength">Inner shadow strength</string>
+  <string name="pref_liquid_glass_inner_shadow_radius">Inner shadow softness</string>
   <string name="pref_appearance_system_font_title">Use system font</string>
   <string name="pref_appearance_system_font_summary">Use the Android system typeface across mpvRx instead of Google Sans</string>
   <string name="pref_appearance_app_font_title">App font</string>
@@ -64,6 +93,7 @@
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Keep player control button backgrounds dark in light, dark, and automatic themes</string>
   <string name="pref_appearance_category_file_browser">File Browser</string>
   <string name="pref_appearance_category_thumbnails">Thumbnails</string>
+  <string name="pref_appearance_category_navigation">Navigation</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Show label for new unplayed videos</string>
   <string name="pref_appearance_show_unplayed_old_video_label_summary">Display a \"New\" label on videos added within specified days that have never been played</string>
   <string name="pref_appearance_unplayed_old_video_days_title">Days threshold for new video label</string>
@@ -80,15 +110,10 @@
   <string name="pref_appearance_thumbnail_position_summary">Capture the frame at %1$d%% of the video</string>
   <string name="pref_appearance_show_network_thumbnails_title">Show network thumbnails (Experimental)</string>
   <string name="pref_appearance_show_network_thumbnails_summary">Generate thumbnails for network streams (May increase data usage on mobile networks)</string>
-  <string name="pref_appearance_category_navigation">Navigation</string>
   <string name="pref_nav_home_title">Show Home tab</string>
   <string name="pref_nav_home_summary">Show or hide Home in the bottom navigation bar</string>
   <string name="pref_nav_music_title">Show Music tab</string>
   <string name="pref_nav_music_summary">Show or hide Music in the bottom navigation bar</string>
-  <string name="pref_nav_recents_title">Show Recents tab</string>
-  <string name="pref_nav_recents_summary">Show or hide Recents in the bottom navigation bar</string>
-  <string name="pref_nav_playlists_title">Show Playlists tab</string>
-  <string name="pref_nav_playlists_summary">Show or hide Playlists in the bottom navigation bar</string>
   <string name="pref_nav_network_title">Show Network tab</string>
   <string name="pref_nav_network_summary">Show or hide Network in the bottom navigation bar</string>
   <string name="pref_nav_jellyfin_title">Show Jellyfin tab</string>
@@ -295,8 +320,8 @@
   <string name="pref_gesture_double_tap_right_title">Double tap (right)</string>
   <string name="pref_gesture_use_single_tap_for_center_title">Use single tap for center gesture</string>
   <string name="pref_gesture_use_single_tap_for_center_summary">Use a single tap in the center for gestures (like play/pause) instead of a double tap.</string>
-  <string name="pref_gesture_center_vertical_subtitle_position_title">Hold and drag moves subtitles</string>
-  <string name="pref_gesture_center_vertical_subtitle_position_summary">Hold in the center, then drag up or down to move subtitle position</string>
+  <string name="pref_gesture_center_vertical_subtitle_position_title">Hold and drag subtitles</string>
+  <string name="pref_gesture_center_vertical_subtitle_position_summary">Press and hold on a subtitle, then drag up or down to move it. Normal swipes still open the playlist.</string>
   <string name="pref_gesture_view_title">View</string>
   <string name="pref_gesture_double_tap_custom_info">You can bind custom actions to these gestures in input.conf using the following key codes:\n\nLeft: MBTN_LEFT_DBL\nCenter: MBTN_MID_DBL\nRight: MBTN_RIGHT_DBL</string>
   <string name="pref_gesture_media_title">Media controls</string>
@@ -362,7 +387,6 @@
   <string name="pref_audio_drc_title">Dynamic range compression (DRC)</string>
   <string name="pref_audio_drc_summary">Compress audio dynamic range to boost quiet dialogue and tame loud sounds</string>
   <string name="pref_audio_effects">Audio processing</string>
-  <string name="toast_file_not_found">File no longer exists</string>
   <string name="pref_music_tabs_title">Music Library Tabs</string>
   <string name="pref_music_visualizer_title">Music visualizer</string>
   <string name="pref_music_visualizer_summary">Show an audio-reactive visualizer while playing music</string>
@@ -764,7 +788,7 @@
   <string name="playlist_xtream_password">Password</string>
   <string name="playlist_xtream_show_password">Show password</string>
   <string name="playlist_xtream_hide_password">Hide password</string>
-  <string name="playlist_xtream_url_error">Enter a complete http:// or https:// server URL without credentials, query parameters, or a fragment.</string>
+  <string name="playlist_xtream_url_error">Enter a server address (host:port), HTTP(S) URL, or Xtream get.php / player_api.php link.</string>
   <string name="playlist_xtream_connect">Connect and Import</string>
   <string name="playlist_xtream_import_success">Xtream playlist saved in Playlists</string>
   <string name="playlist_xtream_import_error">Couldn’t add Xtream playlist: %1$s</string>
@@ -1208,7 +1232,6 @@
   <string name="compressor_version">Compressor v%1$s</string>
   <string name="compressor_device">Device: %1$s %2$s</string>
   <string name="compressor_android_version">Android: %1$s</string>
-  <string name="subtitle_position_update">Subtitle Position: %1$d</string>
   <string name="hdr_screen_output_update">HDR Screen Output: %1$s</string>
   <string name="ambient_style_update">Ambient Style: %1$s</string>
   <string name="online_subtitle_episode">Episode %1$d</string>
@@ -1279,6 +1302,13 @@
   <string name="hall_of_fame_all_period">Across the project history</string>
   <string name="hall_of_fame_view_profile">View %1$s on GitHub</string>
   <string name="hall_of_fame_view_github">View on GitHub</string>
+  <string name="hall_of_fame_subtitle">Celebrating the top contributors</string>
+  <string name="hall_of_fame_featured_subtitle">Amazing people making this project better</string>
+  <string name="hall_of_fame_view_all">View All</string>
+  <string name="hall_of_fame_contributor_badge">Contributor</string>
+  <string name="hall_of_fame_tester_badge">Tester</string>
+  <string name="hall_of_fame_show_section">Show</string>
+  <string name="hall_of_fame_hide_section">Hide</string>
   <plurals name="hall_of_fame_commit_count">
     <item quantity="one">%1$d commit</item>
     <item quantity="other">%1$d commits</item>
@@ -1801,13 +1831,6 @@
   <string name="ui_enable_ass_override">Enable ASS Override</string>
   <string name="ui_filter_presets">Filter Presets</string>
   <string name="ui_yt_dlp_manager">yt-dlp Manager</string>
-  <string name="ui_quick_quality_selection">Quick Quality Selection</string>
-  <string name="ui_codec_preset">Codec Preset</string>
-  <string name="ui_quick_subtitle_config">Quick Subtitle Config</string>
-  <string name="ui_download_subtitles">Download Subtitles</string>
-  <string name="ui_fetch_subs_from_stream_sources">Fetch subs from stream sources</string>
-  <string name="ui_auto_generated_captions">Auto-Generated Captions</string>
-  <string name="ui_include_auto_captions_transcripts">Include auto-captions/transcripts</string>
   <string name="ui_install_core">Install Core</string>
   <string name="ui_update_core">Update Core</string>
   <string name="ui_aspect_ratio">Aspect Ratio</string>
@@ -1919,7 +1942,6 @@
   <string name="ui_drag_disabled">Drag disabled</string>
   <string name="ui_buttons_exported_successfully">Buttons exported successfully</string>
   <string name="ui_anime4k_shaders_options">Anime4K Shaders Options</string>
-  <string name="ui_base_storage_folder">Base Storage Folder</string>
   <string name="ui_script_name">Script name</string>
   <string name="ui_please_enter_a_file_name">Please enter a file name</string>
   <string name="ui_failed_to_open_output_stream">Failed to open output stream</string>
@@ -1963,7 +1985,6 @@
   <string name="ui_switch_to_nightly">Switch to Nightly</string>
   <string name="ui_playback_defaults">Playback Defaults</string>
   <string name="ui_maximum_quality">Maximum Quality</string>
-  <string name="ui_automatic">Automatic</string>
   <string name="ui_checking_yt_dlp">Checking yt-dlp</string>
   <string name="ui_yt_dlp_not_installed">yt-dlp Not Installed</string>
   <string name="ui_yt_dlp_stable_release">Stable Release</string>
@@ -2037,7 +2058,6 @@
   <string name="oss_fsaf_description">Storage Access Framework helpers for file and tree operations.</string>
   <string name="oss_truetype_parser_description">Reads font metadata for subtitle font handling.</string>
   <string name="oss_compose_preference_description">Preference UI components used across settings screens.</string>
-  <string name="oss_lazycolumnscrollbar_description">Scrollbar component for long Compose lists.</string>
   <string name="oss_reorderable_description">Drag-and-drop list reordering for Compose surfaces.</string>
   <string name="oss_seeker_description">A customizable seekbar component for Jetpack Compose.</string>
   <string name="oss_sora_editor_description">A powerful, efficient code editor for Android with TextMate highlighting.</string>
@@ -2049,7 +2069,6 @@
   <string name="oss_androidx_documentfile_description">Abstraction layer for document storage access.</string>
   <string name="oss_androidx_media_description">Android media session and playback APIs.</string>
   <string name="oss_androidx_palette_description">Extracts dominant and vibrant color palettes from images.</string>
-  <string name="oss_androidx_preference_description">UI and storage for app preference screens.</string>
   <string name="oss_androidx_profile_installer_description">Prefetches classes and methods for faster app startup.</string>
   <string name="oss_google_material_description">Material Design components and theming library.</string>
   <string name="oss_google_cast_description">Chromecast framework for media casting.</string>
@@ -2117,6 +2136,14 @@
   <string name="syncplay_password_optional">Password (optional)</string>
   <string name="syncplay_error">Error: %1$s</string>
   <string name="syncplay_connection_failed">Connection failed</string>
+  <string name="syncplay_failure_dns">Could not find the server address. Check the host name and your network’s DNS settings.</string>
+  <string name="syncplay_failure_refused">The server refused the connection. Check the port and that the Syncplay server is running.</string>
+  <string name="syncplay_failure_timeout">The server did not respond in time. Check your connection and whether this port is blocked.</string>
+  <string name="syncplay_failure_unreachable">The server is unreachable on this network. Try another Wi-Fi or mobile connection.</string>
+  <string name="syncplay_failure_handshake">The connection opened, but the server did not complete Syncplay login. Check that this is a Syncplay server and port.</string>
+  <string name="syncplay_failure_closed">The server closed the connection. Check the server settings and try connecting again.</string>
+  <string name="syncplay_failure_protocol">The server sent an invalid Syncplay response. Check the server address and port.</string>
+  <string name="syncplay_failure_network">Could not connect to the Syncplay server. Check your network, server address and port.</string>
   <string name="syncplay_connect">Connect</string>
   <string name="syncplay_connecting">Connecting…</string>
   <string name="syncplay_player_status">Syncplay: %1$s (%2$d users)</string>
@@ -2272,6 +2299,9 @@
   <string name="pref_paxsenix_api_key">PaxSenix API key</string>
   <string name="pref_paxsenix_api_key_summary">Unlocks the Spotify and Musixmatch routes</string>
   <string name="pref_paxsenix_api_key_dialog_desc">Paste your PaxSenix API key. Leave it empty to use only the routes that need no key.</string>
+  <string name="pref_lyrics_sources_category">Online Lyrics</string>
+  <string name="pref_lyrics_auto_fetch_online">Automatically fetch online lyrics</string>
+  <string name="pref_lyrics_auto_fetch_online_summary">Search online providers only when no embedded or local lyrics are available. You can still search online manually.</string>
   <string name="pref_lyrics_translation_category">Lyrics Translation &amp; Romanization</string>
   <string name="pref_lyrics_auto_translate">Auto-translate foreign lyrics</string>
   <string name="pref_lyrics_auto_translate_summary">Automatically translate foreign language lyrics</string>
@@ -2695,12 +2725,9 @@
 
   <!-- Snapshots (frame capture) -->
   <string name="ui_snapshots">Snapshots</string>
-  <string name="pref_nav_snapshots_title">Show Snapshots tab</string>
-  <string name="pref_nav_snapshots_summary">Show or hide Snapshots in the bottom navigation bar</string>
   <string name="ui_profile">Profile</string>
   <string name="pref_nav_profile_title">Show Profile tab</string>
   <string name="pref_nav_profile_summary">Combine Recents, Playlists and Snapshots into a single tab</string>
-  <string name="pref_nav_in_profile_tab_summary">Included in the Profile tab</string>
   <string name="profile_view_all">View all</string>
   <string name="profile_edit">Edit profile</string>
   <string name="profile_display_name">Display name</string>
@@ -3043,4 +3070,37 @@
     <string name="anime_artwork_tmdb_id">TMDB title ID</string>
     <string name="anime_artwork_tv">TV series</string>
     <string name="anime_artwork_movie">Movie</string>
+  <string name="navbar_glow_title">Glass Glow</string>
+  <string name="navbar_glow_summary">Show navbar rim lighting and touch glow</string>
+  <string name="pref_seekbar_preview_skip_markers">Skip markers</string>
+  <string name="debug_logs_save_to_config">Save logs to config folder</string>
+  <string name="debug_logs_config_required">Select a configuration folder in Advanced Settings first.</string>
+  <string name="debug_logs_config_saved">Logs saved to %1$s in your configuration folder.</string>
+  <string name="debug_logs_config_save_failed">Could not save logs. Check access to your configuration folder or select it again.</string>
+  <string name="pref_gesture_show_seekbar_horizontal_title">Show seekbar when controls are hidden</string>
+  <string name="pref_gesture_show_seekbar_horizontal_summary">During horizontal seeking, show the seekbar even when player controls are hidden. The time indicator is unaffected.</string>
+  <string name="network_server_no_matches">No matching addresses. You can still type one.</string>
+  <string name="network_server_none_found">No advertised servers found. Check that both devices are on the same network, try again, or enter the address manually.</string>
+  <string name="network_server_saved">Saved address</string>
+  <string name="network_server_nearby">Nearby server</string>
+  <string name="network_server_this_device">This device on the local network</string>
+  <string name="network_server_loopback">This device (loopback)</string>
+  <string name="network_server_address_only">Address only</string>
+  <string name="network_server_scan">Find nearby servers</string>
+  <string name="network_server_scanning">Looking for nearby servers…</string>
+  <string name="network_server_scan_unavailable">Discovery is unavailable or incomplete. Choose a saved address or type one.</string>
+  <string name="network_server_discovery_hint">Finds servers that advertise on your local network. Device addresses are shortcuts, not detected servers. Credentials are entered below.</string>
+  <string name="network_smb_share_folder">Share / folder (optional)</string>
+  <string name="network_smb_share_hint">Leave empty or use / to browse all shared folders. Enter /Media or /Media/Movies to open a specific folder.</string>
+  <string name="network_smb_username_hint">Use your username or DOMAIN\\username for a domain account.</string>
+  <string name="player_zoom_overlays_follow">Zoom player OSD &amp; subtitles with video</string>
+  <string name="player_zoom_overlays_follow_summary">Subtitles and statistics pages 1–6 scale with video zoom. Off keeps them at a fixed size.</string>
+  <string name="pref_app_icon_title">App icon</string>
+  <string name="pref_app_icon_summary">Choose the icon shown by your launcher</string>
+  <string name="pref_app_icon_description">Select a launcher icon. More designs can be added in future updates.</string>
+  <string name="app_icon_purple">Purple ribbon</string>
+  <string name="app_icon_purple_description">New gradient mpvRx logo (default)</string>
+  <string name="app_icon_classic">Classic</string>
+  <string name="app_icon_classic_description">Original mpvRx launcher icon</string>
+  <string name="app_icon_change_failed">Unable to change the launcher icon.</string>
 </resources>

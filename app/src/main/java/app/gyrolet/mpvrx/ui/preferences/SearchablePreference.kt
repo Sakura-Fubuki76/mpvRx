@@ -100,11 +100,41 @@ object SearchablePreferences {
         SearchablePreference(
           titleRes = R.string.pref_appearance_liquid_glass_title,
           summaryRes = R.string.pref_appearance_liquid_glass_summary,
-          keywords = listOf("liquid glass", "glass", "blur", "translucent", "mini player", "navigation"),
+          keywords = listOf("liquid glass", "glass", "blur", "translucent", "navigation", "seekbar", "switch"),
           category = "Appearance",
-          screen = AppearancePreferencesScreen,
+          screen = LiquidGlassPreferencesScreen,
         ),
       )
+      listOf(
+        R.string.pref_liquid_glass_opacity to listOf("opacity", "transparency", "backdrop"),
+        R.string.pref_liquid_glass_frost to listOf("frost", "blur", "frosted"),
+        R.string.pref_liquid_glass_refraction_height to listOf("refraction", "lens", "edge", "width"),
+        R.string.pref_liquid_glass_refraction_amount to listOf("refraction", "lens", "strength"),
+        R.string.pref_liquid_glass_depth to listOf("depth", "lens"),
+        R.string.pref_liquid_glass_chromatic to listOf("chromatic", "aberration", "dispersion", "rainbow"),
+        R.string.pref_liquid_glass_vibrancy to listOf("vibrancy", "color"),
+        R.string.player_sheets_filters_Saturation to listOf("saturation", "color"),
+        R.string.player_sheets_filters_brightness to listOf("brightness", "color"),
+        R.string.player_sheets_filters_contrast to listOf("contrast", "color"),
+        R.string.pref_liquid_glass_highlight_style to listOf("highlight", "style", "ambient", "plain"),
+        R.string.pref_liquid_glass_highlight_strength to listOf("highlight", "strength"),
+        R.string.pref_liquid_glass_highlight_width to listOf("highlight", "width", "rim"),
+        R.string.pref_liquid_glass_highlight_blur to listOf("highlight", "blur", "softness"),
+        R.string.pref_liquid_glass_shadow_strength to listOf("shadow", "strength"),
+        R.string.pref_liquid_glass_shadow_radius to listOf("shadow", "blur", "softness"),
+        R.string.pref_liquid_glass_inner_shadow_strength to listOf("inner shadow", "strength"),
+        R.string.pref_liquid_glass_inner_shadow_radius to listOf("inner shadow", "blur", "softness"),
+      ).forEach { (titleRes, keywords) ->
+        add(
+          SearchablePreference(
+            titleRes = titleRes,
+            keywords = listOf("liquid glass", "kyant") + keywords,
+            category = "Appearance",
+            screen = LiquidGlassPreferencesScreen,
+            targetRes = titleRes,
+          ),
+        )
+      }
       add(
         SearchablePreference(
           titleRes = R.string.pref_appearance_app_font_title,
@@ -1443,6 +1473,7 @@ object SearchablePreferences {
         anchorItemIndex = 7,
         SearchEntrySpec(R.string.pref_nav_music_title, listOf("music", "audio", "tab", "navigation")),
         SearchEntrySpec(R.string.pref_nav_profile_title, listOf("profile", "you", "library", "tab", "navigation")),
+        SearchEntrySpec(R.string.navbar_glow_title, listOf("glass", "glow", "navbar", "rim", "highlight", "liquid glass")),
         SearchEntrySpec(R.string.pref_nav_network_title, listOf("network", "stream", "tab", "navigation")),
         SearchEntrySpec(R.string.pref_nav_jellyfin_title, listOf("jellyfin", "server", "tab", "navigation")),
         SearchEntrySpec(R.string.pref_quick_play_fab_title, listOf("quick play", "fab", "floating button", "random")),
@@ -1757,7 +1788,7 @@ object SearchablePreferences {
         keywords =
           listOf(
             "theme dark light system dynamic amoled font names labels thumbnails frame quality position",
-            "navigation home music recents playlists network quick play fab auto scroll watched threshold",
+            "navigation home music profile network jellyfin quick play fab auto scroll",
             "grid columns list folder cards video cards chips path extension duration resolution framerate subtitle",
           ),
         category = "Appearance",
@@ -1886,13 +1917,6 @@ object SearchablePreferences {
         screen = AboutScreen,
       ),
     )
-
-  fun positionOnScreen(preference: SearchablePreference): Pair<Int, Int> {
-    val screenPreferences = staticPreferences.filter { it.screen == preference.screen }
-    if (screenPreferences.isEmpty()) return 0 to 1
-    val ordinal = screenPreferences.indexOf(preference).coerceAtLeast(0)
-    return ordinal to screenPreferences.size
-  }
 
   private data class SearchField(
     val value: String,

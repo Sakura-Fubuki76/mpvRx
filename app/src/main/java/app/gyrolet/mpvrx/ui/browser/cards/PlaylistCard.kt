@@ -72,7 +72,6 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvContextMenu
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
-import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -119,15 +118,18 @@ fun PlaylistCard(
       )
     }
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
-  val firstItem by
+  val previewItems by
     remember(repository, playlist.id) {
-      repository.observeFirstPlaylistItem(playlist.id)
-    }.collectAsState(initial = null)
+      repository.observePlaylistPreviewItems(playlist.id, 2)
+    }.collectAsState(initial = emptyList())
+  val firstItem = previewItems.firstOrNull()
+  val secondItem = previewItems.getOrNull(1)
   val density = LocalDensity.current
   val thumbnailWidthPx =
     with(density) {
       (if (isGridMode) 480.dp else 160.dp).roundToPx()
     }
+  val isAudio = playlist.isAudio
   val thumbnailHeightPx =
     if (isGridMode) {
       (thumbnailWidthPx * 9 / 16).coerceAtLeast(1)
@@ -157,64 +159,46 @@ fun PlaylistCard(
       value = thumbnail
       if (thumbnail != null) return@produceState
       val item = firstItem ?: return@produceState
-      if (app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia.isPlaybackUri(item.filePath)) return@produceState
       value =
-        withContext(Dispatchers.IO) {
-          try {
-            val path = item.filePath.substringBefore('|')
-            val uri =
-              Uri.parse(path).let {
-                if (it.scheme.isNullOrBlank()) Uri.fromFile(File(path)) else it
-              }
-            val isAudio = FileTypeUtils.isAudioFile(File(path))
-            val suppliedArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, item.tvgLogo)
-            val media =
-              Video(
-                id = item.id.toLong(),
-                title = item.fileName,
-                displayName = item.fileName,
-                path = path,
-                uri = uri,
-                duration = 0L,
-                durationFormatted = "",
-                size = item.fileSize ?: 0L,
-                sizeFormatted = "",
-                dateModified = item.addedAt / 1000L,
-                dateAdded = item.addedAt / 1000L,
-                mimeType = if (isAudio) "audio/*" else "video/*",
-                bucketId = "",
-                bucketDisplayName = "",
-                width = 0,
-                height = 0,
-                fps = 0f,
-                resolution = "",
-                isAudio = isAudio,
-              )
+        resolvePlaylistItemArtwork(
+          context = context,
+          thumbnailRepository = thumbnailRepository,
+          item = item,
+          isAudio = isAudio,
+          thumbnailWidthPx = thumbnailWidthPx,
+          thumbnailHeightPx = thumbnailHeightPx,
+        )
+    }
 
-            when {
-              // Album art is the canonical visual for audio and may be the only image available.
-              isAudio ->
-                suppliedArtwork
-                  ?: thumbnailRepository.getThumbnail(media, thumbnailWidthPx, thumbnailHeightPx)
-
-              // For local videos, prefer a real frame generated at the playlist card's target size.
-              item.licenseType.isNullOrBlank() &&
-                !path.startsWith("http://", ignoreCase = true) &&
-                !path.startsWith("https://", ignoreCase = true) ->
-                thumbnailRepository.getThumbnail(media, thumbnailWidthPx, thumbnailHeightPx)
-                  ?: suppliedArtwork
-
-              // Network/DRM entries commonly provide their intended poster through tvgLogo.
-              else ->
-                suppliedArtwork
-                  ?: thumbnailRepository.getThumbnail(media, thumbnailWidthPx, thumbnailHeightPx)
-            }
-          } catch (error: CancellationException) {
-            throw error
-          } catch (_: Exception) {
-            null
-          }
-        }
+  val resolvedSecondThumbnail by
+    produceState<Bitmap?>(
+      initialValue = null,
+      playlist.id,
+      secondItem?.filePath,
+      secondItem?.tvgLogo,
+      secondItem?.addedAt,
+      secondItem?.licenseType,
+      thumbnailWidthPx,
+      thumbnailHeightPx,
+      thumbnailQuality,
+      thumbnailMode,
+      thumbnailFramePosition,
+      showNetworkThumbnails,
+    ) {
+      val item = secondItem
+      if (item == null) {
+        value = null
+        return@produceState
+      }
+      value =
+        resolvePlaylistItemArtwork(
+          context = context,
+          thumbnailRepository = thumbnailRepository,
+          item = item,
+          isAudio = isAudio,
+          thumbnailWidthPx = thumbnailWidthPx,
+          thumbnailHeightPx = thumbnailHeightPx,
+        )
     }
 
   val isFavorites =
@@ -251,6 +235,7 @@ fun PlaylistCard(
   val playlistLabel = stringResource(R.string.ui_playlist)
   val metadata = "$sourceSummary · $playlistLabel"
   val thumbnailBitmap = remember(resolvedThumbnail) { resolvedThumbnail?.asImageBitmap() }
+  val secondThumbnailBitmap = remember(resolvedSecondThumbnail) { resolvedSecondThumbnail?.asImageBitmap() }
   val placeholderIcon =
     when {
       isFavorites && playlist.isAudio -> Icons.RoundedFilled.Favorite
@@ -267,12 +252,13 @@ fun PlaylistCard(
       metadata = metadata,
       itemCount = itemCount,
       thumbnail = thumbnailBitmap,
+      secondThumbnail = secondThumbnailBitmap,
       placeholderIcon = placeholderIcon,
       isSelected = isSelected,
       onClick = onClick,
       onLongClick = onLongClick,
-      onRenameClick = onRenameClick,
-      onDeleteClick = onDeleteClick,
+      onRenameClick = if (isFavorites) null else onRenameClick,
+      onDeleteClick = if (isFavorites) null else onDeleteClick,
       modifier = modifier,
     )
     return
@@ -363,12 +349,79 @@ fun PlaylistCard(
   )
 }
 
+private suspend fun resolvePlaylistItemArtwork(
+  context: android.content.Context,
+  thumbnailRepository: ThumbnailRepository,
+  item: app.gyrolet.mpvrx.database.entities.PlaylistItemEntity,
+  isAudio: Boolean,
+  thumbnailWidthPx: Int,
+  thumbnailHeightPx: Int,
+): Bitmap? {
+  if (app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia.isPlaybackUri(item.filePath)) return null
+  return withContext(Dispatchers.IO) {
+    try {
+      val path = item.filePath.substringBefore('|')
+      val uri =
+        Uri.parse(path).let {
+          if (it.scheme.isNullOrBlank()) Uri.fromFile(File(path)) else it
+        }
+      val suppliedArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, item.tvgLogo)
+      val media =
+        Video(
+          id = item.id.toLong(),
+          title = item.fileName,
+          displayName = item.fileName,
+          path = path,
+          uri = uri,
+          duration = 0L,
+          durationFormatted = "",
+          size = item.fileSize ?: 0L,
+          sizeFormatted = "",
+          dateModified = item.addedAt / 1000L,
+          dateAdded = item.addedAt / 1000L,
+          mimeType = if (isAudio) "audio/*" else "video/*",
+          bucketId = "",
+          bucketDisplayName = "",
+          width = 0,
+          height = 0,
+          fps = 0f,
+          resolution = "",
+          isAudio = isAudio,
+        )
+
+      when {
+        // Album art is the canonical visual for audio and may be the only image available.
+        isAudio ->
+          suppliedArtwork
+            ?: thumbnailRepository.getThumbnail(media, thumbnailWidthPx, thumbnailHeightPx)
+
+        // For local videos, prefer a real frame generated at the playlist card's target size.
+        item.licenseType.isNullOrBlank() &&
+          !path.startsWith("http://", ignoreCase = true) &&
+          !path.startsWith("https://", ignoreCase = true) ->
+          thumbnailRepository.getThumbnail(media, thumbnailWidthPx, thumbnailHeightPx)
+            ?: suppliedArtwork
+
+        // Network/DRM entries commonly provide their intended poster through tvgLogo.
+        else ->
+          suppliedArtwork
+            ?: thumbnailRepository.getThumbnail(media, thumbnailWidthPx, thumbnailHeightPx)
+      }
+    } catch (error: CancellationException) {
+      throw error
+    } catch (_: Exception) {
+      null
+    }
+  }
+}
+
 @Composable
 private fun YouTubePlaylistGridCard(
   displayName: String,
   metadata: String,
   itemCount: Int,
   thumbnail: ImageBitmap?,
+  secondThumbnail: ImageBitmap? = null,
   placeholderIcon: AppIcon,
   isSelected: Boolean,
   onClick: () -> Unit,
@@ -392,25 +445,44 @@ private fun YouTubePlaylistGridCard(
           onClick = onClick,
           onLongClick = onLongClick,
         )
-        .padding(horizontal = 4.dp, vertical = 4.dp),
+        .padding(horizontal = 2.dp, vertical = 2.dp),
   ) {
     // YouTube's playlist tiles read as a small stack instead of a single flat thumbnail.
     Box(
       modifier =
         Modifier
           .fillMaxWidth()
-          .padding(top = 8.dp),
+          .padding(top = if (itemCount > 1) 4.dp else 0.dp),
+      contentAlignment = Alignment.TopCenter,
     ) {
-      Box(
-        modifier =
-          Modifier
-            .align(Alignment.TopCenter)
-            .offset(y = (-7).dp)
-            .fillMaxWidth(0.90f)
-            .height(9.dp)
-            .clip(AppShapeScale.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
-      )
+      if (itemCount > 1) {
+        Box(
+          modifier =
+            Modifier
+              .align(Alignment.TopCenter)
+              .offset(y = (-4).dp)
+              .fillMaxWidth(0.90f)
+              .aspectRatio(16f / 9f)
+              .clip(AppShapeScale.medium)
+              .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+          contentAlignment = Alignment.Center,
+        ) {
+          if (secondThumbnail != null) {
+            Image(
+              bitmap = secondThumbnail,
+              contentDescription = null,
+              modifier = Modifier.fillMaxSize(),
+              contentScale = ContentScale.Crop,
+            )
+            Box(
+              modifier =
+                Modifier
+                  .fillMaxSize()
+                  .background(Color.Black.copy(alpha = 0.25f)),
+            )
+          }
+        }
+      }
 
       Box(
         modifier =
@@ -476,7 +548,7 @@ private fun YouTubePlaylistGridCard(
       }
     }
 
-    Spacer(Modifier.height(8.dp))
+    Spacer(Modifier.height(4.dp))
 
     Row(
       modifier = Modifier.fillMaxWidth(),
@@ -486,7 +558,7 @@ private fun YouTubePlaylistGridCard(
         modifier =
           Modifier
             .weight(1f)
-            .padding(start = 2.dp, top = 1.dp, bottom = 6.dp),
+            .padding(start = 2.dp, top = 0.dp, bottom = 2.dp),
       ) {
         Text(
           text = displayName,
@@ -509,7 +581,7 @@ private fun YouTubePlaylistGridCard(
       Box {
         IconButton(
           onClick = { menuExpanded = true },
-          modifier = Modifier.size(36.dp),
+          modifier = Modifier.size(32.dp),
         ) {
           Icon(
             imageVector = Icons.RoundedFilled.MoreVert,

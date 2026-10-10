@@ -9,7 +9,7 @@ import android.net.Uri
 import android.util.Log
 import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.utils.media.MediaUtils
-import java.util.Locale
+import app.gyrolet.mpvrx.utils.storage.VideoScanUtils
 
 /**
  * Persisted copy of the media library list, so a cold boot can show it immediately.
@@ -115,9 +115,9 @@ internal object MediaLibraryCache {
       path = parts[3],
       uri = Uri.parse(parts[4]),
       duration = duration,
-      durationFormatted = formatDuration(duration),
+      durationFormatted = VideoScanUtils.formatDuration(duration),
       size = size,
-      sizeFormatted = formatFileSize(size),
+      sizeFormatted = MediaUtils.formatFileSize(size),
       dateModified = dateModified,
       dateAdded = dateAdded,
       mimeType = parts[9],
@@ -139,21 +139,4 @@ internal object MediaLibraryCache {
       .replace(RECORD_SEPARATOR, " ")
       .replace('\n', ' ')
       .replace('\r', ' ')
-
-  /** Mirrors MediaFileRepository.formatDuration so cached and freshly scanned rows read alike. */
-  private fun formatDuration(durationMs: Long): String {
-    if (durationMs <= 0) return "0s"
-    val seconds = durationMs / 1000
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-    return when {
-      hours > 0 -> String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, secs)
-      minutes > 0 -> String.format(Locale.getDefault(), "%d:%02d", minutes, secs)
-      else -> "${secs}s"
-    }
-  }
-
-  /** Mirrors MediaFileRepository.formatFileSize. */
-  private fun formatFileSize(bytes: Long): String = MediaUtils.formatFileSize(bytes)
 }

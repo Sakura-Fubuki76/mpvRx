@@ -39,12 +39,12 @@ import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
+import app.gyrolet.mpvrx.ui.components.AppSlider as Slider
 import app.gyrolet.mpvrx.ui.components.IconSwitch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
@@ -158,19 +158,8 @@ fun EqualizerSheet(
 ) {
   val initialFocusRequester =
     rememberTvInitialFocusRequester(requestKey = state.isEnabled)
-  val sheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
-
-  ModalBottomSheet(
+  PlayerSheet(
     onDismissRequest = onDismissRequest,
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surface,
-    scrimColor = BottomSheetDefaults.ScrimColor,
-    sheetMaxWidth = 640.dp,
-    dragHandle = { PlayerSheetDragHandle() },
     modifier = modifier.tvFocusGroup(),
   ) {
     Row(
@@ -196,7 +185,6 @@ fun EqualizerSheet(
       modifier =
         Modifier
           .fillMaxWidth()
-          .weight(1f, fill = false)
           .verticalScroll(rememberScrollState())
           .padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 16.dp),
     ) {

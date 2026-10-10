@@ -86,7 +86,6 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
 import app.gyrolet.mpvrx.ui.update.UpdateViewModel
@@ -145,27 +144,10 @@ object AboutScreen : Screen {
 
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              modifier = Modifier.settingsSearchTarget(R.string.pref_about_title),
-              text = stringResource(id = R.string.pref_about_title),
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.primary,
-            )
-          },
-          navigationIcon = {
-            if (LocalShowSettingsBackArrow.current) {
-              IconButton(onClick = { backstack.popSafely() }) {
-                Icon(
-                  imageVector = Icons.RoundedFilled.ArrowBack,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
-          },
+        SettingsTopAppBar(
+          title = stringResource(id = R.string.pref_about_title),
+          onBack = { backstack.popSafely() },
+          titleModifier = Modifier.settingsSearchTarget(R.string.pref_about_title),
         )
       },
     ) { paddingValues ->
@@ -225,8 +207,13 @@ object AboutScreen : Screen {
                     modifier = Modifier.matchParentSize(),
                     factory = { ctx ->
                       ImageView(ctx).apply {
-                        setImageResource(R.mipmap.ic_launcher)
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        setImageResource(LauncherIconManager.current(ctx).preview)
                       }
+                    },
+                    update = { view ->
+                      val selectedPreview = LauncherIconManager.current(view.context).preview
+                      view.setImageResource(selectedPreview)
                     },
                   )
                 }
@@ -883,13 +870,6 @@ private val OPEN_SOURCE_LIBRARIES =
       url = "https://developer.android.com/jetpack/androidx/releases/compose-material3",
     ),
     OpenSourceLibrary(
-      name = "CrashX",
-      artifact = "io.github.tutorialsandroid:crashx",
-      descriptionRes = R.string.oss_crashx_description,
-      license = "Apache-2.0",
-      url = "https://github.com/TutorialsAndroid/crashx",
-    ),
-    OpenSourceLibrary(
       name = "Kmp-Vibrate",
       artifact = "io.github.jmseb3:vibrate",
       descriptionRes = R.string.oss_kmp_vibrate_description,
@@ -995,13 +975,6 @@ private val OPEN_SOURCE_LIBRARIES =
       url = "https://github.com/zhanghai/ComposePreference",
     ),
     OpenSourceLibrary(
-      name = "LazyColumnScrollbar",
-      artifact = "com.github.nanihadesuka:LazyColumnScrollbar",
-      descriptionRes = R.string.oss_lazycolumnscrollbar_description,
-      license = "Apache-2.0",
-      url = "https://github.com/Nanihadesuka/LazyColumnScrollbar",
-    ),
-    OpenSourceLibrary(
       name = "Reorderable",
       artifact = "sh.calvin.reorderable:reorderable",
       descriptionRes = R.string.oss_reorderable_description,
@@ -1077,13 +1050,6 @@ private val OPEN_SOURCE_LIBRARIES =
       descriptionRes = R.string.oss_androidx_palette_description,
       license = "Apache-2.0",
       url = "https://developer.android.com/jetpack/androidx/releases/palette",
-    ),
-    OpenSourceLibrary(
-      name = "AndroidX Preference",
-      artifact = "androidx.preference:preference-ktx",
-      descriptionRes = R.string.oss_androidx_preference_description,
-      license = "Apache-2.0",
-      url = "https://developer.android.com/jetpack/androidx/releases/preference",
     ),
     OpenSourceLibrary(
       name = "AndroidX Profile Installer",

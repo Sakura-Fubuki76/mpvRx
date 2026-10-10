@@ -9,6 +9,7 @@
 
 package app.gyrolet.mpvrx.ui.browser.cards
 
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -34,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.domain.network.NetworkFile
@@ -109,10 +112,11 @@ fun NetworkFolderCard(
         .fillMaxWidth()
         .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
         .clip(AppShapeScale.large)
+        .semantics { selected = isSelected }
         .tvContextMenu(onLongClick)
         .combinedClickable(
           interactionSource = interactionSource,
-          indication = null,
+          indication = LocalIndication.current,
           onClick = onClick,
           onLongClick = onLongClick,
         ),
@@ -127,7 +131,7 @@ fun NetworkFolderCard(
               .matchParentSize()
               .padding(2.dp)
               .clip(AppShapeScale.large)
-              .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)),
+              .background(mediaSelectionColor),
         )
       }
 

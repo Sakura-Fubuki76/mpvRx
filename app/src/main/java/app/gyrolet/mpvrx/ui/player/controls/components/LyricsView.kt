@@ -6,9 +6,7 @@ package app.gyrolet.mpvrx.ui.player.controls.components
 
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -22,7 +20,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -44,7 +41,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
@@ -93,9 +89,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.data.lyrics.LyricsLanguageOptions
 import app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType
-import app.gyrolet.mpvrx.domain.lyrics.SyncedLine
 import app.gyrolet.mpvrx.domain.lyrics.SyncedWord
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.LyricsTranslationDisplayMode
@@ -198,7 +192,7 @@ fun LyricsView(
     Column(
       modifier = Modifier
         .fillMaxSize()
-        .padding(horizontal = 4.dp, vertical = 4.dp),
+        .padding(vertical = 4.dp),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       // Optional Header
@@ -208,23 +202,28 @@ fun LyricsView(
         val displayTitle = mediaTitle?.takeIf { it.isNotBlank() } ?: "Current Track"
         val displayArtist = artistName?.takeIf { it.isNotBlank() } ?: ""
 
-        Text(
-          text = displayTitle,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.ExtraBold,
-          fontFamily = fontFamilyForText(displayTitle),
-          color = MaterialTheme.colorScheme.onSurface,
-          maxLines = 1,
-        )
-        if (displayArtist.isNotBlank()) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+          horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
           Text(
-            text = displayArtist,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.Bold,
-            fontFamily = fontFamilyForText(displayArtist),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = displayTitle,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.ExtraBold,
+            fontFamily = fontFamilyForText(displayTitle),
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
           )
+          if (displayArtist.isNotBlank()) {
+            Text(
+              text = displayArtist,
+              style = MaterialTheme.typography.bodySmall,
+              fontWeight = FontWeight.Bold,
+              fontFamily = fontFamilyForText(displayArtist),
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+            )
+          }
         }
         Spacer(modifier = Modifier.height(4.dp))
       }
@@ -583,7 +582,7 @@ fun LyricsView(
         Row(
           modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp, bottom = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           // Translate button on Left (40.dp square with rounded corners)

@@ -11,14 +11,15 @@ import android.text.format.DateUtils
 import app.gyrolet.mpvrx.ui.browser.jellyfin.JellyfinViewModel
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import app.gyrolet.mpvrx.ui.theme.AppMotion
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,7 +28,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -48,12 +48,9 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
@@ -100,13 +97,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -134,7 +128,6 @@ import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.preferences.PreferencesScreen
 import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
 import app.gyrolet.mpvrx.ui.browser.MainScreen
-import app.gyrolet.mpvrx.ui.browser.cards.PlaylistCard
 import app.gyrolet.mpvrx.presentation.components.captureLiquidGlassBackdrop
 import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
 import app.gyrolet.mpvrx.ui.browser.components.rememberBrowserBottomBarBackdrop
@@ -210,6 +203,7 @@ fun MusicLibraryContent(
   val context = LocalContext.current
   val backStack = LocalBackStack.current
   val scope = rememberCoroutineScope()
+  val navigationHaptics = app.gyrolet.mpvrx.ui.utils.rememberAppHaptics()
 
   val jfViewModel: JellyfinViewModel =
     jellyfinViewModel
@@ -438,9 +432,12 @@ fun MusicLibraryContent(
     MusicTab.FOLDERS -> 0
   }
 
-  Scaffold(
-    containerColor = app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor(),
-    modifier = modifier.fillMaxSize(),
+  val bottomBarBackdrop = rememberBrowserBottomBarBackdrop()
+
+  Box(modifier = modifier.fillMaxSize()) {
+    Scaffold(
+      modifier = Modifier.fillMaxSize().captureLiquidGlassBackdrop(bottomBarBackdrop),
+      containerColor = app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor(),
     topBar = {
       Column(
         modifier = Modifier
@@ -592,7 +589,10 @@ fun MusicLibraryContent(
           visibleTabs.forEachIndexed { index, tab ->
             Tab(
               selected = pagerState.currentPage == index,
-              onClick = { musicViewModel.setTab(tab) },
+              onClick = {
+                 if (selectedTab != tab) navigationHaptics.selection(true)
+                 musicViewModel.setTab(tab)
+               },
               text = {
                 Text(
                   text = stringResource(tab.titleRes),
@@ -702,7 +702,6 @@ fun MusicLibraryContent(
       }
     },
   ) { innerPadding ->
-    val bottomBarBackdrop = rememberBrowserBottomBarBackdrop()
     Box(
       modifier = Modifier
         .fillMaxSize()
@@ -713,7 +712,7 @@ fun MusicLibraryContent(
         onRefresh = { musicViewModel.refreshLibrary(context) },
         modifier = Modifier.fillMaxSize()
       ) {
-        if (isLoading && songs.isEmpty()) {
+        if (isLoading && songs.isEmpty() && albums.isEmpty() && artists.isEmpty() && playlists.isEmpty()) {
           Box(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
@@ -724,7 +723,7 @@ fun MusicLibraryContent(
           NavigationPager(
             state = pagerState,
             key = { page -> visibleTabs[page].name },
-            modifier = Modifier.fillMaxSize().captureLiquidGlassBackdrop(bottomBarBackdrop),
+            modifier = Modifier.fillMaxSize(),
             beyondViewportPageCount = 1,
             allowNestedSwipes = true,
           ) { page ->
@@ -1210,51 +1209,71 @@ fun MusicLibraryContent(
           )
         }
 
-        BrowserBottomBar(
-          backdrop = bottomBarBackdrop,
-          isSelectionMode = activeSelectionManager.isInSelectionMode,
-          onCopyClick = { },
-          onMoveClick = { },
-          onRenameClick = { },
-          onDeleteClick = { showDeleteSelectedDialog = true },
-          onAddToPlaylistClick = {
-            val videosToAdd = selectedMusicVideos()
-            if (videosToAdd.isNotEmpty()) {
-              selectedVideosForAddToPlaylist = videosToAdd
-            }
-          },
-          onPlayNextClick =
-            if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
-              {
-                if (addVideosToPlaybackQueue(context, selectedMusicVideos(), QueueInsertion.PlayNext)) {
-                  activeSelectionManager.clear()
-                }
-              }
-            } else {
-              null
-            },
-          onAddToQueueClick =
-            if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
-              {
-                if (addVideosToPlaybackQueue(context, selectedMusicVideos(), QueueInsertion.AddToEnd)) {
-                  activeSelectionManager.clear()
-                }
-              }
-            } else {
-              null
-            },
-          showCopy = false,
-          showMove = false,
-          showRename = false,
-          showDelete = selectedTab == MusicTab.SONGS || selectedTab == MusicTab.PLAYLISTS,
-          showAddToPlaylist = selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS,
-          modifier = Modifier.align(Alignment.BottomCenter)
-        )
-
         FabScrollHelper.FabScrim(
           visible = isFabExpanded.value && !quickPlayFabDirect,
           onDismiss = { isFabExpanded.value = false },
         )
+      }
+    }
+
+    AnimatedVisibility(
+      visible = activeSelectionManager.isInSelectionMode,
+      enter = slideInVertically(
+        animationSpec = spring(
+          dampingRatio = AppMotion.Spatial.Expressive.dampingRatio,
+          stiffness = AppMotion.Spatial.Expressive.stiffness,
+        ),
+        initialOffsetY = { it },
+      ),
+      exit = slideOutVertically(
+        animationSpec = spring(
+          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
+          stiffness = AppMotion.Spatial.Standard.stiffness,
+        ),
+        targetOffsetY = { it },
+      ),
+      modifier = Modifier.align(Alignment.BottomCenter),
+    ) {
+      BrowserBottomBar(
+        backdrop = bottomBarBackdrop,
+        isSelectionMode = activeSelectionManager.isInSelectionMode,
+        onCopyClick = { },
+        onMoveClick = { },
+        onRenameClick = { },
+        onDeleteClick = { showDeleteSelectedDialog = true },
+        onAddToPlaylistClick = {
+          val videosToAdd = selectedMusicVideos()
+          if (videosToAdd.isNotEmpty()) {
+            selectedVideosForAddToPlaylist = videosToAdd
+          }
+        },
+        onPlayNextClick =
+          if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
+            {
+              if (addVideosToPlaybackQueue(context, selectedMusicVideos(), QueueInsertion.PlayNext)) {
+                activeSelectionManager.clear()
+              }
+            }
+          } else {
+            null
+          },
+        onAddToQueueClick =
+          if (selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS) {
+            {
+              if (addVideosToPlaybackQueue(context, selectedMusicVideos(), QueueInsertion.AddToEnd)) {
+                activeSelectionManager.clear()
+              }
+            }
+          } else {
+            null
+          },
+        showCopy = false,
+        showMove = false,
+        showRename = false,
+        showDelete = selectedTab == MusicTab.SONGS || selectedTab == MusicTab.PLAYLISTS,
+        showAddToPlaylist = selectedTab != MusicTab.PLAYLISTS && selectedTab != MusicTab.FOLDERS,
+        modifier = Modifier.padding(bottom = 0.dp)
+      )
     }
   }
 }
@@ -1273,8 +1292,15 @@ fun LocalAlbumArtImage(
   BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
     val widthPx = with(density) { if (maxWidth.value.isFinite()) maxWidth.roundToPx().coerceAtLeast(1) else 256 }
     val heightPx = with(density) { if (maxHeight.value.isFinite()) maxHeight.roundToPx().coerceAtLeast(1) else 256 }
+    // Preserve the previous cover for the same track while higher-resolution art loads.
+    var retainedBitmap by remember(audioSong?.path, uri) {
+      mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+    }
     var bitmap by remember(uri, video, widthPx, heightPx) {
-      mutableStateOf(video?.let { thumbnailRepository.peekThumbnailFromMemory(it, widthPx, heightPx) }?.asImageBitmap())
+      mutableStateOf(
+        video?.let { thumbnailRepository.peekThumbnailFromMemory(it, widthPx, heightPx) }?.asImageBitmap()
+          ?: retainedBitmap,
+      )
     }
 
     LaunchedEffect(uri, video, widthPx, heightPx) {
@@ -1283,7 +1309,28 @@ fun LocalAlbumArtImage(
           // MediaStore album art is normally the cheapest and most authoritative audio cover.
           // Fall back to embedded/sidecar extraction for files whose indexed cover is unavailable.
           val mediaStoreArtwork = uri?.let { source ->
-            context.contentResolver.openInputStream(source)?.use { stream -> BitmapFactory.decodeStream(stream) }
+            // MediaStore/embedded cover art can be several megapixels even in a 48dp song row.
+            // Decode at the requested UI size instead of allocating a full-size JPEG on every
+            // navigation/scroll, while preserving the repository fallback for missing artwork.
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(source)?.use { stream ->
+              BitmapFactory.decodeStream(stream, null, bounds)
+            }
+            if (bounds.outWidth > 0 && bounds.outHeight > 0) {
+              var sampleSize = 1
+              while (
+                bounds.outWidth / sampleSize > widthPx * 2 ||
+                bounds.outHeight / sampleSize > heightPx * 2
+              ) {
+                sampleSize *= 2
+              }
+              val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+              context.contentResolver.openInputStream(source)?.use { stream ->
+                BitmapFactory.decodeStream(stream, null, options)
+              }
+            } else {
+              null
+            }
           }
           (mediaStoreArtwork ?: video?.let { thumbnailRepository.getThumbnail(it, widthPx, heightPx) })?.asImageBitmap()
         } catch (error: kotlinx.coroutines.CancellationException) {
@@ -1293,7 +1340,10 @@ fun LocalAlbumArtImage(
         }
       }
       // Do not blank an already-rendered cover if a transient rescan/reload fails.
-      if (loadedBitmap != null || bitmap == null) bitmap = loadedBitmap
+      if (loadedBitmap != null) {
+        bitmap = loadedBitmap
+        retainedBitmap = loadedBitmap
+      }
     }
 
     val loaded = bitmap
@@ -1485,7 +1535,6 @@ private fun SongGridCard(
 ) {
   val selectionColor = animatedSelectionColor(
     selected = isSelected,
-    selectedColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
     unselectedColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
   )
   Card(
@@ -1691,7 +1740,7 @@ private fun AlbumGridCard(
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = animatedSelectionColor(isSelected, MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+      containerColor = animatedSelectionColor(isSelected)
     )
   ) {
     Column(
@@ -1771,7 +1820,7 @@ private fun AlbumListCard(
       .semantics { selected = isSelected }
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
-    color = animatedSelectionColor(isSelected, MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+    color = animatedSelectionColor(isSelected)
   ) {
     Row(
       modifier = Modifier
@@ -1907,7 +1956,7 @@ private fun ArtistGridCard(
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
     colors = CardDefaults.cardColors(
-      containerColor = animatedSelectionColor(isSelected, MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+      containerColor = animatedSelectionColor(isSelected)
     )
   ) {
     Column(
@@ -1969,7 +2018,7 @@ private fun ArtistListCard(
       .semantics { selected = isSelected }
       .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     shape = AppShapeScale.large,
-    color = animatedSelectionColor(isSelected, MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f))
+    color = animatedSelectionColor(isSelected)
   ) {
     Row(
       modifier = Modifier
@@ -2214,10 +2263,7 @@ private fun MusicPlaylistCard(
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
       shape = AppShapeScale.large,
       colors = CardDefaults.cardColors(
-        containerColor = animatedSelectionColor(
-          isSelected,
-          MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
-        )
+        containerColor = animatedSelectionColor(isSelected)
       )
     ) {
       Column(
@@ -2261,7 +2307,7 @@ private fun MusicPlaylistCard(
         .tvContextMenu(onLongClick)
         .semantics { selected = isSelected }
         .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-      color = animatedSelectionColor(isSelected, MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+        color = animatedSelectionColor(isSelected)
     ) {
       Row(
         modifier = Modifier

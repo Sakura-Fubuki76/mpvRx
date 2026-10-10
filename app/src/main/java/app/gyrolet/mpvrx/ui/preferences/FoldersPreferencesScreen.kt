@@ -56,7 +56,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.media.model.VideoFolder
@@ -735,72 +734,6 @@ private fun AddFolderDialog(
           }
         }
       }
-  }
-}
-
-@Composable
-internal fun StorageRootPickerCard(
-  currentPath: String,
-  onPickClick: () -> Unit,
-  onClearClick: () -> Unit,
-) {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    colors =
-      CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-      ),
-  ) {
-    Row(
-      modifier =
-        Modifier
-          .fillMaxWidth()
-          .clickable(onClick = onPickClick)
-          .padding(16.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Icon(
-        imageVector = Icons.RoundedFilled.Folder,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(24.dp),
-      )
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text =
-            androidx.compose.ui.res
-              .stringResource(app.gyrolet.mpvrx.R.string.ui_base_storage_folder),
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-          text =
-            if (currentPath.isNotEmpty()) {
-              getSimplifiedStoragePath(currentPath)
-            } else {
-              "Tap to select - creates Subtitles/, Fonts/, scripts/, script-opts/ subdirs"
-            },
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      }
-      if (currentPath.isNotEmpty()) {
-        IconButton(onClick = onClearClick) {
-          Icon(
-            imageVector = Icons.RoundedFilled.Clear,
-            contentDescription =
-              androidx.compose.ui.res.stringResource(
-                app.gyrolet.mpvrx.R.string.pref_clear_content_desc,
-              ),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-      }
-    }
   }
 }
 

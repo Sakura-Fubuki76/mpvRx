@@ -23,6 +23,7 @@ fun AddConnectionSheet(
   onDismiss: () -> Unit,
   onSave: (NetworkConnection) -> Unit,
   modifier: Modifier = Modifier,
+  savedConnections: List<NetworkConnection> = emptyList(),
 ) {
   if (!isOpen) return
 
@@ -43,6 +44,7 @@ fun AddConnectionSheet(
     onDismiss = onDismiss,
     onSave = { connection, _ -> onSave(connection) },
     modifier = modifier,
+    savedConnections = savedConnections,
   )
 }
 
@@ -53,6 +55,7 @@ fun EditConnectionSheet(
   onDismiss: () -> Unit,
   onSave: (NetworkConnection, Boolean) -> Unit,
   modifier: Modifier = Modifier,
+  savedConnections: List<NetworkConnection> = emptyList(),
 ) {
   if (!isOpen) return
 
@@ -63,5 +66,6 @@ fun EditConnectionSheet(
     onDismiss = onDismiss,
     onSave = onSave,
     modifier = modifier,
+    savedConnections = savedConnections,
   )
 }

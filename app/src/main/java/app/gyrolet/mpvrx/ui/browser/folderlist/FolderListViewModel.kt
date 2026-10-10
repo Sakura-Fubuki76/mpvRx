@@ -289,9 +289,7 @@ class FolderListViewModel(
    * audio and duration options are folded in here because they are read straight from preferences.
    */
   private fun currentFolderCacheKey(): String =
-    // v2: folder names are derived through leafStorageName, which now labels the internal volume
-    // instead of surfacing its "0" leaf segment. The old key is retired so stale names are dropped.
-    "folders_v2_${if (audioOnly) "audioOnly" else "video"}" +
+    "folders_v3_${if (audioOnly) "audioOnly" else "video"}" +
       "_${if (foldersPreferences.includeNoMediaFolders.get()) "with_nomedia" else "exclude_nomedia"}" +
       "_audio_${browserPreferences.includeAudioBrowser.get()}_${browserPreferences.minimumAudioDurationSeconds.get()}" +
       "_markers_${foldersPreferences.hiddenFolderMarkerNames.get().sorted().joinToString(",")}"
@@ -426,14 +424,14 @@ class FolderListViewModel(
   }
 
   override fun refresh() {
-    Log.d(TAG, "Hard refreshing folder list")
+    Log.d(TAG, "Refreshing folder list and MediaStore snapshot")
 
     // Set loading state
     _isLoading.value = true
 
-    // Clear all caches to force fresh data from filesystem
-    MediaFileRepository.clearCache()
-    FolderViewScanner.clearCache()
+    // Invalidate folder results without destroying TreeView/.nomedia fingerprints. The previous
+    // path cleared every scanner cache and then cleared FolderViewScanner a second time.
+    MediaFileRepository.invalidateFolderCache()
     // A user-driven refresh must never be satisfied by the cold-boot fast path.
     MediaStoreGenerationGuard.invalidate(getApplication())
 

@@ -9,7 +9,6 @@
 
 package app.gyrolet.mpvrx.ui.preferences
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -34,7 +34,6 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,8 +42,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
@@ -63,7 +62,6 @@ import app.gyrolet.mpvrx.ui.preferences.components.PlayerButtonChip
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
@@ -116,26 +114,9 @@ object PlayerControlsPreferencesScreen : Screen {
 
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = stringResource(id = R.string.pref_layout_title),
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.primary,
-            )
-          },
-          navigationIcon = {
-            if (LocalShowSettingsBackArrow.current) {
-              IconButton(onClick = { backstack.popSafely() }) {
-                Icon(
-                  Icons.RoundedFilled.ArrowBack,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
-          },
+        SettingsTopAppBar(
+          title = stringResource(id = R.string.pref_layout_title),
+          onBack = { backstack.popSafely() },
         )
       },
     ) { padding ->
@@ -223,38 +204,49 @@ object PlayerControlsPreferencesScreen : Screen {
             val seekbarStyle by appearancePrefs.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPrefs.useWavySeekbar.collectAsState()
 
-            PreferenceCard {
-              SeekbarStyle.entries.forEachIndexed { index, style ->
-                ListItem(
-                  content = {
-                    Text(text = style.name)
-                  },
-                  supportingContent = {
-                    SeekbarStyleLivePreview(
-                      style = style,
-                      useWavySeekbar = useWavySeekbar,
-                      modifier =
-                        Modifier
-                          .fillMaxWidth()
-                          .padding(top = 6.dp, bottom = 2.dp),
-                    )
-                  },
-                  trailingContent = {
-                    RadioButton(
-                      selected = seekbarStyle == style,
-                      onClick = null,
-                    )
-                  },
-                  colors =
-                    androidx.compose.material3.ListItemDefaults.colors(
-                      containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                    ),
-                  modifier =
-                    Modifier
-                      .clickable { appearancePrefs.seekbarStyle.set(style) },
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Text(
+                  text = stringResource(R.string.pref_layout_preview),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (index < SeekbarStyle.entries.size - 1) {
-                  PreferenceDivider()
+                SeekbarStyleLivePreview(
+                  style = seekbarStyle,
+                  useWavySeekbar = useWavySeekbar,
+                  modifier = Modifier.fillMaxWidth(),
+                )
+              }
+              PreferenceCard {
+                SeekbarStyle.entries.forEachIndexed { index, style ->
+                  ListItem(
+                    content = {
+                      Text(text = style.name)
+                    },
+                    trailingContent = {
+                      RadioButton(
+                        selected = seekbarStyle == style,
+                        onClick = null,
+                      )
+                    },
+                    colors =
+                      androidx.compose.material3.ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                      ),
+                    modifier =
+                      Modifier
+                        .selectable(
+                          selected = seekbarStyle == style,
+                          role = Role.RadioButton,
+                          onClick = { appearancePrefs.seekbarStyle.set(style) },
+                        ),
+                  )
+                  if (index < SeekbarStyle.entries.size - 1) {
+                    PreferenceDivider()
+                  }
                 }
               }
             }

@@ -9,6 +9,9 @@
 
 package app.gyrolet.mpvrx.ui.browser.cards
 
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.flowOn
+
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -70,8 +73,6 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvContextMenu
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
@@ -189,13 +190,13 @@ private fun VideoTopStartBadges(
       Box(
         modifier =
           Modifier
-            .cardOverlay(containerColor = Color(0xFFD32F2F))
+            .cardOverlay(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
             .padding(horizontal = 8.dp, vertical = 3.dp),
       ) {
         Text(
           text = stringResource(R.string.video_label_new),
           style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-          color = Color.White,
+          color = MaterialTheme.colorScheme.onTertiaryContainer,
         )
       }
     }
@@ -300,6 +301,10 @@ fun VideoCard(
   val selectionContainerColor = animatedSelectionColor(isSelected)
   val showSelectionBadge = isSelected || selectionContainerColor.alpha > 0.001f
 
+  // Hold the last displayed thumbnail for this file across grid/list size changes.
+  // Repository memory remains the source of truth for new requests.
+  var retainedThumbnail by remember(video.path, video.dateModified, video.size) { mutableStateOf<Bitmap?>(null) }
+
   val cardShape = AppShapeScale.large
 
   VideoSwipeSurface(
@@ -373,10 +378,11 @@ fun VideoCard(
 
           // Seeded during composition: reading the cache asynchronously shows the placeholder icon
           // for a frame first, which flickers every visible card when the list recomposes.
+          val exactMemoryThumbnail = remember(thumbnailRequestKey) {
+            thumbnailRepository.peekThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
+          }
           var thumbnail by remember(thumbnailRequestKey) {
-            mutableStateOf<Bitmap?>(
-              thumbnailRepository.peekThumbnailFromMemory(video, resolvedThumbWidthPx, resolvedThumbHeightPx),
-            )
+            mutableStateOf<Bitmap?>(exactMemoryThumbnail ?: retainedThumbnail)
           }
 
           // Cached reads stay enabled while scrolling; only generation is gated.
@@ -405,8 +411,11 @@ fun VideoCard(
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (thumbnail == null && showThumbnails) {
-              thumbnail =
+            thumbnail?.let { retainedThumbnail = it }
+            // A fallback frame from another size is displayed immediately; fetch the exact size
+            // without clearing it. Memory hits require no disk read or decoding.
+            if (exactMemoryThumbnail == null && showThumbnails) {
+              val loaded =
                 withContext(Dispatchers.IO) {
                   if (allowThumbnailGeneration && allowThumbnailLoading) {
                     thumbnailRepository.getThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
@@ -414,6 +423,10 @@ fun VideoCard(
                     thumbnailRepository.getCachedThumbnail(video, resolvedThumbWidthPx, resolvedThumbHeightPx)
                   }
                 }
+              if (loaded != null) {
+                thumbnail = loaded
+                retainedThumbnail = loaded
+              }
             }
           }
 
@@ -733,10 +746,11 @@ fun VideoCard(
 
           // Seeded during composition: reading the cache asynchronously shows the placeholder icon
           // for a frame first, which flickers every visible card when the list recomposes.
+          val exactMemoryThumbnail = remember(thumbnailRequestKey) {
+            thumbnailRepository.peekThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx)
+          }
           var thumbnail by remember(thumbnailRequestKey) {
-            mutableStateOf<Bitmap?>(
-              thumbnailRepository.peekThumbnailFromMemory(video, thumbWidthPx, thumbHeightPx),
-            )
+            mutableStateOf<Bitmap?>(exactMemoryThumbnail ?: retainedThumbnail)
           }
 
           // Cached reads stay enabled while scrolling; only generation is gated.
@@ -765,8 +779,11 @@ fun VideoCard(
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
           LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
-            if (thumbnail == null && showThumbnails) {
-              thumbnail =
+            thumbnail?.let { retainedThumbnail = it }
+            // A fallback frame from another size is displayed immediately; fetch the exact size
+            // without clearing it. Memory hits require no disk read or decoding.
+            if (exactMemoryThumbnail == null && showThumbnails) {
+              val loaded =
                 withContext(Dispatchers.IO) {
                   if (allowThumbnailGeneration && allowThumbnailLoading) {
                     thumbnailRepository.getThumbnail(video, thumbWidthPx, thumbHeightPx)
@@ -774,6 +791,10 @@ fun VideoCard(
                     thumbnailRepository.getCachedThumbnail(video, thumbWidthPx, thumbHeightPx)
                   }
                 }
+              if (loaded != null) {
+                thumbnail = loaded
+                retainedThumbnail = loaded
+              }
             }
           }
 
@@ -849,8 +870,8 @@ fun VideoCard(
               )
             }
 
-            // Duration timestamp overlay at bottom-right of the thumbnail
-            if (hasDuration) {
+            // Duration timestamp overlay at bottom-right of the thumbnail (video only in list view)
+            if (hasDuration && !video.isAudio) {
               Box(
                 modifier =
                   Modifier
@@ -1034,6 +1055,14 @@ fun VideoCard(
                 }
               }
             }
+          }
+          if (video.isAudio && hasDuration) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = video.durationFormatted,
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
           }
         }
       }

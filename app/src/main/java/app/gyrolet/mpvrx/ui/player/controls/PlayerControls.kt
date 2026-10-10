@@ -19,6 +19,7 @@ import app.gyrolet.mpvrx.domain.torrent.formatTorrentSpeed
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
+import android.view.SurfaceView
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -32,6 +33,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -98,6 +100,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
@@ -121,6 +124,7 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AiPreferences
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
+import app.gyrolet.mpvrx.preferences.GesturePreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.PlayerButton
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
@@ -139,6 +143,8 @@ import app.gyrolet.mpvrx.ui.player.PlayerUpdates
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoOpenAnimationOverlay
+import app.gyrolet.mpvrx.ui.player.components.VideoAmbientFrame
+import app.gyrolet.mpvrx.ui.player.components.rememberVideoAmbientFrame
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterH
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterV
 import app.gyrolet.mpvrx.ui.player.buildControlsExitH
@@ -156,8 +162,6 @@ import app.gyrolet.mpvrx.ui.player.controls.components.SeekPlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarWithTimers
 import app.gyrolet.mpvrx.ui.player.controls.components.TextPlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.VolumeSlider
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonBorderColor
-import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColor
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContentColor
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberBufferingState
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusRequester
@@ -176,6 +180,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
+import app.gyrolet.mpvrx.ui.liquidglass.AdaptiveControlsContainer
+import app.gyrolet.mpvrx.ui.liquidglass.LiquidPillButton
+import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -198,6 +207,7 @@ fun <T> playerControlsEnterAnimationSpec(durationMillis: Int = 100): FiniteAnima
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
+  videoSurface: SurfaceView? = null,
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -208,10 +218,12 @@ fun PlayerControls(
   val aiEnabled by aiPreferences.enabled.collectAsState()
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
+  val enableLiquidGlass by appearancePreferences.liquidGlassEnabled.collectAsState()
   val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
   val playerPreferences = koinInject<PlayerPreferences>()
+  val gesturePreferences = koinInject<GesturePreferences>()
   val reduceMotion by playerPreferences.reduceMotion.collectAsState()
   val audioPreferences = koinInject<AudioPreferences>()
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
@@ -221,6 +233,9 @@ fun PlayerControls(
   val controlsShown by viewModel.controlsShown.collectAsState()
   val controlsInteractionEpoch by viewModel.controlsInteractionEpoch.collectAsState()
   val tvPlayFocusRequester = rememberTvInitialFocusRequester(enabled = controlsShown)
+  val overlaysFollowVideoZoom by playerPreferences.overlaysFollowVideoZoom.collectAsState()
+  val videoPanX by viewModel.videoPanX.collectAsState()
+  val videoPanY by viewModel.videoPanY.collectAsState()
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekBarShown by viewModel.seekBarShown.collectAsState()
@@ -247,6 +262,7 @@ fun PlayerControls(
   val doubleTapSeekAmount = seekState.amount
   val showDoubleTapOvals by playerPreferences.showDoubleTapOvals.collectAsState()
   val showSeekTime by playerPreferences.showSeekTimeWhileSeeking.collectAsState()
+  val showSeekbarDuringHorizontalSeeking by gesturePreferences.showSeekbarDuringHorizontalSeeking.collectAsState()
   val showBufferedRange by playerPreferences.showBufferedRange.collectAsState()
   val showChapterIndicators by playerPreferences.showChapterIndicators.collectAsState()
   val torrentState by viewModel.torrentState.collectAsState()
@@ -458,6 +474,35 @@ fun PlayerControls(
 
   val playerActivity = LocalActivity.current as PlayerActivity
   val configuration = LocalConfiguration.current
+  val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
+  val canCapturePlayerGlass =
+    enableLiquidGlass &&
+      !isAudioOnly &&
+      playbackSessionState.surfaceAttached &&
+      (playbackSessionState.phase == PlaybackPhase.READY ||
+        playbackSessionState.phase == PlaybackPhase.BACKGROUND)
+  val playerGlassFrame =
+    if (videoSurface != null) {
+      rememberVideoAmbientFrame(
+        surfaceView = videoSurface,
+        active = canCapturePlayerGlass && controlsShown && !areControlsLocked,
+        retainFrameWhenInactive = canCapturePlayerGlass,
+        playbackGeneration = playbackSessionState.generation,
+        hdrScreenMode = hdrScreenMode,
+        orientation = configuration.orientation,
+        isSurfaceReadyProvider = {
+          PlaybackSession.state.value.surfaceAttached && videoSurface.holder.surface.isValid
+        },
+        isPlayingProvider = { !PlaybackSession.state.value.paused },
+        fallbackFrameProvider = { dimension ->
+          withContext(Dispatchers.IO) {
+            runCatching { PlaybackSession.grabThumbnail(dimension) }.getOrNull()
+          }
+        },
+      )
+    } else {
+      VideoAmbientFrame(supported = false)
+    }
   var playerBounds by remember { mutableStateOf(IntSize.Zero) }
   val isPortrait =
     remember(configuration.orientation, playerBounds) {
@@ -615,7 +660,10 @@ fun PlayerControls(
 
   DoubleTapToSeekOvals(doubleTapSeekAmount, seekText, showDoubleTapOvals, showSeekTime, showSeekTime, interactionSource)
 
+  val playerKyantBackdrop = rememberLayerBackdrop()
+
   CompositionLocalProvider(
+    LocalKyantPlayerBackdrop provides playerKyantBackdrop,
     LocalForceDarkPlayerButtonsBackground provides forceDarkButtonBackground,
     LocalHidePlayerButtonsBackground provides hideBackground,
   ) {
@@ -632,6 +680,49 @@ fun PlayerControls(
       speedMultiplier = animSpeed,
       animationState = videoOpenAnimState,
     )
+    if (enableLiquidGlass) {
+      // mpv renders in a separate SurfaceView layer, which Compose effects cannot sample directly.
+      // Mirror its tiny, throttled PixelCopy frame into an invisible Compose layer so Kyant glass
+      // refracts the live video without duplicating full-resolution playback work.
+      val glassFrame = playerGlassFrame.frame
+      if (glassFrame != null) {
+        Image(
+          bitmap = glassFrame,
+          contentDescription = null,
+          contentScale = ContentScale.FillBounds,
+          modifier =
+            Modifier
+              .fillMaxSize()
+              .alpha(0f)
+              .layerBackdrop(playerKyantBackdrop),
+        )
+      } else {
+        Box(
+          modifier =
+            Modifier
+              .fillMaxSize()
+              .alpha(0f)
+              .layerBackdrop(playerKyantBackdrop)
+              .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        )
+      }
+      Box(
+        modifier =
+          Modifier
+            .fillMaxSize()
+            .background(
+              Brush.verticalGradient(
+                listOf(
+                  Color.Black,
+                  Color.Transparent,
+                  Color.Transparent,
+                  Color.Black,
+                ),
+              ),
+              alpha = transparentOverlay,
+            ),
+      )
+    }
     if (brightness < 0) {
       Box(
         modifier =
@@ -643,17 +734,30 @@ fun PlayerControls(
       )
     }
     if (statisticsPage == 6) {
-      CustomStatsPageSixOverlay(
-        viewModel = viewModel,
-        modifier =
-          Modifier
-            .align(Alignment.TopStart)
-            .windowInsetsPadding(
-              WindowInsets.safeDrawing.only(
-                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
-              ),
-            ).padding(top = 16.dp, start = 14.dp),
-      )
+      // Mirror the SurfaceView transform so page 6 stays on the video like mpv's own stats pages.
+      Box(
+        Modifier.fillMaxSize().graphicsLayer {
+          if (overlaysFollowVideoZoom) {
+            val zoomScale = app.gyrolet.mpvrx.ui.player.videoZoomMultiplier(currentZoom)
+            scaleX = zoomScale
+            scaleY = zoomScale
+            translationX = videoPanX
+            translationY = videoPanY
+          }
+        },
+      ) {
+        CustomStatsPageSixOverlay(
+          viewModel = viewModel,
+          modifier =
+            Modifier
+              .align(Alignment.TopStart)
+              .windowInsetsPadding(
+                WindowInsets.safeDrawing.only(
+                  WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                ),
+              ).padding(top = 16.dp, start = 14.dp),
+        )
+      }
     }
 
     MediaScopesOverlay(
@@ -666,13 +770,10 @@ fun PlayerControls(
         CompositionLocalProvider(
           LocalRippleConfiguration provides playerRippleConfiguration,
           LocalPlayerButtonsClickEvent provides { resetControlsTimestamp = System.currentTimeMillis() },
+          LocalKyantPlayerBackdrop provides playerKyantBackdrop,
           LocalForceDarkPlayerButtonsBackground provides forceDarkButtonBackground,
           LocalHidePlayerButtonsBackground provides hideBackground,
           LocalContentColor provides MaterialTheme.colorScheme.onSurface,
-          LocalPlayerButtonAdvancedPreferences provides advancedPreferences,
-          LocalPlayerButtonPreferences provides playerPreferences,
-          LocalPlayerButtonStatisticsPage provides statisticsPage,
-          LocalPlayerButtonHaptics provides app.gyrolet.mpvrx.ui.utils.rememberAppHaptics(),
         ) {
       CompositionLocalProvider(
         LocalLayoutDirection provides LayoutDirection.Ltr,
@@ -982,31 +1083,22 @@ fun PlayerControls(
                 TextPlayerUpdate(displayText)
               }
               is PlayerUpdates.ShowText ->
-                TextPlayerUpdate(
-                  (currentPlayerUpdate as PlayerUpdates.ShowText).value,
-                  modifier = Modifier.widthIn(min = 120.dp),
-                )
+                TextPlayerUpdate((currentPlayerUpdate as PlayerUpdates.ShowText).value)
 
               is PlayerUpdates.ProviderStatusText ->
-                TextPlayerUpdate(
-                  (currentPlayerUpdate as PlayerUpdates.ProviderStatusText).value,
-                  modifier = Modifier.widthIn(min = 120.dp),
-                )
+                TextPlayerUpdate((currentPlayerUpdate as PlayerUpdates.ProviderStatusText).value)
 
               is PlayerUpdates.VideoZoom -> {
                 val zoomPercentage = (videoZoom * 100).toInt()
-                TextPlayerUpdate(
-                  text = String.format("Zoom:%3d%%", zoomPercentage),
-                  modifier = Modifier.widthIn(min = 112.dp),
-                )
+                TextPlayerUpdate(String.format("Zoom: %d%%", zoomPercentage))
               }
 
               is PlayerUpdates.SubtitleZoom -> {
-                val scaleVal = (currentPlayerUpdate as PlayerUpdates.SubtitleZoom).scale
-                TextPlayerUpdate(
-                  text = String.format("Sub: %.2fx", scaleVal),
-                  modifier = Modifier.widthIn(min = 112.dp),
+                val zoomUpdate = currentPlayerUpdate as PlayerUpdates.SubtitleZoom
+                val label = stringResource(
+                  if (zoomUpdate.secondary) R.string.player_sheets_secondary_sub_scale else R.string.player_sheets_sub_primary_scale,
                 )
+                TextPlayerUpdate(String.format("%s: %.2fx", label, zoomUpdate.scale))
               }
 
               is PlayerUpdates.HorizontalSeek -> {
@@ -1014,7 +1106,6 @@ fun PlayerControls(
                 SeekPlayerUpdate(
                   currentTime = seekUpdate.currentTime,
                   seekDelta = "[${seekUpdate.seekDelta}]",
-                  modifier = Modifier.widthIn(min = 168.dp),
                 )
               }
 
@@ -1155,43 +1246,23 @@ is PlayerUpdates.FrameInfo -> {
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
-                  .horizontalScroll(rememberScrollState()),
+                  .horizontalScroll(rememberScrollState())
+                  .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
               leftCustomButtons.forEach { button ->
                 key(button.id) {
-                  val buttonInteractionSource = remember { MutableInteractionSource() }
-                  Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
-                    modifier =
-                      Modifier
-                        .clip(CircleShape)
-                        .combinedClickable(
-                          interactionSource = buttonInteractionSource,
-                          indication = ripple(),
-                          onClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.callCustomButton(button.id)
-                          },
-                          onLongClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.callCustomButtonLongPress(button.id)
-                          },
-                        ),
-                  ) {
-                    Text(
-                      text = button.label,
-                      modifier =
-                        Modifier
-                          .padding(horizontal = 12.dp, vertical = 6.dp)
-                          .basicMarquee(),
-                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                      maxLines = 1,
-                      softWrap = false,
-                    )
-                  }
+                  CustomControlButton(
+                    label = button.label,
+                    liquidGlass = enableLiquidGlass,
+                    onClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.callCustomButton(button.id)
+                    },
+                    onLongClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.callCustomButtonLongPress(button.id)
+                    },
+                  )
                 }
               }
             }
@@ -1218,43 +1289,23 @@ is PlayerUpdates.FrameInfo -> {
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
-                  .horizontalScroll(rememberScrollState(), reverseScrolling = true),
+                  .horizontalScroll(rememberScrollState(), reverseScrolling = true)
+                  .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
               rightCustomButtons.forEach { button ->
                 key(button.id) {
-                  val buttonInteractionSource = remember { MutableInteractionSource() }
-                  Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
-                    modifier =
-                      Modifier
-                        .clip(CircleShape)
-                        .combinedClickable(
-                          interactionSource = buttonInteractionSource,
-                          indication = ripple(),
-                          onClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.callCustomButton(button.id)
-                          },
-                          onLongClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.callCustomButtonLongPress(button.id)
-                          },
-                        ),
-                  ) {
-                    Text(
-                      text = button.label,
-                      modifier =
-                        Modifier
-                          .padding(horizontal = 12.dp, vertical = 6.dp)
-                          .basicMarquee(),
-                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                      maxLines = 1,
-                      softWrap = false,
-                    )
-                  }
+                  CustomControlButton(
+                    label = button.label,
+                    liquidGlass = enableLiquidGlass,
+                    onClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.callCustomButton(button.id)
+                    },
+                    onLongClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.callCustomButtonLongPress(button.id)
+                    },
+                  )
                 }
               }
             }
@@ -1282,43 +1333,23 @@ is PlayerUpdates.FrameInfo -> {
               modifier =
                 Modifier
                   .padding(vertical = customButtonsRowVerticalPadding)
-                  .horizontalScroll(rememberScrollState()),
+                  .horizontalScroll(rememberScrollState())
+                  .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
               customButtons.forEach { button ->
                 key(button.id) {
-                  val buttonInteractionSource = remember { MutableInteractionSource() }
-                  Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
-                    modifier =
-                      Modifier
-                        .clip(CircleShape)
-                        .combinedClickable(
-                          interactionSource = buttonInteractionSource,
-                          indication = ripple(),
-                          onClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.callCustomButton(button.id)
-                          },
-                          onLongClick = {
-                            resetControlsTimestamp = System.currentTimeMillis()
-                            viewModel.callCustomButtonLongPress(button.id)
-                          },
-                        ),
-                  ) {
-                    Text(
-                      text = button.label,
-                      modifier =
-                        Modifier
-                          .padding(horizontal = 12.dp, vertical = 6.dp)
-                          .basicMarquee(),
-                      style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                      maxLines = 1,
-                      softWrap = false,
-                    )
-                  }
+                  CustomControlButton(
+                    label = button.label,
+                    liquidGlass = enableLiquidGlass,
+                    onClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.callCustomButton(button.id)
+                    },
+                    onLongClick = {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.callCustomButtonLongPress(button.id)
+                    },
+                  )
                 }
               }
             }
@@ -1396,24 +1427,41 @@ is PlayerUpdates.FrameInfo -> {
                 blue = segmentColor.blue * 0.72f,
                 alpha = 0.96f,
               )
-            Surface(
-              shape = RoundedCornerShape(999.dp),
-              color = segmentSurfaceColor,
-              border = BorderStroke(1.5.dp, segmentBorderColor),
-              modifier =
-                Modifier
-                  .clip(RoundedCornerShape(999.dp))
-                  .clickable {
-                    resetControlsTimestamp = System.currentTimeMillis()
-                    viewModel.skipActiveSegment()
-                  },
-            ) {
-              Text(
-                text = segment.label,
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                color = segmentColor.copy(alpha = 1f),
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-              )
+            if (enableLiquidGlass) {
+              LiquidPillButton(
+                onClick = {
+                  resetControlsTimestamp = System.currentTimeMillis()
+                  viewModel.skipActiveSegment()
+                },
+                horizontalPadding = 16.dp,
+                height = 40.dp,
+              ) {
+                Text(
+                  text = segment.label,
+                  style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                  color = segmentColor.copy(alpha = 1f),
+                )
+              }
+            } else {
+              Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = segmentSurfaceColor,
+                border = BorderStroke(1.5.dp, segmentBorderColor),
+                modifier =
+                  Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.skipActiveSegment()
+                    },
+              ) {
+                Text(
+                  text = segment.label,
+                  style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                  color = segmentColor.copy(alpha = 1f),
+                  modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+              }
             }
           }
 
@@ -1461,15 +1509,12 @@ is PlayerUpdates.FrameInfo -> {
                     "Buffering (${String.format(java.util.Locale.ROOT, "%.1f", cacheSeconds)}s)"
                   else -> stringResource(R.string.ui_buffering)
                 }
-              Surface(
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-              ) {
-                Row(
-                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.spacedBy(6.dp),
+              if (enableLiquidGlass) {
+                LiquidPillButton(
+                  onClick = {},
+                  isInteractive = false,
+                  horizontalPadding = 12.dp,
+                  height = 32.dp,
                 ) {
                   Box(
                     modifier =
@@ -1483,7 +1528,34 @@ is PlayerUpdates.FrameInfo -> {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
                   )
+                }
+              } else {
+                Surface(
+                  shape = CircleShape,
+                  color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f),
+                  border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Box(
+                      modifier =
+                        Modifier
+                          .size(6.dp)
+                          .clip(CircleShape)
+                          .background(MaterialTheme.colorScheme.primary),
+                    )
+                    Text(
+                      text = bufferText,
+                      style = MaterialTheme.typography.labelMedium,
+                      color = MaterialTheme.colorScheme.onPrimaryContainer,
+                      fontWeight = FontWeight.SemiBold,
+                    )
+                  }
                 }
               }
             }
@@ -1516,41 +1588,34 @@ is PlayerUpdates.FrameInfo -> {
                 horizontalArrangement = Arrangement.spacedBy(24.dp),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
-                Surface(
+                AdaptiveControlsContainer(
+                  onClick = {
+                    if (viewModel.hasPrevious()) {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.playPrevious()
+                    }
+                  },
                   modifier =
                     Modifier
                       .size(56.dp)
                       .tvFocusHighlight(CircleShape, enabled = viewModel.hasPrevious())
-                      .clip(CircleShape)
-                      .clickable(
-                        enabled = viewModel.hasPrevious(),
-                        onClick = {
-                          resetControlsTimestamp = System.currentTimeMillis()
-                          if (viewModel.hasPrevious()) viewModel.playPrevious()
-                        },
-                      ).then(
-                        if (hideBackground) {
+                      .then(
+                        if (hideBackground && !enableLiquidGlass) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
                         },
                       ),
-                  shape = CircleShape,
                   color =
-                    if (!hideBackground) {
-                      playerButtonContainerColor()
+                    if (viewModel.hasPrevious()) {
+                      if (hideBackground) controlColor else playerButtonContentColor()
                     } else {
-                      Color.Transparent
+                      (if (hideBackground) controlColor else playerButtonContentColor()).copy(alpha = 0.38f)
                     },
-                  contentColor = playerButtonContentColor(),
-                  tonalElevation = 0.dp,
-                  shadowElevation = 0.dp,
-                  border =
-                    if (!hideBackground) {
-                      BorderStroke(1.dp, playerButtonBorderColor())
-                    } else {
-                      null
-                    },
+                  isInteractive = viewModel.hasPrevious(),
+                  hideBackground = hideBackground,
+                  buttonSize = 56.dp,
+                  horizontalPadding = 0.dp,
                 ) {
                   Icon(
                     imageVector = Icons.RoundedFilled.SkipPrevious,
@@ -1558,16 +1623,7 @@ is PlayerUpdates.FrameInfo -> {
                       androidx.compose.ui.res.stringResource(
                         app.gyrolet.mpvrx.R.string.pref_gesture_media_previous,
                       ),
-                    tint =
-                      if (viewModel.hasPrevious()) {
-                        if (hideBackground) controlColor else playerButtonContentColor()
-                      } else {
-                        if (hideBackground) {
-                          controlColor.copy(alpha = 0.38f)
-                        } else {
-                          playerButtonContentColor().copy(alpha = 0.38f)
-                        }
-                      },
+                    tint = LocalContentColor.current,
                     modifier =
                       Modifier
                         .fillMaxSize()
@@ -1575,40 +1631,27 @@ is PlayerUpdates.FrameInfo -> {
                   )
                 }
 
-                Surface(
+                AdaptiveControlsContainer(
+                  onClick = {
+                    resetControlsTimestamp = System.currentTimeMillis()
+                    viewModel.pauseUnpause()
+                  },
                   modifier =
-                  Modifier
-                    .size(64.dp)
-                    .tvInitialFocus(tvPlayFocusRequester)
-                    .tvFocusHighlight(CircleShape)
-                    .clip(CircleShape)
-                    .clickable(interaction, ripple(), onClick = {
-                        resetControlsTimestamp = System.currentTimeMillis()
-                        viewModel.pauseUnpause()
-                      })
+                    Modifier
+                      .size(64.dp)
+                      .tvInitialFocus(tvPlayFocusRequester)
+                      .tvFocusHighlight(CircleShape)
                       .then(
-                        if (hideBackground) {
+                        if (hideBackground && !enableLiquidGlass) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
                         },
                       ),
-                  shape = CircleShape,
-                  color =
-                    if (!hideBackground) {
-                      playerButtonContainerColor()
-                    } else {
-                      Color.Transparent
-                    },
-                  contentColor = if (hideBackground) controlColor else playerButtonContentColor(),
-                  tonalElevation = 0.dp,
-                  shadowElevation = 0.dp,
-                  border =
-                    if (!hideBackground) {
-                      BorderStroke(1.dp, playerButtonBorderColor())
-                    } else {
-                      null
-                    },
+                  color = if (hideBackground) controlColor else playerButtonContentColor(),
+                  hideBackground = hideBackground,
+                  buttonSize = 64.dp,
+                  horizontalPadding = 0.dp,
                 ) {
                   AnimatedPlayPauseIcon(
                     isPlaying = paused == false,
@@ -1620,41 +1663,34 @@ is PlayerUpdates.FrameInfo -> {
                   )
                 }
 
-                Surface(
+                AdaptiveControlsContainer(
+                  onClick = {
+                    if (viewModel.hasNext()) {
+                      resetControlsTimestamp = System.currentTimeMillis()
+                      viewModel.playNext()
+                    }
+                  },
                   modifier =
                     Modifier
                       .size(56.dp)
                       .tvFocusHighlight(CircleShape, enabled = viewModel.hasNext())
-                      .clip(CircleShape)
-                      .clickable(
-                        enabled = viewModel.hasNext(),
-                        onClick = {
-                          resetControlsTimestamp = System.currentTimeMillis()
-                          if (viewModel.hasNext()) viewModel.playNext()
-                        },
-                      ).then(
-                        if (hideBackground) {
+                      .then(
+                        if (hideBackground && !enableLiquidGlass) {
                           Modifier.background(brush = buttonShadow, shape = CircleShape)
                         } else {
                           Modifier
                         },
                       ),
-                  shape = CircleShape,
                   color =
-                    if (!hideBackground) {
-                      playerButtonContainerColor()
+                    if (viewModel.hasNext()) {
+                      if (hideBackground) controlColor else playerButtonContentColor()
                     } else {
-                      Color.Transparent
+                      (if (hideBackground) controlColor else playerButtonContentColor()).copy(alpha = 0.38f)
                     },
-                  contentColor = playerButtonContentColor(),
-                  tonalElevation = 0.dp,
-                  shadowElevation = 0.dp,
-                  border =
-                    if (!hideBackground) {
-                      BorderStroke(1.dp, playerButtonBorderColor())
-                    } else {
-                      null
-                    },
+                  isInteractive = viewModel.hasNext(),
+                  hideBackground = hideBackground,
+                  buttonSize = 56.dp,
+                  horizontalPadding = 0.dp,
                 ) {
                   Icon(
                     imageVector = Icons.RoundedFilled.SkipNext,
@@ -1662,16 +1698,7 @@ is PlayerUpdates.FrameInfo -> {
                       androidx.compose.ui.res.stringResource(
                         app.gyrolet.mpvrx.R.string.pref_gesture_media_next,
                       ),
-                    tint =
-                      if (viewModel.hasNext()) {
-                        if (hideBackground) controlColor else playerButtonContentColor()
-                      } else {
-                        if (hideBackground) {
-                          controlColor.copy(alpha = 0.38f)
-                        } else {
-                          playerButtonContentColor().copy(alpha = 0.38f)
-                        }
-                      },
+                    tint = LocalContentColor.current,
                     modifier =
                       Modifier
                         .fillMaxSize()
@@ -1680,40 +1707,27 @@ is PlayerUpdates.FrameInfo -> {
                 }
               }
             } else {
-              Surface(
+              AdaptiveControlsContainer(
+                onClick = {
+                  resetControlsTimestamp = System.currentTimeMillis()
+                  viewModel.pauseUnpause()
+                },
                 modifier =
                   Modifier
                     .size(64.dp)
                     .tvInitialFocus(tvPlayFocusRequester)
                     .tvFocusHighlight(CircleShape)
-                    .clip(CircleShape)
-                    .clickable(interaction, ripple(), onClick = {
-                      resetControlsTimestamp = System.currentTimeMillis()
-                      viewModel.pauseUnpause()
-                    })
                     .then(
-                      if (hideBackground) {
+                      if (hideBackground && !enableLiquidGlass) {
                         Modifier.background(brush = buttonShadow, shape = CircleShape)
                       } else {
                         Modifier
                       },
                     ),
-                shape = CircleShape,
-                color =
-                  if (!hideBackground) {
-                    playerButtonContainerColor()
-                  } else {
-                    Color.Transparent
-                  },
-                contentColor = if (hideBackground) controlColor else playerButtonContentColor(),
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
-                border =
-                  if (!hideBackground) {
-                    BorderStroke(1.dp, playerButtonBorderColor())
-                  } else {
-                    null
-                  },
+                color = if (hideBackground) controlColor else playerButtonContentColor(),
+                hideBackground = hideBackground,
+                buttonSize = 64.dp,
+                horizontalPadding = 0.dp,
               ) {
                 AnimatedPlayPauseIcon(
                   isPlaying = paused == false,
@@ -1729,7 +1743,10 @@ is PlayerUpdates.FrameInfo -> {
 
           AnimatedVisibility(
             visible =
-              (controlsShown || isHorizontalSeekActive || (!isPortrait && seekBarShown)) &&
+              // Keep the seekbar visible with normal player controls. Only the hidden-controls
+              // horizontal seek gesture is governed by the user preference.
+              (controlsShown ||
+                if (isHorizontalSeekActive) showSeekbarDuringHorizontalSeeking else seekBarShown) &&
                 !areControlsLocked,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
@@ -1783,6 +1800,7 @@ is PlayerUpdates.FrameInfo -> {
               position = displayedSeekbarPosition,
               committedPosition = precisePosition,
               previewPosition = scrubPreviewPosition,
+              externalScrubbing = isHorizontalSeekActive,
               duration = seekbarDuration,
               remaining = effectiveRemaining,
               onValueChange = {
@@ -2735,5 +2753,59 @@ private fun OutlinedLabeled(
       text = annotated,
       style = labelStyle,
     )
+  }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CustomControlButton(
+  label: String,
+  liquidGlass: Boolean,
+  onClick: () -> Unit,
+  onLongClick: () -> Unit,
+) {
+  if (liquidGlass) {
+    LiquidPillButton(
+      onClick = onClick,
+      onLongClick = onLongClick,
+      height = 36.dp,
+      horizontalPadding = 12.dp,
+    ) {
+      Text(
+        text = label,
+        modifier = Modifier.basicMarquee(),
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+        maxLines = 1,
+        softWrap = false,
+      )
+    }
+  } else {
+    val buttonInteractionSource = remember { MutableInteractionSource() }
+    Surface(
+      shape = CircleShape,
+      color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.85f),
+      contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+      modifier =
+        Modifier
+          .clip(CircleShape)
+          .combinedClickable(
+            interactionSource = buttonInteractionSource,
+            indication = ripple(),
+            onClick = onClick,
+            onLongClick = onLongClick,
+          ),
+    ) {
+      Text(
+        text = label,
+        modifier =
+          Modifier
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .basicMarquee(),
+        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+        maxLines = 1,
+        softWrap = false,
+      )
+    }
   }
 }

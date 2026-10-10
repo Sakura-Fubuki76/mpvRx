@@ -447,7 +447,7 @@ class MediaPlaybackService :
       PlaybackSession.addObserver(this)
       PlaybackSession.observeProperty("pause", MPVLib.MpvFormat.MPV_FORMAT_FLAG)
       PlaybackSession.observeProperty("media-title", MPVLib.MpvFormat.MPV_FORMAT_STRING)
-      PlaybackSession.observeProperty("metadata/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
+      PlaybackSession.observeProperty("metadata/by-key/artist", MPVLib.MpvFormat.MPV_FORMAT_STRING)
       PlaybackSession.observeProperty("time-pos", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("duration", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
       PlaybackSession.observeProperty("speed", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
@@ -559,7 +559,7 @@ class MediaPlaybackService :
     // Fallback: Read current state from MPV if not provided via intent
     if (mediaTitle.isBlank()) {
       mediaTitle = FileTypeUtils.stripExtension(PlaybackSession.getPropertyString("media-title") ?: "")
-      mediaArtist = PlaybackSession.getPropertyString("metadata/artist") ?: ""
+      mediaArtist = PlaybackSession.getPropertyString("metadata/by-key/artist") ?: ""
     }
 
     paused = PlaybackSession.getPropertyBoolean("pause") == true
@@ -762,24 +762,6 @@ class MediaPlaybackService :
     PlaybackSession.playPrevious()?.let(::applySessionItem) ?: refreshTransportControls()
   }
 
-  private fun handleMediaPreviousAction() {
-    when (gesturePreferences.mediaPreviousGesture.get()) {
-      SingleActionGesture.Seek -> seekByConfiguredInterval(direction = -1)
-      SingleActionGesture.PlayPause -> togglePlaybackFromNotification()
-      SingleActionGesture.Custom -> PlaybackSession.command("keypress", CustomKeyCodes.MediaPrevious.keyCode)
-      SingleActionGesture.None -> Unit
-    }
-  }
-
-  private fun handleMediaNextAction() {
-    when (gesturePreferences.mediaNextGesture.get()) {
-      SingleActionGesture.Seek -> seekByConfiguredInterval(direction = 1)
-      SingleActionGesture.PlayPause -> togglePlaybackFromNotification()
-      SingleActionGesture.Custom -> PlaybackSession.command("keypress", CustomKeyCodes.MediaNext.keyCode)
-      SingleActionGesture.None -> Unit
-    }
-  }
-
   private fun handleMediaPlayAction(shouldPlay: Boolean) {
     when (gesturePreferences.mediaPlayGesture.get()) {
       SingleActionGesture.PlayPause -> {
@@ -792,15 +774,6 @@ class MediaPlaybackService :
       SingleActionGesture.None,
       -> Unit
     }
-  }
-
-  private fun seekByConfiguredInterval(direction: Int) {
-    val duration = PlaybackSession.getPropertyInt("duration") ?: 0
-    val seconds = gesturePreferences.doubleTapToSeekDuration.get() * direction
-    val shouldUsePreciseSeeking = playerPreferences.usePreciseSeeking.get() || duration < 120
-    val seekMode = if (shouldUsePreciseSeeking) "relative+exact" else "relative+keyframes"
-    PlaybackSession.command("seek", seconds.toString(), seekMode)
-    refreshTransportControls()
   }
 
   private fun applySessionItem(item: PlaybackItem) {
@@ -1740,7 +1713,7 @@ class MediaPlaybackService :
           }
         }
       }
-      "metadata/artist" -> {
+      "metadata/by-key/artist" -> {
         serviceScope.launch {
           if (mediaArtist == value) return@launch
           mediaArtist = value

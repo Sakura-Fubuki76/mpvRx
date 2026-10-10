@@ -353,20 +353,6 @@ class PlaylistDetailViewModel(
     }
   }
 
-  suspend fun updatePlaylistName(newName: String) {
-    _playlist.value?.let { playlist ->
-      playlistRepository.updatePlaylist(playlist.copy(name = newName))
-    }
-  }
-
-  suspend fun removeVideoFromPlaylist(video: Video) {
-    val items = playlistRepository.getPlaylistItems(playlistId)
-    val itemToRemove = items.find { it.filePath == video.path }
-    itemToRemove?.let {
-      playlistRepository.removeItemFromPlaylist(it)
-    }
-  }
-
   /**
    * Null for local entries — there is nothing to probe. For network entries, classifies whether
    * the backing connection is usable *before* the player opens, so an offline server produces a

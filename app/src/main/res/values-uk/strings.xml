@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Translated to Ukrainian (Українська) by @WATCHER-00 (https://github.com/WATCHER-00) -->
 <resources>
+  <string name="pref_liquid_glass_material">Матеріал скла</string>
+  <string name="pref_liquid_glass_frost">Ефект матового скла</string>
+  <string name="generic_increase">Збільшити</string>
+  <string name="generic_decrease">Зменшити</string>
+  <string name="generic_remove_from_favorites">Вилучити з обраного</string>
   <string name="app_name" translatable="false">mpvRx</string>
   <string name="generic_reset">Скинути</string>
   <string name="generic_back">Назад</string>
@@ -66,6 +71,7 @@
   <string name="pref_appearance_force_dark_player_buttons_background_summary">Зберігати темний фон кнопок керування плеєром у світлій, темній та автоматичній темах</string>
   <string name="pref_appearance_category_file_browser">Файловий менеджер</string>
   <string name="pref_appearance_category_thumbnails">Мініатюри</string>
+  <string name="pref_appearance_category_navigation">Навігація</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Позначка для нових непереглянутих відео</string>
   <string name="pref_appearance_show_unplayed_old_video_label_summary">Показувати позначку «Нове» на відео, доданих за вказану кількість днів, які ще не відтворювалися</string>
   <string name="pref_appearance_unplayed_old_video_days_title">Поріг днів для позначки нових відео</string>
@@ -82,15 +88,10 @@
   <string name="pref_appearance_thumbnail_position_summary">Захоплювати кадр на позначці %1$d%% тривалості відео</string>
   <string name="pref_appearance_show_network_thumbnails_title">Мініатюри для мережевих потоків (експериментально)</string>
   <string name="pref_appearance_show_network_thumbnails_summary">Створювати мініатюри для мережевих потоків (може збільшити витрати мобільного трафіку)</string>
-  <string name="pref_appearance_category_navigation">Навігація</string>
   <string name="pref_nav_home_title">Вкладка «Головна»</string>
   <string name="pref_nav_home_summary">Показувати або приховати вкладку «Головна» на нижній панелі навігації</string>
   <string name="pref_nav_music_title">Вкладка «Музика»</string>
   <string name="pref_nav_music_summary">Показувати або приховати вкладку «Музика» на нижній панелі навігації</string>
-  <string name="pref_nav_recents_title">Вкладка «Нещодавні»</string>
-  <string name="pref_nav_recents_summary">Показувати або приховати вкладку «Нещодавні» на нижній панелі навігації</string>
-  <string name="pref_nav_playlists_title">Вкладка «Плейлісти»</string>
-  <string name="pref_nav_playlists_summary">Показувати або приховати вкладку «Плейлісти» на нижній панелі навігації</string>
   <string name="pref_nav_network_title">Вкладка «Мережа»</string>
   <string name="pref_nav_network_summary">Показувати або приховати вкладку «Мережа» на нижній панелі навігації</string>
   <string name="pref_nav_jellyfin_title">Вкладка «Jellyfin»</string>
@@ -292,8 +293,8 @@
   <string name="pref_gesture_double_tap_right_title">Подвійний дотик (праворуч)</string>
   <string name="pref_gesture_use_single_tap_for_center_title">Одинарний дотик для центрального жесту</string>
   <string name="pref_gesture_use_single_tap_for_center_summary">Використовувати одинарний дотик по центру для жестів (наприклад, відтворення/пауза) замість подвійного.</string>
-  <string name="pref_gesture_center_vertical_subtitle_position_title">Утримування та перетягування переміщує субтитри</string>
-  <string name="pref_gesture_center_vertical_subtitle_position_summary">Утримуйте по центру та проведіть угору або вниз, щоб змінити положення субтитрів</string>
+  <string name="pref_gesture_center_vertical_subtitle_position_title">Переміщення субтитрів перетягуванням</string>
+  <string name="pref_gesture_center_vertical_subtitle_position_summary">Перетягуйте будь-які субтитри вгору або вниз окремо. Утримуйте палець у центрі, а потім перетягніть, щоб перемістити обидва потоки.</string>
   <string name="pref_gesture_view_title">Вигляд</string>
   <string name="pref_gesture_double_tap_custom_info">Ви можете призначити власні дії для цих жестів у input.conf за допомогою таких кодів клавіш:
 
@@ -367,7 +368,6 @@
   <string name="pref_audio_drc_title">Стиснення динамічного діапазону (DRC)</string>
   <string name="pref_audio_drc_summary">Стискати динамічний діапазон, щоб підсилити тихі діалоги та приглушити гучні звуки</string>
   <string name="pref_audio_effects">Обробка аудіо</string>
-  <string name="toast_file_not_found">Файл більше не існує</string>
   <string name="pref_music_tabs_title">Вкладки музичної бібліотеки</string>
   <string name="pref_music_visualizer_title">Музичний візуалізатор</string>
   <string name="pref_music_visualizer_summary">Показувати візуалізатор, який реагує на музику під час відтворення</string>
@@ -1144,7 +1144,6 @@
   <string name="compressor_version">Стискач v%1$s</string>
   <string name="compressor_device">Пристрій: %1$s %2$s</string>
   <string name="compressor_android_version">Android: %1$s</string>
-  <string name="subtitle_position_update">Позиція субтитрів: %1$d</string>
   <string name="hdr_screen_output_update">Вивід HDR на екран: %1$s</string>
   <string name="ambient_style_update">Стиль підсвічування: %1$s</string>
   <string name="online_subtitle_episode">Серія %1$d</string>
@@ -1758,13 +1757,6 @@
   <string name="ui_enable_ass_override">Увімкнути перевизначення ASS</string>
   <string name="ui_filter_presets">Пресети фільтрів</string>
   <string name="ui_yt_dlp_manager">Менеджер yt-dlp</string>
-  <string name="ui_quick_quality_selection">Швидкий вибір якості</string>
-  <string name="ui_codec_preset">Пресет кодека</string>
-  <string name="ui_quick_subtitle_config">Швидке налаштування субтитрів</string>
-  <string name="ui_download_subtitles">Завантажити субтитри</string>
-  <string name="ui_fetch_subs_from_stream_sources">Отримувати субтитри з потокових джерел</string>
-  <string name="ui_auto_generated_captions">Автоматично згенеровані субтитри</string>
-  <string name="ui_include_auto_captions_transcripts">Включати автосубтитри/транскрипти</string>
   <string name="ui_install_core">Встановити ядро</string>
   <string name="ui_update_core">Оновити ядро</string>
   <string name="ui_aspect_ratio">Співвідношення сторін</string>
@@ -1876,7 +1868,6 @@
   <string name="ui_drag_disabled">Перетягування вимкнено</string>
   <string name="ui_buttons_exported_successfully">Кнопки успішно експортовано</string>
   <string name="ui_anime4k_shaders_options">Параметри шейдерів Anime4K</string>
-  <string name="ui_base_storage_folder">Основна папка сховища</string>
   <string name="ui_script_name">Назва скрипта</string>
   <string name="ui_please_enter_a_file_name">Будь ласка, введіть назву файлу</string>
   <string name="ui_failed_to_open_output_stream">Не вдалося відкрити потік виводу</string>
@@ -1920,7 +1911,6 @@
   <string name="ui_switch_to_nightly">Перейти на Nightly</string>
   <string name="ui_playback_defaults">Стандартні параметри відтворення</string>
   <string name="ui_maximum_quality">Максимальна якість</string>
-  <string name="ui_automatic">Автоматично</string>
   <string name="ui_checking_yt_dlp">Перевірка yt-dlp</string>
   <string name="ui_yt_dlp_not_installed">yt-dlp не встановлено</string>
   <string name="ui_yt_dlp_stable_release">Стабільний випуск</string>
@@ -1994,7 +1984,6 @@
   <string name="oss_fsaf_description">Полегшена робота зі Storage Access Framework для файлів та дерева каталогів.</string>
   <string name="oss_truetype_parser_description">Читання метаданих шрифтів для коректного відображення субтитрів.</string>
   <string name="oss_compose_preference_description">Компоненти налаштувань на екранах параметрів Compose.</string>
-  <string name="oss_lazycolumnscrollbar_description">Смуга прокручування для довгих списків LazyColumn.</string>
   <string name="oss_reorderable_description">Перетягування та зміна порядку елементів у списках Compose.</string>
   <string name="oss_seeker_description">Налаштовуваний повзунок панелі пошуку для Jetpack Compose.</string>
   <string name="oss_sora_editor_description">Швидкий та потужний редактор коду для Android із підсвічуванням TextMate.</string>
@@ -2006,7 +1995,6 @@
   <string name="oss_androidx_documentfile_description">Шар абстракції для доступу до документів у сховищі.</string>
   <string name="oss_androidx_media_description">API медіасеансів та взаємодії з відтворенням в Android.</string>
   <string name="oss_androidx_palette_description">Вилучення палітри кольорів із зображень.</string>
-  <string name="oss_androidx_preference_description">Інтерфейс і сховище для екранів налаштувань.</string>
   <string name="oss_androidx_profile_installer_description">Попередня компіляція для швидшого запуску додатку.</string>
   <string name="oss_google_material_description">Бібліотека компонентів та тем Material Design.</string>
   <string name="oss_google_cast_description">Платформа Google Cast для трансляції медіа.</string>
@@ -2614,12 +2602,9 @@
   <string name="pref_background_playback_per_video_summary">Зберігати окремий вибір фонового відтворення для кожного відео. Інші відео залишаються вимкненими, доки не ввімкнете вручну.</string>
   <string name="jellyfin_technical_details">Технічні подробиці</string>
   <string name="ui_snapshots">Знімки</string>
-  <string name="pref_nav_snapshots_title">Показувати вкладку «Знімки»</string>
-  <string name="pref_nav_snapshots_summary">Показувати або приховувати «Знімки» на нижній панелі навігації</string>
   <string name="ui_profile">Профіль</string>
   <string name="pref_nav_profile_title">Показувати вкладку «Профіль»</string>
   <string name="pref_nav_profile_summary">Об\'єднати «Нещодавні», «Плейлисти» та «Знімки» в одну вкладку</string>
-  <string name="pref_nav_in_profile_tab_summary">Входить до вкладки «Профіль»</string>
   <string name="profile_view_all">Показати все</string>
   <string name="profile_edit">Редагувати профіль</string>
   <string name="profile_display_name">Відображуване ім\'я</string>
@@ -2714,4 +2699,48 @@
   <string name="onboarding_configuration_no_backup">Папку налаштовано. Завантаження використовуватимуть Configuration/Downloads.</string>
   <string name="onboarding_configuration_restored">Відновлено налаштування з %1$s. Завантаження використовуватимуть Configuration/Downloads.</string>
   <string name="onboarding_configuration_restore_failed">Не вдалося завершити налаштування папки: %1$s</string>
+  <string name="navbar_glow_title">Світіння скла</string>
+  <string name="navbar_glow_summary">Підсвічування краю та дотиків панелі навігації</string>
+  <string name="pref_seekbar_preview_skip_markers">Позначки пропуску</string>
+  <string name="pref_liquid_glass_optics">Оптика</string>
+  <string name="pref_liquid_glass_opacity">Непрозорість тла</string>
+  <string name="pref_liquid_glass_blur">Сила розмиття</string>
+  <string name="pref_liquid_glass_refraction_height">Ширина краю заломлення</string>
+  <string name="pref_liquid_glass_refraction_amount">Сила заломлення</string>
+  <string name="pref_liquid_glass_depth">Ефект глибини</string>
+  <string name="pref_liquid_glass_chromatic">Хроматична аберація</string>
+  <string name="pref_liquid_glass_lens_unavailable">Для заломлення потрібен Android 13 або новіший</string>
+  <string name="pref_liquid_glass_colors">Колір</string>
+  <string name="pref_liquid_glass_vibrancy">Соковитість кольорів</string>
+  <string name="pref_liquid_glass_highlights">Відблиски</string>
+  <string name="pref_liquid_glass_highlight_style">Стиль відблисків</string>
+  <string name="pref_liquid_glass_component_default">Типове значення компонента</string>
+  <string name="pref_liquid_glass_highlight_ambient">Розсіяний</string>
+  <string name="pref_liquid_glass_highlight_plain">Простий</string>
+  <string name="pref_liquid_glass_highlight_strength">Сила відблисків</string>
+  <string name="pref_liquid_glass_highlight_width">Ширина відблисків</string>
+  <string name="pref_liquid_glass_highlight_blur">М\'якість відблисків</string>
+  <string name="pref_liquid_glass_shadows">Тіні</string>
+  <string name="pref_liquid_glass_shadow_strength">Сила тіні</string>
+  <string name="pref_liquid_glass_shadow_radius">М\'якість тіні</string>
+  <string name="pref_liquid_glass_inner_shadow_strength">Сила внутрішньої тіні</string>
+  <string name="pref_liquid_glass_inner_shadow_radius">М\'якість внутрішньої тіні</string>
+  <string name="debug_logs_save_to_config">Зберегти журнали в папку конфігурації</string>
+  <string name="debug_logs_config_required">Спочатку виберіть папку конфігурації в розширених налаштуваннях.</string>
+  <string name="debug_logs_config_saved">Журнали збережено в %1$s у вашій папці конфігурації.</string>
+  <string name="debug_logs_config_save_failed">Не вдалося зберегти журнали. Перевірте доступ до папки конфігурації або виберіть її знову.</string>
+  <string name="pref_gesture_show_seekbar_horizontal_title">Показувати смугу перемотування за прихованих елементів керування</string>
+  <string name="pref_gesture_show_seekbar_horizontal_summary">Під час горизонтального свайпу показувати смугу перемотування, навіть якщо елементи керування програвачем приховані. Індикатор часу не змінюється.</string>
+  <string name="player_zoom_overlays_follow">Масштабувати OSD і субтитри з відео</string>
+  <string name="player_zoom_overlays_follow_summary">Субтитри та сторінки статистики 1–6 масштабуються разом із відео. Якщо вимкнено, розмір залишається сталим.</string>
+  <string name="network_smb_share_folder">Спільний ресурс / папка (необов’язково)</string>
+  <string name="network_smb_share_hint">Залиште поле порожнім або введіть /, щоб переглянути всі спільні папки. Введіть /Media або /Media/Movies, щоб відкрити певну папку.</string>
+  <string name="pref_app_icon_title">Значок застосунку</string>
+  <string name="pref_app_icon_summary">Виберіть значок для лаунчера</string>
+  <string name="pref_app_icon_description">Виберіть значок. Нові варіанти можна додати пізніше.</string>
+  <string name="app_icon_purple">Фіолетова стрічка</string>
+  <string name="app_icon_purple_description">Новий градієнтний логотип mpvRx (типово)</string>
+  <string name="app_icon_classic">Класичний</string>
+  <string name="app_icon_classic_description">Початковий значок mpvRx</string>
+  <string name="app_icon_change_failed">Не вдалося змінити значок.</string>
 </resources>

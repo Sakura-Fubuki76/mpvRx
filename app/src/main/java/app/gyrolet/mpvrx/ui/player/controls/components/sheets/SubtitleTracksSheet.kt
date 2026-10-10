@@ -26,8 +26,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -42,11 +42,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
@@ -57,6 +57,7 @@ import app.gyrolet.mpvrx.presentation.components.PlayerSheetAction
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetSectionHeader
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
 import app.gyrolet.mpvrx.ui.player.TrackNode
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusRequester
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
@@ -83,6 +84,7 @@ sealed class SubtitleItem {
   object Off : SubtitleItem()
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SubtitlesSheet(
   tracks: ImmutableList<TrackNode>,
@@ -504,7 +506,8 @@ fun SubtitlesSheet(
             }
             is SubtitleItem.Off -> {
               val haptics = rememberAppHaptics()
-              val shape = RoundedCornerShape(8.dp)
+              val shape = MaterialTheme.shapes.medium
+              val isFrostedOff = LocalKyantPlayerBackdrop.current != null
               Surface(
                 modifier =
                   Modifier
@@ -512,6 +515,7 @@ fun SubtitlesSheet(
                     .padding(horizontal = 8.dp, vertical = 3.dp)
                     .tvInitialFocus(initialFocusRequester)
                     .tvFocusHighlight(shape)
+                    .clip(shape)
                     .selectable(selected = subtitlesOff, role = Role.RadioButton) {
                       onDisableSubtitles()
                       if (!subtitlesOff) haptics.selection(false)
@@ -519,9 +523,9 @@ fun SubtitlesSheet(
                 shape = shape,
                 color =
                   if (subtitlesOff) {
-                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+                    if (isFrostedOff) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.secondaryContainer
                   } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
+                    if (isFrostedOff) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh
                   },
                 border =
                   if (subtitlesOff) {
@@ -547,8 +551,8 @@ fun SubtitlesSheet(
                   }
                   Text(
                     stringResource(R.string.player_sheets_off),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (subtitlesOff) FontWeight.Bold else FontWeight.Medium,
+                    style = if (subtitlesOff) MaterialTheme.typography.bodyLargeEmphasized else MaterialTheme.typography.bodyLarge,
+                    color = if (subtitlesOff) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                   )
                 }
@@ -570,6 +574,7 @@ fun SubtitlesSheet(
   }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SubtitleTrackRow(
   track: TrackNode,
@@ -585,13 +590,14 @@ fun SubtitleTrackRow(
 ) {
   val isTelevision = DeviceFormFactor.isTelevision(LocalContext.current)
   val haptics = rememberAppHaptics()
-  val shape = RoundedCornerShape(8.dp)
+  val shape = MaterialTheme.shapes.medium
+  val isFrosted = LocalKyantPlayerBackdrop.current != null
   val containerColor by animateColorAsState(
     targetValue =
       if (isSelected) {
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+        if (isFrosted) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.secondaryContainer
       } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        if (isFrosted) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh
       },
     animationSpec = AppMotion.spatial(AppMotion.Effect.Color, snap()),
     label = "subtitleTrackSelection",
@@ -610,6 +616,7 @@ fun SubtitleTrackRow(
         .fillMaxWidth()
         .padding(horizontal = 8.dp, vertical = 3.dp)
         .tvFocusHighlight(shape)
+        .clip(shape)
         .toggleable(value = isSelected, role = Role.Checkbox) { selected ->
           onToggle()
           haptics.selection(selected)
@@ -631,9 +638,8 @@ fun SubtitleTrackRow(
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Text(
           text = getTrackTitle(track),
-          style = MaterialTheme.typography.bodyMedium,
-          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-          color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+          style = if (isSelected) MaterialTheme.typography.bodyLargeEmphasized else MaterialTheme.typography.bodyLarge,
+          color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
         )
         TrackBadgeFlow(badges = badges, selected = isSelected)
       }

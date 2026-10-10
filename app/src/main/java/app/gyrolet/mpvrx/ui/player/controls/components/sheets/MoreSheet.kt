@@ -33,7 +33,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -255,7 +254,7 @@ fun MoreSheet(
                   if (statisticsPage in 1..5) PlaybackSession.command("script-binding", "stats/display-stats-toggle")
                   // Enable console only if it is not already open
                   if (!isConsoleOpen) {
-                    PlaybackSession.command("script-message-to", "console", "enable")
+                    PlaybackSession.command("script-binding", "console/enable")
                   }
                 }
                 else -> {
@@ -429,36 +428,6 @@ fun TimePickerDialog(
           }
         }
       }
-    }
-  }
-}
-
-@Composable
-fun SectionHeaderWithInfo(
-  title: String,
-  onInfoClick: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  Row(
-    modifier = modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.Start,
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Text(
-      text = title,
-      style = MaterialTheme.typography.titleMedium,
-      color = MaterialTheme.colorScheme.primary,
-    )
-    Spacer(modifier = Modifier.width(8.dp))
-    IconButton(onClick = onInfoClick, modifier = Modifier.size(24.dp)) {
-      Icon(
-        imageVector = Icons.RoundedFilled.Info,
-        contentDescription =
-          androidx.compose.ui.res
-            .stringResource(app.gyrolet.mpvrx.R.string.info),
-        tint = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(16.dp),
-      )
     }
   }
 }

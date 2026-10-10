@@ -14,6 +14,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -97,7 +98,7 @@ fun AppWallpaperHost(content: @Composable () -> Unit) {
     }.value
   val contentAlpha by animateFloatAsState(
     targetValue = if (initialWallpaperResolved) 1f else 0f,
-    animationSpec = tween(durationMillis = 180),
+    animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
     label = "wallpaperContentAlpha",
   )
   DisposableEffect(wallpaper) {
@@ -124,19 +125,23 @@ fun AppWallpaperHost(content: @Composable () -> Unit) {
     modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
   ) {
     wallpaper?.let { bitmap ->
-      WallpaperImage(
-        bitmap = bitmap,
-        zoom = wallpaperZoom,
-        offsetX = wallpaperOffsetX,
-        offsetY = wallpaperOffsetY,
-        scaleMode = wallpaperScaleMode,
-        blurRadius = wallpaperBlur,
-        imageAlpha = wallpaperAlpha,
-        modifier = Modifier.fillMaxSize(),
-      )
-      Box(
-        modifier = Modifier.fillMaxSize().background(rememberWallpaperScrimColor(bitmap)),
-      )
+      // Fade the wallpaper in together with the content so the launch hands off from the splash
+      // as one crossfade instead of the wallpaper hard-cutting in before the content.
+      Box(modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha }) {
+        WallpaperImage(
+          bitmap = bitmap,
+          zoom = wallpaperZoom,
+          offsetX = wallpaperOffsetX,
+          offsetY = wallpaperOffsetY,
+          scaleMode = wallpaperScaleMode,
+          blurRadius = wallpaperBlur,
+          imageAlpha = wallpaperAlpha,
+          modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+          modifier = Modifier.fillMaxSize().background(rememberWallpaperScrimColor(bitmap)),
+        )
+      }
     }
     CompositionLocalProvider(
       LocalAppWallpaperActive provides wallpaperActive,

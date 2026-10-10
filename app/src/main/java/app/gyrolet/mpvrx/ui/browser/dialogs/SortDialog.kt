@@ -31,13 +31,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -46,7 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
+import app.gyrolet.mpvrx.ui.components.AppSlider as Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
@@ -59,6 +58,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -254,7 +255,7 @@ fun SortDialog(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                   ) {
-                    Checkbox(
+                    RoundedCheckbox(
                       checked = layoutModeSelector.isCheckboxChecked,
                       onCheckedChange = null,
                       enabled = enableLayoutModeOptions,
@@ -282,7 +283,7 @@ fun SortDialog(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                   ) {
-                    Checkbox(checked = manualGridToggle.checked, onCheckedChange = null, enabled = isEnabled)
+                    RoundedCheckbox(checked = manualGridToggle.checked, onCheckedChange = null, enabled = isEnabled)
                     Text(
                       text = browserOptionLabel(manualGridToggle.label),
                       modifier = Modifier.weight(1f),
@@ -652,6 +653,62 @@ private fun gridColumnValue(selector: GridColumnSelector): String = when (select
   "" -> selector.currentValue.toString()
   "cols" -> androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.browser_grid_column_count, selector.currentValue)
   else -> "${selector.currentValue} ${selector.unitSuffix}"
+}
+
+@Composable
+private fun RoundedCheckbox(
+  checked: Boolean,
+  onCheckedChange: ((Boolean) -> Unit)?,
+  modifier: Modifier = Modifier,
+  enabled: Boolean = true,
+) {
+  val checkColor = MaterialTheme.colorScheme.primary
+  val uncheckedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+  val disabledAlpha = 0.38f
+
+  val animatedBgColor by animateColorAsState(
+    targetValue = if (checked) checkColor else Color.Transparent,
+    animationSpec = AppMotion.spatial(AppMotion.Effect.Color, snap()),
+    label = "checkboxBg",
+  )
+  val animatedBorderColor by animateColorAsState(
+    targetValue = if (checked) checkColor else uncheckedBorderColor,
+    animationSpec = AppMotion.spatial(AppMotion.Effect.Color, snap()),
+    label = "checkboxBorder",
+  )
+
+  val interactionModifier = if (onCheckedChange != null) {
+    Modifier.clickable(
+      enabled = enabled,
+      role = Role.Checkbox,
+      onClick = { onCheckedChange(!checked) },
+    )
+  } else {
+    Modifier
+  }
+
+  Box(
+    modifier =
+      modifier
+        .padding(8.dp)
+        .size(20.dp)
+        .graphicsLayer {
+          if (!enabled) alpha = disabledAlpha
+        }
+        .background(animatedBgColor, CircleShape)
+        .border(2.dp, animatedBorderColor, CircleShape)
+        .then(interactionModifier),
+    contentAlignment = Alignment.Center,
+  ) {
+    if (checked) {
+      Icon(
+        imageVector = Icons.RoundedFilled.Check,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onPrimary,
+        modifier = Modifier.size(13.dp),
+      )
+    }
+  }
 }
 
 data class VisibilityToggle(

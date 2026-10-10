@@ -55,7 +55,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.database.entities.SecureMediaEntity
 import app.gyrolet.mpvrx.database.repository.VideoMetadataCacheRepository
 import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
@@ -233,7 +232,6 @@ data object SecureFolderScreen : Screen {
     var changeSecurityQuestionOpen by remember { mutableStateOf(false) }
     var hideEntryPointConfirmOpen by remember { mutableStateOf(false) }
     var sortDialogOpen by rememberSaveable { mutableStateOf(false) }
-    var isScrollbarDragging by remember { mutableStateOf(false) }
 
     LaunchedEffect(operationResult) {
       operationResult?.let {
@@ -475,7 +473,6 @@ data object SecureFolderScreen : Screen {
                       thumbnailWidthPx = thumbWidthPx,
                       thumbnailHeightPx = thumbHeightPx,
                       allowThumbnailGeneration = true,
-                      allowThumbnailLoading = !isScrollbarDragging,
                       uiConfig = videoCardUiConfig,
                     )
                   }
@@ -487,7 +484,6 @@ data object SecureFolderScreen : Screen {
                     dragLabelProvider = { index ->
                       fastScrollGlyph(sortedSecureMediaVideos.getOrNull(index)?.second?.displayName)
                     },
-                    onDragStateChanged = { isDragging -> isScrollbarDragging = isDragging },
                     modifier =
                       Modifier
                         .align(Alignment.CenterEnd)
@@ -534,7 +530,6 @@ data object SecureFolderScreen : Screen {
                       },
                       isGridMode = false,
                       allowThumbnailGeneration = true,
-                      allowThumbnailLoading = !isScrollbarDragging,
                       uiConfig = videoCardUiConfig,
                     )
                   }
@@ -546,7 +541,6 @@ data object SecureFolderScreen : Screen {
                     dragLabelProvider = { index ->
                       fastScrollGlyph(sortedSecureMediaVideos.getOrNull(index)?.second?.displayName)
                     },
-                    onDragStateChanged = { isDragging -> isScrollbarDragging = isDragging },
                     modifier =
                       Modifier
                         .align(Alignment.CenterEnd)

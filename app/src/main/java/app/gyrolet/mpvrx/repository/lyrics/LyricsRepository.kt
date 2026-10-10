@@ -142,18 +142,22 @@ class LyricsRepository(
   private val registry = LyricsProviderRegistry(lrcLibApiService)
 
   /**
-   * The provider the user asked for on this session's tracks, or null for the
-   * automatic race. Memory rather than a stored preference: what serves one
-   * album well is not a decision that should outlive the listening.
+   * The online provider to try first for this listening session. LRCLIB is the
+   * fresh-session default; null explicitly selects the automatic provider race.
+   * The choice remains session-scoped rather than becoming a persisted setting.
    */
   @Volatile
-  var preferredProvider: LyricsProvider? = null
+  var preferredProvider: LyricsProvider? = LyricsProvider.LRCLIB
     private set
 
   private data class CacheKey(
     val mediaPath: String,
     val allowOnline: Boolean,
+    val autoFetchOnline: Boolean,
   )
+
+  private fun cacheKey(mediaPath: String, allowOnline: Boolean): CacheKey =
+    CacheKey(mediaPath, allowOnline, audioPreferences.lyricsAutoFetchOnline.get())
 
   private val cache = LruCache<CacheKey, LyricsResult>(64)
   private val providerCache = LyricsProviderCache(File(context.cacheDir, "lyrics/providers-v1"))
@@ -278,15 +282,19 @@ class LyricsRepository(
     durationSeconds: Int = 0,
     forceRefresh: Boolean = false,
     allowOnline: Boolean = true,
+    forceOnline: Boolean = false,
     album: String? = null,
     isrc: String? = null,
   ): LyricsResult =
     withContext(Dispatchers.IO) {
-      val cacheKey = CacheKey(mediaPath, allowOnline)
+      val cacheKey = cacheKey(mediaPath, allowOnline)
       val requestedProvider = preferredProvider
-      if (!forceRefresh) {
+      if (!forceRefresh && !forceOnline) {
         cache.get(cacheKey)?.let { existing ->
-          if (!allowOnline || existing.preferredOnlineProvider == requestedProvider) return@withContext existing
+          if (!allowOnline || existing.embeddedLyrics?.isValid() == true ||
+            !audioPreferences.lyricsAutoFetchOnline.get() ||
+            existing.preferredOnlineProvider == requestedProvider
+          ) return@withContext existing
           switchProvider(mediaPath, requestedProvider, allowOnline)?.let { return@withContext it }
         }
       }
@@ -295,8 +303,11 @@ class LyricsRepository(
 
       val embedded = EmbeddedLyricsExtractor.extractEmbeddedLyrics(context, mediaPath)
 
+      // Never delay usable embedded/local lyrics for an automatic provider search.
+      // An explicit Search Online action can override this preference.
       val online =
-        if (allowOnline) {
+        if (allowOnline && (forceOnline ||
+            (audioPreferences.lyricsAutoFetchOnline.get() && embedded?.isValid() != true))) {
           fetchOnlineLyrics(
             rawTitle = title,
             rawArtist = artist,
@@ -329,13 +340,8 @@ class LyricsRepository(
 
       val defaultSelected =
         when {
-          embedded != null && embedded.isValid() -> {
-            if (embedded.synced.isNullOrEmpty() && online.lyrics != null && !online.lyrics.synced.isNullOrEmpty()) {
-              LyricsSourceType.ONLINE
-            } else {
-              embedded.sourceType
-            }
-          }
+          forceOnline && online.lyrics?.isValid() == true -> LyricsSourceType.ONLINE
+          embedded != null && embedded.isValid() -> embedded.sourceType
           online.lyrics != null && online.lyrics.isValid() -> LyricsSourceType.ONLINE
           else -> LyricsSourceType.EMBEDDED
         }
@@ -572,7 +578,7 @@ class LyricsRepository(
     allowOnline: Boolean = true,
   ): LyricsResult? {
     if (!allowOnline && sourceType == LyricsSourceType.ONLINE) return null
-    val cacheKey = CacheKey(mediaPath, allowOnline)
+    val cacheKey = cacheKey(mediaPath, allowOnline)
     val existing = cache.get(cacheKey) ?: return null
     val newActive =
       when (sourceType) {
@@ -600,7 +606,7 @@ class LyricsRepository(
   ): LyricsResult? {
     if (!allowOnline) return null
     preferredProvider = provider
-    val cacheKey = CacheKey(mediaPath, allowOnline)
+    val cacheKey = cacheKey(mediaPath, allowOnline)
     val existing = cache.get(cacheKey) ?: return null
 
     val picked =
@@ -633,7 +639,7 @@ class LyricsRepository(
     result: OnlineLyricsResult,
     allowOnline: Boolean = true,
   ): LyricsResult? {
-    val cacheKey = CacheKey(mediaPath, allowOnline)
+    val cacheKey = cacheKey(mediaPath, allowOnline)
     val existing = cache.get(cacheKey) ?: return null
     val byProvider =
       if (result.byProvider.isEmpty()) {
@@ -673,6 +679,6 @@ class LyricsRepository(
     mediaPath: String,
     allowOnline: Boolean = true,
   ) {
-    cache.remove(CacheKey(mediaPath, allowOnline))
+    cache.remove(cacheKey(mediaPath, allowOnline))
   }
 }

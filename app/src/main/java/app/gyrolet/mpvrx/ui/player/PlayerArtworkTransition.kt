@@ -204,11 +204,14 @@ internal fun PlayerArtworkTransitionOverlay(
             .first()
         }
         if (target != null) {
-          // A re-entry into an already-READY session is showing the same frame the poster depicts,
-          // so there is nothing to cross-fade. Snapping keeps the extra 320ms off the open.
-          val alreadyLive = session.phase == PlaybackPhase.READY || session.phase == PlaybackPhase.BACKGROUND
-          if (reducedMotion || alreadyLive) motion.progress.snapTo(1f)
-          else motion.progress.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+          // A deliberate full <-> mini handoff should stay symmetric even when the process-wide
+          // playback session is already READY/BACKGROUND. Snapping here made mini -> full appear
+          // instant while the opposite direction still felt animated.
+          if (reducedMotion) {
+            motion.progress.snapTo(1f)
+          } else {
+            motion.progress.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+          }
         }
       } finally {
         PlayerArtworkTransitions.finish(motion.id)

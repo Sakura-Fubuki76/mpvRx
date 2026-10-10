@@ -47,8 +47,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -63,8 +65,36 @@ import `is`.xyz.mpv.Utils
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 
-private val tabularFigures = "tnum"
 private val compactSpeedIndicatorWidth = 32.dp
+
+/** Equal-width digits where the font supports them. */
+fun TextStyle.withTabularDigits(): TextStyle = copy(fontFeatureSettings = "tnum")
+
+// Signs and separators that locale-formatted numbers may use: ASCII/Unicode minus, plus, Arabic separators.
+private const val NUMERIC_PUNCTUATION = "+-\u2212.,\u066B\u066C"
+
+/** Wording without numbers: "Zoom: 95%" and "Zoom: −100%" share a key, a different message does not. */
+private fun numericWidthKey(text: String): String =
+  text.filterNot {
+    it.isDigit() || it in NUMERIC_PUNCTUATION || Character.getType(it) == Character.FORMAT.toInt()
+  }
+
+/**
+ * Shared anti-jitter sizing for every live-number indicator on the player. While the wording of [text]
+ * stays the same the element can grow but never shrink, so digits with different glyph widths cannot
+ * make it jitter; new wording lets it fit its content again.
+ */
+@Composable
+fun Modifier.stableNumericWidth(text: String): Modifier {
+  // Layout-only memory: not snapshot state, so widening never triggers recomposition.
+  val widestPx = remember(numericWidthKey(text)) { intArrayOf(0) }
+  return layout { measurable, constraints ->
+    val minWidth = maxOf(constraints.minWidth, widestPx[0]).coerceAtMost(constraints.maxWidth)
+    val placeable = measurable.measure(constraints.copy(minWidth = minWidth))
+    widestPx[0] = maxOf(widestPx[0], placeable.width)
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+  }
+}
 
 @Composable
 private fun rememberPlayerUpdateOffset(): State<androidx.compose.ui.unit.Dp> {
@@ -100,9 +130,11 @@ private fun rememberPlayerUpdateOffset(): State<androidx.compose.ui.unit.Dp> {
   )
 }
 
+/** Shared container for every player pill; [stableWidthText] keeps it from jittering as numbers change. */
 @Composable
 fun PlayerUpdate(
   modifier: Modifier = Modifier,
+  stableWidthText: String = "",
   content: @Composable () -> Unit = {},
 ) {
   val controlsOffset = rememberPlayerUpdateOffset()
@@ -124,7 +156,10 @@ fun PlayerUpdate(
         .animateContentSize(),
   ) {
     Box(
-      modifier = Modifier.padding(vertical = 4.dp, horizontal = 10.dp),
+      modifier =
+        Modifier
+          .stableNumericWidth(stableWidthText)
+          .padding(vertical = 4.dp, horizontal = 10.dp),
       contentAlignment = Alignment.Center,
     ) {
       content()
@@ -137,14 +172,13 @@ fun TextPlayerUpdate(
   text: String,
   modifier: Modifier = Modifier,
 ) {
-  val stableTextStyle = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = tabularFigures)
-  PlayerUpdate(modifier) {
+  PlayerUpdate(modifier, stableWidthText = text) {
     Text(
       text = text,
       fontWeight = FontWeight.Bold,
       textAlign = TextAlign.Center,
       color = MaterialTheme.colorScheme.onSurface,
-      style = stableTextStyle,
+      style = MaterialTheme.typography.bodyMedium.withTabularDigits(),
     )
   }
 }
@@ -203,7 +237,7 @@ fun CompactSpeedIndicator(
           text = targetSpeed,
           fontWeight = FontWeight.ExtraBold,
           textAlign = TextAlign.Center,
-          style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = tabularFigures),
+          style = MaterialTheme.typography.bodyMedium.withTabularDigits(),
           color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
@@ -211,7 +245,7 @@ fun CompactSpeedIndicator(
           fontWeight = FontWeight.Bold,
           textAlign = TextAlign.Center,
           modifier = Modifier.padding(start = 1.dp),
-          style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = tabularFigures),
+          style = MaterialTheme.typography.labelMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
         )
       }
@@ -329,8 +363,8 @@ fun SeekPlayerUpdate(
   seekDelta: String,
   modifier: Modifier = Modifier,
 ) {
-  val stableTextStyle = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = tabularFigures)
-  PlayerUpdate(modifier) {
+  val stableTextStyle = MaterialTheme.typography.bodyMedium.withTabularDigits()
+  PlayerUpdate(modifier, stableWidthText = "$currentTime $seekDelta") {
     Row(
       verticalAlignment = Alignment.CenterVertically,
     ) {

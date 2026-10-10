@@ -135,15 +135,6 @@ class DirectDownloadService : Service() {
     }
   }
 
-  private fun formatBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val kb = bytes / 1024.0
-    if (kb < 1024) return "%.0f KB".format(Locale.US, kb)
-    val mb = kb / 1024.0
-    if (mb < 1024) return "%.1f MB".format(Locale.US, mb)
-    return "%.2f GB".format(Locale.US, mb / 1024.0)
-  }
-
   companion object {
     private const val CHANNEL_ID = "direct_downloads"
     private const val NOTIFICATION_ID = 0x59D2
@@ -158,4 +149,13 @@ class DirectDownloadService : Service() {
       }
     }
   }
+}
+
+internal fun formatBytes(bytes: Long): String {
+  if (bytes < 1024) return "$bytes B"
+  val kb = bytes / 1024.0
+  if (kb < 1024) return "%.0f KB".format(Locale.US, kb)
+  val mb = kb / 1024.0
+  if (mb < 1024) return "%.1f MB".format(Locale.US, mb)
+  return "%.2f GB".format(Locale.US, mb / 1024.0)
 }

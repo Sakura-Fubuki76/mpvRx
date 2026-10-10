@@ -17,7 +17,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.ui.player.visualizer.VisualizerPalette
 import android.util.Base64
 import java.nio.charset.StandardCharsets
 
@@ -663,26 +662,6 @@ enum class AppTheme(
       surfaceContainer = surfaceContainer,
       surfaceContainerHigh = surfaceContainerHigh,
       surfaceContainerHighest = surfaceContainerHighest,
-    )
-  }
-
-  internal fun toVisualizerPalette(
-    useDarkTheme: Boolean,
-    amoledMode: Boolean = false,
-  ): VisualizerPalette {
-    val bg =
-      if (amoledMode && useDarkTheme) {
-        Color.Black
-      } else if (useDarkTheme) {
-        backgroundDark
-      } else {
-        backgroundLight
-      }
-    return VisualizerPalette(
-      background = bg.toArgb(),
-      primary = (if (useDarkTheme) primaryDark else primaryLight).toArgb(),
-      secondary = (if (useDarkTheme) secondaryDark else secondaryLight).toArgb(),
-      tertiary = (if (useDarkTheme) tertiaryDark else tertiaryLight).toArgb(),
     )
   }
 

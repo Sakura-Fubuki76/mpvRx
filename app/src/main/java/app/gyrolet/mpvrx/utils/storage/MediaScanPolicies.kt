@@ -143,6 +143,20 @@ internal fun isStoragePathDescendant(
   return candidateKey != parentKey && candidateKey.startsWith("$parentKey/")
 }
 
+internal fun isDirectStorageChild(
+  parentPath: String?,
+  candidatePath: String?,
+): Boolean {
+  val parentKey = storagePathKey(parentPath) ?: return false
+  val candidateKey = storagePathKey(candidatePath) ?: return false
+  if (candidateKey == parentKey || !candidateKey.startsWith("$parentKey/")) {
+    return false
+  }
+
+  val relativePath = candidateKey.removePrefix("$parentKey/")
+  return !relativePath.contains('/')
+}
+
 internal fun choosePreferredStoragePath(
   existingPath: String,
   candidatePath: String,

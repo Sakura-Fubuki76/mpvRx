@@ -39,7 +39,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -99,7 +98,6 @@ import app.gyrolet.mpvrx.database.entities.Audiobook
 import app.gyrolet.mpvrx.database.entities.AudiobookEntity
 import app.gyrolet.mpvrx.domain.audiobook.AudiobookOnlineMetadata
 import app.gyrolet.mpvrx.domain.audiobookshelf.AudiobookshelfBook
-import app.gyrolet.mpvrx.domain.audiobookshelf.AudiobookshelfLibrary
 import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
 import app.gyrolet.mpvrx.preferences.AudiobookSortType
 import app.gyrolet.mpvrx.preferences.AudiobookSourceProvider
@@ -110,7 +108,6 @@ import app.gyrolet.mpvrx.preferences.SortOrder
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.components.AppPickerSheet
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetSearchField
-import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
 import app.gyrolet.mpvrx.ui.browser.dialogs.AudiobookSortDialog
@@ -129,17 +126,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
-
-@Serializable
-object AudiobookLibraryScreen : Screen {
-  @OptIn(ExperimentalMaterial3Api::class)
-  @Composable
-  override fun Content() {
-    AudiobookLibraryContent(isMusicTabMode = false)
-  }
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable

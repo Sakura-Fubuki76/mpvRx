@@ -25,13 +25,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -65,7 +63,6 @@ import app.gyrolet.mpvrx.ui.player.Debanding
 import app.gyrolet.mpvrx.ui.player.MPVProfile
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
 import kotlinx.serialization.Serializable
@@ -100,26 +97,9 @@ object DecoderPreferencesScreen : Screen {
     var anime4kExpanded by remember { mutableStateOf(false) }
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = stringResource(R.string.pref_decoder),
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.primary,
-            )
-          },
-          navigationIcon = {
-            if (LocalShowSettingsBackArrow.current) {
-              IconButton(onClick = { backstack.popSafely() }) {
-                Icon(
-                  Icons.RoundedFilled.ArrowBack,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
-          },
+        SettingsTopAppBar(
+          title = stringResource(R.string.pref_decoder),
+          onBack = { backstack.popSafely() },
         )
       },
     ) { padding ->

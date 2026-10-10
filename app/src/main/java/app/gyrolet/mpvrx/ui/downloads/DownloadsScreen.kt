@@ -73,6 +73,7 @@ import app.gyrolet.mpvrx.domain.download.AppDownload
 import app.gyrolet.mpvrx.domain.download.AppDownloadManager
 import app.gyrolet.mpvrx.domain.download.AppDownloadStatus
 import app.gyrolet.mpvrx.domain.download.YtdlpDownloadEngine
+import app.gyrolet.mpvrx.domain.download.formatBytes
 import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.presentation.components.RemoteImage
@@ -572,12 +573,3 @@ private fun ytdlpStatusLine(job: YtdlpDownloadEngine.Job): String =
     YtdlpDownloadEngine.JobState.CANCELLED -> stringResource(R.string.downloads_cancelled)
     YtdlpDownloadEngine.JobState.SUCCESS -> stringResource(R.string.downloads_downloaded)
   }
-
-private fun formatBytes(bytes: Long): String {
-  if (bytes < 1024) return "$bytes B"
-  val kb = bytes / 1024.0
-  if (kb < 1024) return "%.0f KB".format(Locale.US, kb)
-  val mb = kb / 1024.0
-  if (mb < 1024) return "%.1f MB".format(Locale.US, mb)
-  return "%.2f GB".format(Locale.US, mb / 1024.0)
-}

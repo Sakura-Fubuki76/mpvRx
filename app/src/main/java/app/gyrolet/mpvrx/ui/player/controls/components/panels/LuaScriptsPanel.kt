@@ -9,7 +9,6 @@
 
 package app.gyrolet.mpvrx.ui.player.controls.components.panels
 
-import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row

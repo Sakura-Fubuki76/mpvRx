@@ -49,8 +49,6 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 import java.io.File
 import java.util.Locale
-import kotlin.math.log10
-import kotlin.math.pow
 
 /**
  * Unified repository for ALL media file operations
@@ -326,9 +324,9 @@ object MediaFileRepository : KoinComponent {
                   path = path,
                   uri = Uri.fromFile(file),
                   duration = durationMs,
-                  durationFormatted = formatDuration(durationMs),
+                  durationFormatted = VideoScanUtils.formatDuration(durationMs),
                   size = cursor.getLong(sizeColumn),
-                  sizeFormatted = formatFileSize(cursor.getLong(sizeColumn)),
+                  sizeFormatted = VideoScanUtils.formatFileSize(cursor.getLong(sizeColumn)),
                   dateModified = cursor.getLong(dateColumn),
                   dateAdded = cursor.getLong(dateColumn),
                   mimeType = FileTypeUtils.getMimeTypeFromExtension(file.extension.lowercase()),
@@ -371,16 +369,6 @@ object MediaFileRepository : KoinComponent {
       dao = database.directoryScanDao(),
       forceDiscovery = forceDiscovery,
     )
-
-  /**
-   * No-op enrichment - MediaStore already provides all metadata
-   * Kept for backward compatibility
-   */
-  suspend fun enrichVideoFolders(
-    context: Context,
-    folders: List<VideoFolder>,
-    onProgress: ((Int, Int) -> Unit)? = null,
-  ): List<VideoFolder> = folders
 
   // =============================================================================
   // VIDEO FILE OPERATIONS
@@ -584,9 +572,9 @@ object MediaFileRepository : KoinComponent {
       path = path,
       uri = uri,
       duration = duration,
-      durationFormatted = formatDuration(duration),
+      durationFormatted = VideoScanUtils.formatDuration(duration),
       size = size,
-      sizeFormatted = formatFileSize(size),
+      sizeFormatted = VideoScanUtils.formatFileSize(size),
       dateModified = dateModified,
       dateAdded = dateModified,
       mimeType = mimeType,
@@ -601,10 +589,6 @@ object MediaFileRepository : KoinComponent {
     )
   }
 
-  /**
-   * Creates a Video object from a file with pre-fetched metadata
-   * Use this when metadata has already been batch-extracted
-   */
   private fun createVideoFromFileWithMetadata(
     file: File,
     bucketId: String,
@@ -644,9 +628,9 @@ object MediaFileRepository : KoinComponent {
       path = path,
       uri = uri,
       duration = duration,
-      durationFormatted = formatDuration(duration),
+      durationFormatted = VideoScanUtils.formatDuration(duration),
       size = size,
-      sizeFormatted = formatFileSize(size),
+      sizeFormatted = VideoScanUtils.formatFileSize(size),
       dateModified = dateModified,
       dateAdded = dateModified,
       mimeType = mimeType,
@@ -660,6 +644,7 @@ object MediaFileRepository : KoinComponent {
       subtitleCodec = subtitleCodec,
     )
   }
+
 
   /**
    * Every video in the library, listed folder by folder.
@@ -744,11 +729,6 @@ object MediaFileRepository : KoinComponent {
   // =============================================================================
   // FILE SYSTEM BROWSING (Tree View)
   // =============================================================================
-
-  /**
-   * Gets the default root path for the filesystem browser
-   */
-  fun getDefaultRootPath(): String = Environment.getExternalStorageDirectory().absolutePath
 
   /**
    * Parses a path into breadcrumb components
@@ -1037,36 +1017,4 @@ suspend fun getStorageRoots(
 
       roots.toList()
     }
-
-  // =============================================================================
-  // FORMATTING UTILITIES
-  // =============================================================================
-
-  private fun formatDuration(durationMs: Long): String {
-    if (durationMs <= 0) return "0s"
-
-    val seconds = durationMs / 1000
-    val hours = seconds / 3600
-    val minutes = (seconds % 3600) / 60
-    val secs = seconds % 60
-
-    return when {
-      hours > 0 -> String.format(Locale.getDefault(), "%d:%02d:%02d", hours, minutes, secs)
-      minutes > 0 -> String.format(Locale.getDefault(), "%d:%02d", minutes, secs)
-      else -> "${secs}s"
-    }
-  }
-
-  private fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB", "TB")
-    val digitGroups = (log10(bytes.toDouble()) / log10(1024.0)).toInt()
-    return String.format(
-      Locale.getDefault(),
-      "%.1f %s",
-      bytes / 1024.0.pow(digitGroups.toDouble()),
-      units[digitGroups],
-    )
-  }
-
 }

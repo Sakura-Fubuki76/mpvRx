@@ -45,6 +45,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -52,7 +54,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.Job
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -89,6 +91,9 @@ class NetworkBrowserViewModel(
   private val browserPreferences: BrowserPreferences by inject()
   private val playerPreferences: PlayerPreferences by inject()
 
+  // A refresh can overtake a previous SMB request; never allow the older listing
+  // to replace the currently selected share/folder's results.
+  private var pendingListing: Job? = null
   private val _files = MutableStateFlow<List<NetworkFile>>(emptyList())
 
 
@@ -200,6 +205,7 @@ class NetworkBrowserViewModel(
         repository
           .listFiles(connection, currentPath, forceRefresh = forceStorageScan)
           .onSuccess { fileList ->
+            coroutineContext.ensureActive()
             if (generation == loadGeneration) {
               cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
               publish(fileList)
@@ -207,11 +213,15 @@ class NetworkBrowserViewModel(
               if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery, forceRefresh = forceStorageScan)
             }
           }.onFailure { e ->
+            if (e is CancellationException) throw e
+            // Do not keep presenting old folder contents after a failed refresh.
+            _files.value = emptyList()
             _error.value = e.message ?: "Unknown error"
           }
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (e: Exception) {
+        _files.value = emptyList()
         _error.value = e.message ?: "Unknown error"
       } finally {
         if (generation == loadGeneration) _isLoading.value = false
@@ -291,25 +301,6 @@ class NetworkBrowserViewModel(
         throw cancellation
       } catch (e: Exception) {
         Log.e(TAG, "Error opening network media", e)
-        _error.value = e.message ?: "Unknown error"
-      }
-    }
-  }
-
-  /**
-   * Play a video file
-   */
-  fun playVideo(file: NetworkFile) {
-    viewModelScope.launch {
-      try {
-        val connection =
-          repository.getConnectionById(connectionId)
-            ?: throw Exception("Connection not found")
-        playVideoInternal(connection, file)
-      } catch (cancellation: CancellationException) {
-        throw cancellation
-      } catch (e: Exception) {
-        Log.e(TAG, "Error playing video", e)
         _error.value = e.message ?: "Unknown error"
       }
     }

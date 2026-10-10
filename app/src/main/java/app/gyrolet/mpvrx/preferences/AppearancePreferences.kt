@@ -9,6 +9,7 @@
 
 package app.gyrolet.mpvrx.preferences
 
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
@@ -32,6 +33,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import app.gyrolet.mpvrx.preferences.preference.PreferenceStore
+import app.gyrolet.mpvrx.preferences.preference.Preference
 import app.gyrolet.mpvrx.preferences.preference.getEnum
 import app.gyrolet.mpvrx.ui.theme.AppTheme
 import app.gyrolet.mpvrx.ui.theme.CustomThemeDefinition
@@ -43,6 +45,8 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusGroup
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import kotlinx.collections.immutable.ImmutableList
+
+enum class LiquidGlassHighlightStyle { Component, Default, Ambient, Plain }
 
 class AppearancePreferences(
   preferenceStore: PreferenceStore,
@@ -66,10 +70,29 @@ class AppearancePreferences(
   val customWallpaperUseColors = preferenceStore.getBoolean("custom_wallpaper_use_colors", false)
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
   val liquidGlassEnabled = preferenceStore.getBoolean("liquid_glass_enabled", true)
+  val liquidGlassOpacity = preferenceStore.getFloat("liquid_glass_opacity", 1f)
+  val liquidGlassBlur = preferenceStore.getFloat("liquid_glass_blur", 1f)
+  val liquidGlassRefractionHeight = preferenceStore.getFloat("liquid_glass_refraction_height", 1f)
+  val liquidGlassRefractionAmount = preferenceStore.getFloat("liquid_glass_refraction_amount", 1f)
+  val liquidGlassDepthEffect = preferenceStore.getBoolean("liquid_glass_depth_effect", false)
+  val liquidGlassChromaticAberration = preferenceStore.getBoolean("liquid_glass_chromatic_aberration", true)
+  val liquidGlassVibrancy = preferenceStore.getBoolean("liquid_glass_vibrancy", true)
+  val liquidGlassSaturation = preferenceStore.getFloat("liquid_glass_saturation", 1f)
+  val liquidGlassBrightness = preferenceStore.getFloat("liquid_glass_brightness", 0f)
+  val liquidGlassContrast = preferenceStore.getFloat("liquid_glass_contrast", 1f)
+  val liquidGlassHighlightStyle = preferenceStore.getEnum("liquid_glass_highlight_style", LiquidGlassHighlightStyle.Component)
+  val liquidGlassHighlightStrength = preferenceStore.getFloat("liquid_glass_highlight_strength", 1f)
+  val liquidGlassHighlightWidth = preferenceStore.getFloat("liquid_glass_highlight_width", 1f)
+  val liquidGlassHighlightBlur = preferenceStore.getFloat("liquid_glass_highlight_blur", 1f)
+  val liquidGlassShadowStrength = preferenceStore.getFloat("liquid_glass_shadow_strength", 1f)
+  val liquidGlassShadowRadius = preferenceStore.getFloat("liquid_glass_shadow_radius", 1f)
+  val liquidGlassInnerShadowStrength = preferenceStore.getFloat("liquid_glass_inner_shadow_strength", 1f)
+  val liquidGlassInnerShadowRadius = preferenceStore.getFloat("liquid_glass_inner_shadow_radius", 1f)
+  val navigationBarGlow = preferenceStore.getBoolean("navigation_bar_glow", true)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val googleFontFamily = preferenceStore.getString("google_font_family", "")
   val googleFontRevision = preferenceStore.getInt("google_font_revision", 0)
-  val appUiScale = preferenceStore.getFloat("app_ui_scale", 1f)
+  val appUiScale = preferenceStore.getFloat("app_ui_scale", 0.95f)
   val unlimitedNameLines = preferenceStore.getBoolean("unlimited_name_lines", false)
   val hidePlayerButtonsBackground = preferenceStore.getBoolean("hide_player_buttons_background", false)
   val forceDarkPlayerButtonsBackground = preferenceStore.getBoolean("force_dark_player_buttons_background", false)
@@ -86,11 +109,21 @@ class AppearancePreferences(
   val showRecentsTab = preferenceStore.getBoolean("show_recents_tab", true)
   val showPlaylistsTab = preferenceStore.getBoolean("show_playlists_tab", true)
   val showCloudTab = preferenceStore.getBoolean("show_cloud_tab", true)
+  val showSnapshotTab = preferenceStore.getBoolean("show_snapshot_tab", false)
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
   val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
-  val showSnapshotTab = preferenceStore.getBoolean("show_snapshot_tab", false)
   val showQuickPlayFab = preferenceStore.getBoolean("show_quick_play_fab", true)
   val quickPlayFabDirect = preferenceStore.getBoolean("quick_play_fab_direct", false)
+
+  fun resetLiquidGlassOptions() {
+    listOf<Preference<*>>(
+      liquidGlassOpacity, liquidGlassBlur, liquidGlassRefractionHeight, liquidGlassRefractionAmount,
+      liquidGlassDepthEffect, liquidGlassChromaticAberration, liquidGlassVibrancy,
+      liquidGlassSaturation, liquidGlassBrightness, liquidGlassContrast,
+      liquidGlassHighlightStyle, liquidGlassHighlightStrength, liquidGlassHighlightWidth, liquidGlassHighlightBlur,
+      liquidGlassShadowStrength, liquidGlassShadowRadius, liquidGlassInnerShadowStrength, liquidGlassInnerShadowRadius,
+    ).forEach { it.delete() }
+  }
 
   val topLeftControls =
     preferenceStore.getString(
@@ -128,6 +161,12 @@ class AppearancePreferences(
     preferenceStore.getBoolean("clip_button_migration_complete", false)
 
   init {
+    // The advanced Liquid Glass optics rely on modern Android rendering primitives. A restored
+    // preference must not re-enable the expensive glass path on Android 11 or below.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && liquidGlassEnabled.get()) {
+      liquidGlassEnabled.set(false)
+    }
+
     if (selectedCustomThemeName.get().isBlank()) {
       CustomThemeDefinition.parse(customTheme.get())?.let { legacyTheme ->
         selectedCustomThemeName.set(legacyTheme.name)

@@ -77,6 +77,7 @@ object Icons {
     val ContentCopy by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Content_copy) }
     val ContentPaste by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Content_paste) }
     val CreateNewFolder by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Create_new_folder) }
+    val Crown by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Crown) }
     val CurrencyRupee by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Currency_rupee) }
     val Delete by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Delete) }
     val DeveloperBoard by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Developer_board) }
@@ -217,6 +218,8 @@ object Icons {
     val ResetIso by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Reset_iso) }
     val Restore by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Undo) }
     val RoundedCorner by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rounded_corner) }
+    val RotateLeft by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rotate_left) }
+    val RotateRight by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Rotate_right) }
     val ScreenRotation by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Screen_rotation) }
     val Screenshot by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Screenshot) }
     val SdCard by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Sd_card) }
@@ -236,6 +239,7 @@ object Icons {
     val FavoriteBorder by lazy(LazyThreadSafetyMode.NONE) { AppIcon(FavoriteBorderVector) }
     val Tv by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Tv) }
     val Theaters by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Theaters) }
+    val Trophy by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Trophy) }
     val FilterList by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Filter_list) }
     val Whatshot by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Whatshot) }
     val Hd by lazy(LazyThreadSafetyMode.NONE) { AppIcon(MaterialSymbols.RoundedFilled.Hd) }
@@ -337,6 +341,7 @@ object Icons {
     val ContentCopy get() = Shared.ContentCopy
     val ContentPaste get() = Shared.ContentPaste
     val CreateNewFolder get() = Shared.CreateNewFolder
+    val Crown get() = Shared.Crown
     val CurrencyRupee get() = Shared.CurrencyRupee
     val Delete get() = Shared.Delete
     val DeveloperBoard get() = Shared.DeveloperBoard
@@ -447,6 +452,8 @@ object Icons {
     val ResetIso get() = Shared.ResetIso
     val Restore get() = Shared.Restore
     val RoundedCorner get() = Shared.RoundedCorner
+    val RotateLeft get() = Shared.RotateLeft
+    val RotateRight get() = Shared.RotateRight
     val ScreenRotation get() = Shared.ScreenRotation
     val Screenshot get() = Shared.Screenshot
     val SdCard get() = Shared.SdCard
@@ -464,6 +471,7 @@ object Icons {
     val FavoriteBorder get() = Shared.FavoriteBorder
     val Tv get() = Shared.Tv
     val Theaters get() = Shared.Theaters
+    val Trophy get() = Shared.Trophy
     val FilterList get() = Shared.FilterList
     val Whatshot get() = Shared.Whatshot
     val Hd get() = Shared.Hd

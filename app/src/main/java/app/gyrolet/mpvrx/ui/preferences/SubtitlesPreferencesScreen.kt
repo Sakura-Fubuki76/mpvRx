@@ -42,7 +42,6 @@ import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState as collectFlowAsState
@@ -86,9 +85,7 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.player.defaultSubtitleFontDisplayName
-import app.gyrolet.mpvrx.ui.player.resolveSubtitleFontFamily
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.media.copyFontsFromDirectory
@@ -166,28 +163,9 @@ object SubtitlesPreferencesScreen : Screen {
 
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = stringResource(R.string.pref_subtitles),
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.primary,
-            )
-          },
-          navigationIcon = {
-            if (LocalShowSettingsBackArrow.current) {
-              IconButton(
-                onClick = { backstack.popSafely() },
-              ) {
-                Icon(
-                  Icons.RoundedFilled.ArrowBack,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
-          },
+        SettingsTopAppBar(
+          title = stringResource(R.string.pref_subtitles),
+          onBack = { backstack.popSafely() },
         )
       },
     ) { padding ->

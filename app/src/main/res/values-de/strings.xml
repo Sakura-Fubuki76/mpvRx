@@ -1,5 +1,13 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <resources>
+  <string name="pref_liquid_glass_material">Glasmaterial</string>
+  <string name="pref_liquid_glass_frost">Frost</string>
+  <string name="generic_expand">Erweitern</string>
+  <string name="generic_collapse">Einklappen</string>
+  <string name="generic_clear">Leeren</string>
+  <string name="generic_increase">Erhöhen</string>
+  <string name="generic_decrease">Verringern</string>
+  <string name="generic_remove_from_favorites">Aus Favoriten entfernen</string>
   <string name="generic_reset">Zurücksetzen</string>
   <string name="generic_share">Teilen</string>
   <string name="generic_confirm">Bestätigen</string>
@@ -59,6 +67,7 @@
   <string name="pref_appearance_hide_player_buttons_background_summary">Den Hintergrund aller Player-Steuerungsschaltflächen ausblenden</string>
   <string name="pref_appearance_category_file_browser">Dateibrowser</string>
   <string name="pref_appearance_category_thumbnails">Vorschaubilder</string>
+  <string name="pref_appearance_category_navigation">Navigation</string>
   <string name="pref_appearance_show_unplayed_old_video_label_title">Kennzeichnung für neue, nicht abgespielte Videos anzeigen</string>
   <string name="pref_appearance_show_unplayed_old_video_label_summary">Bei Videos, die innerhalb der angegebenen Tage hinzugefügt und noch nie abgespielt wurden, die Kennzeichnung "Neu" anzeigen</string>
   <string name="pref_appearance_unplayed_old_video_days_title">Tagesgrenze für die Kennzeichnung neuer Videos</string>
@@ -75,13 +84,8 @@
   <string name="pref_appearance_thumbnail_position_summary">Bild bei %1$d%% des Videos erfassen</string>
   <string name="pref_appearance_show_network_thumbnails_title">Netzwerk-Vorschaubilder anzeigen (experimentell)</string>
   <string name="pref_appearance_show_network_thumbnails_summary">Vorschaubilder für Netzwerkstreams erstellen (kann den Datenverbrauch in Mobilfunknetzen erhöhen)</string>
-  <string name="pref_appearance_category_navigation">Navigation</string>
   <string name="pref_nav_home_title">Start-Tab anzeigen</string>
   <string name="pref_nav_home_summary">Start in der unteren Navigationsleiste ein- oder ausblenden</string>
-  <string name="pref_nav_recents_title">Zuletzt-Tab anzeigen</string>
-  <string name="pref_nav_recents_summary">Zuletzt in der unteren Navigationsleiste ein- oder ausblenden</string>
-  <string name="pref_nav_playlists_title">Wiedergabelisten-Tab anzeigen</string>
-  <string name="pref_nav_playlists_summary">Wiedergabelisten in der unteren Navigationsleiste ein- oder ausblenden</string>
   <string name="pref_nav_network_title">Netzwerk-Tab anzeigen</string>
   <string name="pref_nav_network_summary">Netzwerk in der unteren Navigationsleiste ein- oder ausblenden</string>
   <string name="pref_quick_play_fab_title">Schnellwiedergabe-FAB</string>
@@ -249,8 +253,8 @@
   <string name="pref_gesture_double_tap_right_title">Doppeltipp (rechts)</string>
   <string name="pref_gesture_use_single_tap_for_center_title">Einfaches Tippen für mittlere Geste verwenden</string>
   <string name="pref_gesture_use_single_tap_for_center_summary">Für Gesten in der Mitte (z. B. Wiedergabe/Pause) einmal statt doppelt tippen.</string>
-  <string name="pref_gesture_center_vertical_subtitle_position_title">Gedrückt halten und ziehen verschiebt Untertitel</string>
-  <string name="pref_gesture_center_vertical_subtitle_position_summary">In der Mitte gedrückt halten und dann nach oben oder unten ziehen, um die Untertitelposition zu ändern</string>
+  <string name="pref_gesture_center_vertical_subtitle_position_title">Untertitel durch Ziehen verschieben</string>
+  <string name="pref_gesture_center_vertical_subtitle_position_summary">Ziehe einen Untertitel nach oben oder unten, um ihn einzeln zu verschieben. Halte die Mitte gedrückt und ziehe, um beide zu verschieben.</string>
   <string name="pref_gesture_view_title">Ansicht</string>
   <string name="pref_gesture_double_tap_custom_info">Diesen Gesten können in input.conf mit den folgenden Tastencodes benutzerdefinierte Aktionen zugewiesen werden:
 
@@ -1044,7 +1048,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="compressor_version">Kompressor v%1$s</string>
   <string name="compressor_device">Gerät: %1$s %2$s</string>
   <string name="compressor_android_version">Android: %1$s</string>
-  <string name="subtitle_position_update">Untertitelposition: %1$d</string>
   <string name="hdr_screen_output_update">HDR-Bildschirmausgabe: %1$s</string>
   <string name="ambient_style_update">Umgebungsstil: %1$s</string>
   <string name="online_subtitle_episode">Folge %1$d</string>
@@ -1519,13 +1522,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_enable_ass_override">ASS-Überschreibung aktivieren</string>
   <string name="ui_filter_presets">Filter-Voreinstellungen</string>
   <string name="ui_yt_dlp_manager">yt-dlp-Manager</string>
-  <string name="ui_quick_quality_selection">Schnelle Qualitätsauswahl</string>
-  <string name="ui_codec_preset">Codec-Voreinstellung</string>
-  <string name="ui_quick_subtitle_config">Schnelle Untertitelkonfiguration</string>
-  <string name="ui_download_subtitles">Untertitel herunterladen</string>
-  <string name="ui_fetch_subs_from_stream_sources">Untertitel aus Stream-Quellen abrufen</string>
-  <string name="ui_auto_generated_captions">Automatisch erzeugte Untertitel</string>
-  <string name="ui_include_auto_captions_transcripts">Automatische Untertitel/Transkripte einschließen</string>
   <string name="ui_install_core">Core installieren</string>
   <string name="ui_update_core">Core aktualisieren</string>
   <string name="ui_aspect_ratio">Seitenverhältnis</string>
@@ -1623,7 +1619,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_drag_disabled">Ziehen deaktiviert</string>
   <string name="ui_buttons_exported_successfully">Schaltflächen erfolgreich exportiert</string>
   <string name="ui_anime4k_shaders_options">Anime4K-Shader-Optionen</string>
-  <string name="ui_base_storage_folder">Basis-Speicherordner</string>
   <string name="ui_script_name">Skriptname</string>
   <string name="ui_please_enter_a_file_name">Bitte einen Dateinamen eingeben</string>
   <string name="ui_failed_to_open_output_stream">Ausgabestream konnte nicht geöffnet werden</string>
@@ -1707,7 +1702,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="oss_fsaf_description">Storage-Access-Framework-Hilfen für Datei- und Baumoperationen.</string>
   <string name="oss_truetype_parser_description">Liest Schriftmetadaten für die Verwaltung von Untertitelschriftarten.</string>
   <string name="oss_compose_preference_description">Einstellungs-UI-Komponenten für die Einstellungsbildschirme.</string>
-  <string name="oss_lazycolumnscrollbar_description">Scrollbalken-Komponente für lange Compose-Listen.</string>
   <string name="oss_reorderable_description">Drag-and-drop-Listensortierung für Compose-Oberflächen.</string>
   <string name="oss_seeker_description">Anpassbare Suchleistenkomponente für Jetpack Compose.</string>
   <string name="oss_sora_editor_description">Leistungsfähiger, effizienter Code-Editor für Android mit TextMate-Hervorhebung.</string>
@@ -1719,7 +1713,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="oss_androidx_documentfile_description">Abstraktionsschicht für den Dokumentenspeicherzugriff.</string>
   <string name="oss_androidx_media_description">Android-APIs für Mediensitzungen und Wiedergabe.</string>
   <string name="oss_androidx_palette_description">Extrahiert dominante und lebendige Farbpaletten aus Bildern.</string>
-  <string name="oss_androidx_preference_description">UI und Speicherung für App-Einstellungsbildschirme.</string>
   <string name="oss_androidx_profile_installer_description">Lädt Klassen und Methoden vorab für einen schnelleren App-Start.</string>
   <string name="oss_google_material_description">Material-Design-Komponenten und Designbibliothek.</string>
   <string name="oss_google_cast_description">Chromecast-Framework für Medienstreaming.</string>
@@ -1959,7 +1952,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="pref_audio_drc_title">Dynamikbereich-Kompression (DRC)</string>
   <string name="pref_audio_drc_summary">Dynamikbereich des Tons komprimieren, um leise Dialoge zu verstärken und laute Geräusche zu dämpfen</string>
   <string name="pref_audio_effects">Audioverarbeitung</string>
-  <string name="toast_file_not_found">Datei ist nicht mehr vorhanden</string>
   <string name="pref_audio_visualizer_style_particle">Partikel</string>
   <string name="pref_section_p2p_streaming">P2P-Streaming</string>
   <string name="pref_network_summary">P2P-Streaming und yt-dlp-Manager</string>
@@ -2153,7 +2145,6 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="ui_switch_to_nightly">Zu Nightly wechseln</string>
   <string name="ui_playback_defaults">Wiedergabestandards</string>
   <string name="ui_maximum_quality">Maximale Qualität</string>
-  <string name="ui_automatic">Automatisch</string>
   <string name="ui_checking_yt_dlp">yt-dlp wird geprüft</string>
   <string name="ui_yt_dlp_not_installed">yt-dlp ist nicht installiert</string>
   <string name="ui_yt_dlp_stable_release">Stabile Version</string>
@@ -2577,12 +2568,9 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
 
   <!-- Snapshots (frame capture) -->
   <string name="ui_snapshots">Schnappschüsse</string>
-  <string name="pref_nav_snapshots_title">Schnappschüsse-Tab anzeigen</string>
-  <string name="pref_nav_snapshots_summary">Schnappschüsse in der unteren Navigationsleiste ein- oder ausblenden</string>
   <string name="ui_profile">Profil</string>
   <string name="pref_nav_profile_title">Profil-Tab anzeigen</string>
   <string name="pref_nav_profile_summary">Zuletzt, Playlists und Schnappschüsse in einem Tab zusammenfassen</string>
-  <string name="pref_nav_in_profile_tab_summary">Im Profil-Tab enthalten</string>
   <string name="profile_view_all">Alle anzeigen</string>
   <string name="profile_edit">Profil bearbeiten</string>
   <string name="profile_display_name">Anzeigename</string>
@@ -2684,4 +2672,48 @@ Bitte starten Sie die App neu, damit alle Änderungen wirksam werden.</string>
   <string name="onboarding_configuration_no_backup">Ordner eingerichtet. Downloads verwenden Configuration/Downloads.</string>
   <string name="onboarding_configuration_restored">Einstellungen aus %1$s wiederhergestellt. Downloads verwenden Configuration/Downloads.</string>
   <string name="onboarding_configuration_restore_failed">Ordnereinrichtung konnte nicht abgeschlossen werden: %1$s</string>
+  <string name="navbar_glow_title">Glasleuchten</string>
+  <string name="navbar_glow_summary">Randlicht und Berührungsleuchten der Navigationsleiste anzeigen</string>
+  <string name="pref_seekbar_preview_skip_markers">Sprungmarkierungen</string>
+  <string name="pref_liquid_glass_optics">Optik</string>
+  <string name="pref_liquid_glass_opacity">Deckkraft des Hintergrunds</string>
+  <string name="pref_liquid_glass_blur">Unschärfestärke</string>
+  <string name="pref_liquid_glass_refraction_height">Breite der Brechungskante</string>
+  <string name="pref_liquid_glass_refraction_amount">Brechungsstärke</string>
+  <string name="pref_liquid_glass_depth">Tiefeneffekt</string>
+  <string name="pref_liquid_glass_chromatic">Chromatische Aberration</string>
+  <string name="pref_liquid_glass_lens_unavailable">Lichtbrechung erfordert Android 13 oder neuer</string>
+  <string name="pref_liquid_glass_colors">Farbe</string>
+  <string name="pref_liquid_glass_vibrancy">Farbbrillanz</string>
+  <string name="pref_liquid_glass_highlights">Glanzlichter</string>
+  <string name="pref_liquid_glass_highlight_style">Glanzlichtstil</string>
+  <string name="pref_liquid_glass_component_default">Komponentenstandard</string>
+  <string name="pref_liquid_glass_highlight_ambient">Umgebungslicht</string>
+  <string name="pref_liquid_glass_highlight_plain">Schlicht</string>
+  <string name="pref_liquid_glass_highlight_strength">Glanzlichtstärke</string>
+  <string name="pref_liquid_glass_highlight_width">Glanzlichtbreite</string>
+  <string name="pref_liquid_glass_highlight_blur">Glanzlichtweichheit</string>
+  <string name="pref_liquid_glass_shadows">Schatten</string>
+  <string name="pref_liquid_glass_shadow_strength">Schattenstärke</string>
+  <string name="pref_liquid_glass_shadow_radius">Schattenweichheit</string>
+  <string name="pref_liquid_glass_inner_shadow_strength">Stärke des inneren Schattens</string>
+  <string name="pref_liquid_glass_inner_shadow_radius">Weichheit des inneren Schattens</string>
+  <string name="debug_logs_save_to_config">Protokolle im Konfigurationsordner speichern</string>
+  <string name="debug_logs_config_required">Wähle zuerst einen Konfigurationsordner in den erweiterten Einstellungen.</string>
+  <string name="debug_logs_config_saved">Protokolle unter %1$s im Konfigurationsordner gespeichert.</string>
+  <string name="debug_logs_config_save_failed">Protokolle konnten nicht gespeichert werden. Prüfe den Zugriff auf den Konfigurationsordner oder wähle ihn erneut.</string>
+  <string name="pref_gesture_show_seekbar_horizontal_title">Suchleiste bei ausgeblendeten Bedienelementen anzeigen</string>
+  <string name="pref_gesture_show_seekbar_horizontal_summary">Beim horizontalen Wischen die Suchleiste auch dann anzeigen, wenn die Player-Bedienelemente ausgeblendet sind. Die Zeitanzeige bleibt unverändert.</string>
+  <string name="player_zoom_overlays_follow">Player-OSD &amp; Untertitel mit Video zoomen</string>
+  <string name="player_zoom_overlays_follow_summary">Untertitel und Statistikseiten 1–6 folgen dem Videozoom. Aus: Die Größe bleibt unverändert.</string>
+  <string name="network_smb_share_folder">Freigabe / Ordner (optional)</string>
+  <string name="network_smb_share_hint">Leer lassen oder / verwenden, um alle freigegebenen Ordner anzuzeigen. /Media oder /Media/Movies eingeben, um einen bestimmten Ordner zu öffnen.</string>
+  <string name="pref_app_icon_title">App-Symbol</string>
+  <string name="pref_app_icon_summary">Wähle das Symbol im Launcher</string>
+  <string name="pref_app_icon_description">Wähle ein App-Symbol. Weitere Designs können später ergänzt werden.</string>
+  <string name="app_icon_purple">Violettes Band</string>
+  <string name="app_icon_purple_description">Neues mpvRx-Symbol mit Farbverlauf (Standard)</string>
+  <string name="app_icon_classic">Klassisch</string>
+  <string name="app_icon_classic_description">Ursprüngliches mpvRx-Symbol</string>
+  <string name="app_icon_change_failed">App-Symbol konnte nicht geändert werden.</string>
 </resources>

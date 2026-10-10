@@ -21,6 +21,7 @@ import app.gyrolet.mpvrx.database.MpvRxDatabase
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import app.gyrolet.mpvrx.preferences.preference.PreferenceStore
+import app.gyrolet.mpvrx.preferences.preference.defaultSharedPreferences
 import app.gyrolet.mpvrx.ui.theme.saveWallpaperCopy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -398,7 +399,7 @@ class SettingsManager(
 
     val stats = ImportStats()
     var eventType = parser.eventType
-    val editor = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context).edit()
+    val editor = context.defaultSharedPreferences().edit()
     val parents = ArrayDeque<String>()
     val networkConnections = mutableListOf<NetworkConnection>()
     val animeMatches = mutableMapOf<Long, JSONArray>()

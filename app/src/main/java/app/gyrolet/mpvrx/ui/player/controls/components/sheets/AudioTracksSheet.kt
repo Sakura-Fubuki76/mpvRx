@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AudioChannels
 import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.components.PlayerSheet
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetAction
@@ -268,6 +271,7 @@ fun AudioTrackCard(
   }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AudioTrackRow(
   title: String,
@@ -280,13 +284,14 @@ fun AudioTrackRow(
 ) {
   val haptics = rememberAppHaptics()
   val reducedMotion = AppMotion.playerReducedMotion()
-  val shape = RoundedCornerShape(8.dp)
+  val shape = MaterialTheme.shapes.medium
+  val isFrosted = LocalKyantPlayerBackdrop.current != null
   val containerColor by animateColorAsState(
     targetValue =
       if (isSelected) {
-        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+        if (isFrosted) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.secondaryContainer
       } else {
-        MaterialTheme.colorScheme.surfaceContainerHigh
+        if (isFrosted) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh
       },
     animationSpec = if (reducedMotion) snap() else AppMotion.Effect.Color,
     label = "genericTrackSelection",
@@ -304,6 +309,7 @@ fun AudioTrackRow(
         .fillMaxWidth()
         .padding(horizontal = 8.dp, vertical = 3.dp)
         .tvFocusHighlight(shape, enabled = enabled)
+        .clip(shape)
         .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) {
           onClick()
           if (!isSelected) haptics.selection(true)
@@ -321,15 +327,14 @@ fun AudioTrackRow(
       Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
           text = title,
-          style = MaterialTheme.typography.bodyMedium,
-          fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-          color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+          style = if (isSelected) MaterialTheme.typography.bodyLargeEmphasized else MaterialTheme.typography.bodyLarge,
+          color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
         )
         details?.let { value ->
           Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
       }

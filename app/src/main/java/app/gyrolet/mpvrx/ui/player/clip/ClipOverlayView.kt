@@ -49,7 +49,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RangeSlider
+import app.gyrolet.mpvrx.ui.components.AppRangeSlider as RangeSlider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -566,7 +566,6 @@ class ClipOverlayView @JvmOverloads constructor(
 
   private fun mediaDurationSeconds(): Double =
     PlaybackSession.getPropertyDouble("duration")
-      ?: PlaybackSession.getPropertyInt("duration")?.toDouble()
       ?: 0.0
 
   private fun currentPosition(): Double? = PlaybackSession.getPropertyDouble("time-pos")

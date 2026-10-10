@@ -60,7 +60,6 @@ import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.controls.CARDS_MAX_WIDTH
 import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
 import app.gyrolet.mpvrx.ui.player.defaultSubtitleFontDisplayName
-import app.gyrolet.mpvrx.ui.player.resolveSubtitleFontFamily
 import app.gyrolet.mpvrx.ui.theme.spacing
 import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
 import app.gyrolet.mpvrx.utils.media.loadCustomFontEntries

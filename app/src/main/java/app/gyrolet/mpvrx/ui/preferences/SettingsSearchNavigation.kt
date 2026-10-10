@@ -60,7 +60,9 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_title, itemIndex = 0),
         SettingsSearchListAnchor(titleRes = R.string.pref_anime_cover_colors, itemIndex = 1),
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_amoled_mode_title, itemIndex = 1),
+        SettingsSearchListAnchor(titleRes = R.string.pref_app_icon_title, itemIndex = 1),
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_system_font_title, itemIndex = 1),
+        SettingsSearchListAnchor(titleRes = R.string.navbar_glow_title, itemIndex = 1),
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_unlimited_name_lines_title, itemIndex = 3),
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_show_unplayed_old_video_label_title, itemIndex = 3),
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_unplayed_old_video_days_title, itemIndex = 3),
@@ -70,6 +72,28 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_thumbnail_quality_title, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_gesture_tap_thumbnail_to_select_title, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_show_network_thumbnails_title, itemIndex = 5),
+      ),
+    LiquidGlassPreferencesScreen to
+      listOf(
+        SettingsSearchListAnchor(titleRes = R.string.pref_appearance_liquid_glass_title, itemIndex = 1),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_frost, itemIndex = 3),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_opacity, itemIndex = 5),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_refraction_height, itemIndex = 5),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_refraction_amount, itemIndex = 5),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_depth, itemIndex = 5),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_chromatic, itemIndex = 5),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_vibrancy, itemIndex = 7),
+        SettingsSearchListAnchor(titleRes = R.string.player_sheets_filters_Saturation, itemIndex = 7),
+        SettingsSearchListAnchor(titleRes = R.string.player_sheets_filters_brightness, itemIndex = 7),
+        SettingsSearchListAnchor(titleRes = R.string.player_sheets_filters_contrast, itemIndex = 7),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_style, itemIndex = 9),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_strength, itemIndex = 9),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_width, itemIndex = 9),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_blur, itemIndex = 9),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_shadow_strength, itemIndex = 11),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_shadow_radius, itemIndex = 11),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_inner_shadow_strength, itemIndex = 11),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_inner_shadow_radius, itemIndex = 11),
       ),
     PlayerControlsPreferencesScreen to
       listOf(
@@ -165,6 +189,7 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_autoplay_next_audio_title, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_audio_channels, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_audio_volume_boost_cap, itemIndex = 5),
+        SettingsSearchListAnchor(titleRes = R.string.pref_lyrics_auto_fetch_online, itemIndex = 5),
       ),
     SubtitlesPreferencesScreen to
       listOf(

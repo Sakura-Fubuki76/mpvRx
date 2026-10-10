@@ -29,40 +29,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import app.gyrolet.mpvrx.presentation.components.PlayerSheetDragHandle
+import androidx.compose.ui.res.stringResource
+import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.components.PlayerSheet
 
 data class AudioPropertyItem(
   val label: String,
   val value: String,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AudioPropertiesSheet(
   properties: List<AudioPropertyItem>,
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  val sheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
-
-  ModalBottomSheet(
+  PlayerSheet(
     onDismissRequest = onDismissRequest,
-    sheetState = sheetState,
-    containerColor = MaterialTheme.colorScheme.surface,
-    scrimColor = BottomSheetDefaults.ScrimColor,
-    sheetMaxWidth = 640.dp,
-    dragHandle = { PlayerSheetDragHandle() },
     modifier = modifier,
   ) {
     Column(
       modifier =
         Modifier
           .fillMaxWidth()
-          .weight(1f, fill = false)
           .verticalScroll(rememberScrollState())
           .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
     ) {

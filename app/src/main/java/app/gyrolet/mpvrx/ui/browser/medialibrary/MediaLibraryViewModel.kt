@@ -33,9 +33,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -50,11 +54,20 @@ class MediaLibraryViewModel(
   private val browserPreferences: BrowserPreferences by inject()
   private val playbackStateRepository: PlaybackStateRepository by inject()
 
+  private enum class DeletionState { Pending, Confirmed }
+
+  private val hiddenVideoPaths = MutableStateFlow<Map<String, DeletionState>>(emptyMap())
   private val _videos = MutableStateFlow<List<Video>>(emptyList())
-  val videos: StateFlow<List<Video>> = _videos.asStateFlow()
+  val videos: StateFlow<List<Video>> =
+    combine(_videos, hiddenVideoPaths) { items, hidden ->
+      if (hidden.isEmpty()) items else items.filterNot { it.path in hidden }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   private val _videosWithPlaybackInfo = MutableStateFlow<List<VideoWithPlaybackInfo>>(emptyList())
-  val videosWithPlaybackInfo: StateFlow<List<VideoWithPlaybackInfo>> = _videosWithPlaybackInfo.asStateFlow()
+  val videosWithPlaybackInfo: StateFlow<List<VideoWithPlaybackInfo>> =
+    combine(_videosWithPlaybackInfo, hiddenVideoPaths) { items, hidden ->
+      if (hidden.isEmpty()) items else items.filterNot { it.video.path in hidden }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
   private val _isLoading = MutableStateFlow(false)
   val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -178,7 +191,7 @@ class MediaLibraryViewModel(
             if (generation == loadGeneration.get()) {
               _videos.value = enriched
               loadPlaybackInfo(enriched)
-              saveSnapshot(enriched)
+              saveSnapshot(enriched.filterNot { hiddenVideoPaths.value[it.path] == DeletionState.Confirmed })
             }
           } catch (e: CancellationException) {
             throw e
@@ -190,6 +203,23 @@ class MediaLibraryViewModel(
           }
         },
       )
+    }
+  }
+
+  override suspend fun deleteVideos(videos: List<Video>): Pair<Int, Int> {
+    val targets = videos.distinctBy { it.path }.filterNot { it.path in hiddenVideoPaths.value }
+    if (targets.isEmpty()) return 0 to 0
+    val paths = targets.mapTo(hashSetOf()) { it.path }
+    hiddenVideoPaths.update { it + paths.associateWith { DeletionState.Pending } }
+    return try {
+      super.deleteVideos(targets) { video ->
+        hiddenVideoPaths.update { it + (video.path to DeletionState.Confirmed) }
+      }
+    } finally {
+      hiddenVideoPaths.update { states ->
+        states.filterNot { (path, state) -> path in paths && state == DeletionState.Pending }
+      }
+      saveSnapshot(_videos.value.filterNot { hiddenVideoPaths.value[it.path] == DeletionState.Confirmed })
     }
   }
 

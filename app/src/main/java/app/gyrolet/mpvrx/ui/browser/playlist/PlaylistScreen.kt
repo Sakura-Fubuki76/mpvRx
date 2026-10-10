@@ -15,12 +15,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -35,7 +33,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -63,7 +60,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.gyrolet.mpvrx.R
@@ -80,6 +76,7 @@ import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
 import app.gyrolet.mpvrx.ui.browser.LocalIsMainTabPage
 import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
 import app.gyrolet.mpvrx.ui.browser.NavigationBarSelectionEffect
+import app.gyrolet.mpvrx.ui.browser.NavigationBarState
 import app.gyrolet.mpvrx.ui.browser.cards.PlaylistCard
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
 import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
@@ -322,6 +319,9 @@ object PlaylistScreen : Screen {
       },
       floatingActionButton = {
         val navigationBarHeight = LocalNavigationBarHeight.current
+        // Profile -> Playlists is a pushed screen with no main navigation bar, but the
+        // mini player still overlays the bottom edge. Clear whichever overlay is taller.
+        val bottomOverlayClearance = maxOf(navigationBarHeight, NavigationBarState.miniPlayerClearance)
         if (!selectionManager.isInSelectionMode && isFabVisible.value) {
           ExtendedFloatingActionButton(
             onClick = {
@@ -329,7 +329,15 @@ object PlaylistScreen : Screen {
             },
             icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
             text = { Text(stringResource(R.string.ui_create_playlist)) },
-            modifier = Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)),
+            modifier =
+              Modifier.padding(
+                bottom =
+                  if (NavigationBarState.isMiniPlayerVisible) {
+                    bottomOverlayClearance
+                  } else {
+                    (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)
+                  },
+              ),
           )
         }
       },
@@ -427,6 +435,7 @@ object PlaylistScreen : Screen {
 
     PlaylistActionSheet(
       isOpen = showPlaylistActionSheet,
+      savedXtreamServerUrls = playlistsWithCount.mapNotNull { it.playlist.xtreamServerUrl },
       onDismiss = { showPlaylistActionSheet = false },
       onCreatePlaylist = { name -> viewModel.createPlaylist(name) },
       onCreateM3UPlaylistFromFile = viewModel::createM3UPlaylistFromFile,
@@ -557,9 +566,10 @@ object PlaylistScreen : Screen {
     val folderGridColumnsPortrait by viewPreferences.gridColumnsPortrait.collectAsState()
     val folderGridColumnsLandscape by viewPreferences.gridColumnsLandscape.collectAsState()
     val navigationBarHeight = LocalNavigationBarHeight.current
+    val bottomOverlayClearance = maxOf(navigationBarHeight, NavigationBarState.miniPlayerClearance)
     val isGridMode = mediaLayoutMode == MediaLayoutMode.GRID
     val hasEnoughItems = playlistsWithCount.size > 20
-    val bottomPadding = if (isInSelectionMode) 88.dp else navigationBarHeight + 72.dp
+    val bottomPadding = if (isInSelectionMode) 88.dp else bottomOverlayClearance + 72.dp
 
     val scrollbarAlpha by androidx.compose.animation.core.animateFloatAsState(
       targetValue = if (hasEnoughItems) 1f else 0f,
@@ -632,7 +642,7 @@ object PlaylistScreen : Screen {
               modifier =
                 Modifier
                   .align(Alignment.CenterEnd)
-                  .padding(end = 2.dp, top = 6.dp, bottom = navigationBarHeight + 6.dp)
+                  .padding(end = 2.dp, top = 6.dp, bottom = bottomOverlayClearance + 6.dp)
                   .graphicsLayer { alpha = scrollbarAlpha },
             )
           }
@@ -664,7 +674,7 @@ object PlaylistScreen : Screen {
               modifier =
                 Modifier
                   .align(Alignment.CenterEnd)
-                  .padding(end = 2.dp, top = 6.dp, bottom = navigationBarHeight + 6.dp)
+                  .padding(end = 2.dp, top = 6.dp, bottom = bottomOverlayClearance + 6.dp)
                   .graphicsLayer { alpha = scrollbarAlpha },
             )
           }

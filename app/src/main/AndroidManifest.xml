@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -43,10 +45,10 @@
         android:appCategory="video"
         android:banner="@drawable/tv_banner"
         android:enableOnBackInvokedCallback="false"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@mipmap/ic_launcher_purple"
         android:label="@string/app_name"
         android:requestLegacyExternalStorage="true"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@mipmap/ic_launcher_purple_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.mpvrx"
         android:largeHeap="true"
@@ -116,24 +118,96 @@
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:theme="@style/Theme.mpvrx.Splash">
+        </activity>
+
+        <!-- Classic icon uses a separate launcher target so Android can render its matching
+             system splash before any application code runs. -->
+        <activity
+            android:name=".ClassicMainActivity"
+            android:exported="false"
+            android:enableOnBackInvokedCallback="true"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|uiMode|screenSize|smallestScreenSize"
+            android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
+            android:theme="@style/Theme.mpvrx.ClassicSplash" />
+
+        <activity-alias
+            android:name=".PurpleLauncher"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_purple"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_purple_round">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".ClassicLauncher"
+            android:targetActivity=".ClassicMainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_round">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Keep text/config file-open separate from PlayerActivity's media intents. -->
+        <activity
+            android:name=".ui.editor.ExternalTextEditorActivity"
+            android:exported="true"
+            android:theme="@style/Theme.mpvrx"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.EDIT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/x-javascript" />
+                <data android:mimeType="application/x-lua" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
 
-        <activity-alias
-            android:name=".TvLauncherActivity"
+                <activity-alias
+            android:name=".TvPurpleLauncher"
             android:targetActivity=".MainActivity"
-            android:banner="@drawable/tv_banner"
             android:exported="true"
-            android:icon="@mipmap/ic_launcher">
+            android:enabled="false"
+            android:icon="@mipmap/ic_launcher_purple"
+            android:label="@string/app_name"
+            android:banner="@drawable/tv_banner_purple">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity-alias>
+        <activity-alias
+            android:name=".TvClassicLauncher"
+            android:targetActivity=".ClassicMainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:banner="@drawable/tv_banner">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
 
         <activity
             android:name=".ui.player.PlayerActivity"
@@ -494,12 +568,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:theme="@style/Theme.mpvrx">
-            <intent-filter>
-                <action android:name="com.developer.crashx.ERROR" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
+            android:theme="@style/Theme.mpvrx" />
         <activity
             android:name=".presentation.crash.DebugLogsActivity"
             android:exported="false"

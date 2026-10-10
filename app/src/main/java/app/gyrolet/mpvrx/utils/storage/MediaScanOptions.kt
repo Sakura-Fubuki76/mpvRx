@@ -52,12 +52,6 @@ class NoMediaPathFilter(
       return false
     }
 
-    // App media inside Android/data is often hidden behind .nomedia, but users still
-    // expect those video folders to be discoverable in the browser.
-    if (isAndroidDataAccessiblePath(directory)) {
-      return false
-    }
-
     return hasHiddenMarkerInPath(directory)
   }
 

@@ -10,7 +10,6 @@
 package app.gyrolet.mpvrx.ui.preferences
 
 import android.app.Activity
-import android.os.Build
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
@@ -24,11 +23,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,7 +66,6 @@ import app.gyrolet.mpvrx.ui.theme.CustomThemeDefinition
 import app.gyrolet.mpvrx.ui.theme.WallpaperDerivedThemeName
 import app.gyrolet.mpvrx.ui.theme.LocalThemeTransitionState
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.collections.immutable.persistentListOf
@@ -82,7 +78,7 @@ import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.Preference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
+import app.gyrolet.mpvrx.ui.preferences.components.AppSliderPreference as SliderPreference
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
@@ -101,7 +97,6 @@ object AppearancePreferencesScreen : Screen {
     val scope = rememberCoroutineScope()
     val systemDarkTheme = isSystemInDarkTheme()
     val themeTransition = LocalThemeTransitionState.current
-    val liquidGlassSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     val darkMode by preferences.darkMode.collectAsState()
     val appTheme by preferences.appTheme.collectAsState()
@@ -206,26 +201,9 @@ object AppearancePreferencesScreen : Screen {
 
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = stringResource(R.string.pref_appearance_title),
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.primary,
-            )
-          },
-          navigationIcon = {
-            if (LocalShowSettingsBackArrow.current) {
-              IconButton(onClick = { backstack.popSafely() }) {
-                Icon(
-                  Icons.RoundedFilled.ArrowBack,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
-          },
+        SettingsTopAppBar(
+          title = stringResource(R.string.pref_appearance_title),
+          onBack = { backstack.popSafely() },
         )
       },
     ) { padding ->
@@ -310,7 +288,6 @@ object AppearancePreferencesScreen : Screen {
                   PreferenceDivider()
 
                   val amoledMode by preferences.amoledMode.collectAsState()
-                  val liquidGlassEnabled by preferences.liquidGlassEnabled.collectAsState()
                   ThemePicker(
                     currentTheme = appTheme,
                     customThemes = pickerThemes,
@@ -362,6 +339,18 @@ object AppearancePreferencesScreen : Screen {
                     onClick = { backstack.navigateTo(WallpaperEditorScreen()) },
                   )
 
+                   Preference(
+                     modifier = Modifier.settingsSearchTarget(R.string.pref_app_icon_title),
+                     title = { Text(stringResource(R.string.pref_app_icon_title)) },
+                     summary = {
+                       Text(
+                         stringResource(R.string.pref_app_icon_summary),
+                         color = MaterialTheme.colorScheme.outline,
+                       )
+                     },
+                     onClick = { backstack.navigateTo(AppIconPreferencesScreen) },
+                   )
+
                   PreferenceDivider()
 
                   SwitchPreference(
@@ -393,31 +382,6 @@ object AppearancePreferencesScreen : Screen {
                       )
                     },
                     enabled = darkMode != DarkMode.Light,
-                  )
-
-                  PreferenceDivider()
-
-                  SwitchPreference(
-                    modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_liquid_glass_title),
-                    value = liquidGlassEnabled && liquidGlassSupported,
-                    onValueChange = preferences.liquidGlassEnabled::set,
-                    title = {
-                      Text(text = stringResource(R.string.pref_appearance_liquid_glass_title))
-                    },
-                    summary = {
-                      Text(
-                        text =
-                          stringResource(
-                            if (liquidGlassSupported) {
-                              R.string.pref_appearance_liquid_glass_summary
-                            } else {
-                              R.string.pref_appearance_liquid_glass_summary_unavailable
-                            },
-                          ),
-                        color = MaterialTheme.colorScheme.outline,
-                      )
-                    },
-                    enabled = liquidGlassSupported,
                   )
 
                   PreferenceDivider()
@@ -465,6 +429,19 @@ object AppearancePreferencesScreen : Screen {
                     },
                     onSliderValueChange = { pendingAppUiScale = it },
                     sliderValue = pendingAppUiScale ?: appUiScale,
+                  )
+
+                  PreferenceDivider()
+
+                  val navigationBarGlow by preferences.navigationBarGlow.collectAsState()
+                  SwitchPreference(
+                    modifier = Modifier.settingsSearchTarget(R.string.navbar_glow_title),
+                    value = navigationBarGlow,
+                    onValueChange = preferences.navigationBarGlow::set,
+                    title = { Text(stringResource(R.string.navbar_glow_title)) },
+                    summary = {
+                      Text(stringResource(R.string.navbar_glow_summary), color = MaterialTheme.colorScheme.outline)
+                    },
                   )
                 }
               }

@@ -13,7 +13,6 @@ import app.gyrolet.mpvrx.ui.player.PlayerArtworkDestination
 import app.gyrolet.mpvrx.ui.player.playerArtworkAnchor
 import app.gyrolet.mpvrx.ui.player.swipeDownToMiniPlayer
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
-
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -21,14 +20,12 @@ import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.util.LruCache
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -42,9 +39,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkHorizontally
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
@@ -79,9 +74,6 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.wrapContentSize
-import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -129,6 +121,8 @@ import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.toPlaylistCandidates
 import app.gyrolet.mpvrx.ui.player.resolveUri
 import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
+import app.gyrolet.mpvrx.ui.player.controls.components.stableNumericWidth
+import app.gyrolet.mpvrx.ui.player.controls.components.withTabularDigits
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberSmoothedPositionMs
 import app.gyrolet.mpvrx.ui.player.controls.components.AnimatedLyricWord
 import app.gyrolet.mpvrx.ui.player.controls.components.hasRtlDirection
@@ -161,7 +155,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -173,7 +166,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.offset
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.core.content.ContextCompat
@@ -183,11 +175,13 @@ import kotlinx.coroutines.flow.collect
 import kotlin.math.roundToInt
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
+import app.gyrolet.mpvrx.ui.player.EmbeddedMotionArtwork
+import app.gyrolet.mpvrx.ui.player.MotionArtworkImage
+import app.gyrolet.mpvrx.ui.player.rememberMotionArtworkDrawable
 import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.AudioVisualizerStyle
-import app.gyrolet.mpvrx.preferences.GesturePreferences
 import app.gyrolet.mpvrx.preferences.LyricsTranslationDisplayMode
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
@@ -213,7 +207,6 @@ import app.gyrolet.mpvrx.ui.player.visualizer.rememberAudioVisualizerFeatures
 import app.gyrolet.mpvrx.ui.theme.fontFamilyForText
 import app.gyrolet.mpvrx.ui.utils.isMpvOptionOwnedByConfig
 import app.gyrolet.mpvrx.ui.utils.rememberAppHaptics
-
 import app.gyrolet.mpvrx.utils.media.fileExtension
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -229,6 +222,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 private data class AudioPresentationMetadata(
   val artwork: Bitmap?,
   val artist: String?,
+  val motionArtwork: ByteArray? = null,
 )
 
 /**
@@ -252,7 +246,7 @@ private object AudioPresentationMetadataCache {
       ): Int =
         maxOf(
           METADATA_ONLY_WEIGHT_KB,
-          (value.artwork?.byteCount ?: 0) / 1024,
+          ((value.artwork?.byteCount ?: 0) + (value.motionArtwork?.size ?: 0)) / 1024,
         )
     }
 
@@ -312,14 +306,16 @@ private object AudioPresentationMetadataCache {
               }
             }
 
+            val pictureBytes = if (explicitArtwork == null) retriever?.embeddedPicture else null
             AudioPresentationMetadata(
-              artwork = explicitArtwork ?: retriever?.let { EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it) },
+              artwork = explicitArtwork ?: retriever?.let { EmbeddedArtworkResolver.decodeEmbeddedArtwork(cleanPath ?: pathOrUri, it, pictureBytes) },
               artist = retriever?.let {
                 it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_AUTHOR)
                   ?: it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_COMPOSER)
               },
+              motionArtwork = EmbeddedMotionArtwork.animatedBytes(pictureBytes),
             )
           } catch (_: Exception) {
             val fallbackArtwork = explicitArtwork ?: if (cleanPath != null && !isNetworkStream) {
@@ -584,6 +580,8 @@ private fun CoverArtCardImage(
   bitmap: Bitmap?,
   artworkUrl: String? = null,
   contentScale: ContentScale = ContentScale.Crop,
+  motionArtwork: ByteArray? = null,
+  isPlaying: Boolean = false,
 ) {
   val context = LocalContext.current
   val client = org.koin.compose.koinInject<okhttp3.OkHttpClient>()
@@ -608,8 +606,16 @@ private fun CoverArtCardImage(
 
   val finalBitmap = bitmap ?: remoteBitmap
   val imageBitmap = remember(finalBitmap) { finalBitmap?.asImageBitmap() }
+  val animatedDrawable = rememberMotionArtworkDrawable(motionArtwork)
 
-  if (imageBitmap != null) {
+  if (animatedDrawable != null) {
+    MotionArtworkImage(
+      drawable = animatedDrawable,
+      isPlaying = isPlaying,
+      fit = contentScale == ContentScale.Fit,
+      modifier = Modifier.fillMaxSize(),
+    )
+  } else if (imageBitmap != null) {
     Image(
       bitmap = imageBitmap,
       contentDescription = null,
@@ -629,11 +635,6 @@ private fun CoverArtCardImage(
       )
     }
   }
-}
-
-private enum class CoverSwipeDirection {
-  NEXT,
-  PREV,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1574,6 +1575,8 @@ fun AudioPlayerControls(
                   bitmap = activeCoverOverride ?: albumArtBitmap,
                   artworkUrl = currentArtworkUri,
                   contentScale = if (isAudiobook) ContentScale.Fit else ContentScale.Crop,
+                  motionArtwork = currentAudioPresentation?.motionArtwork?.takeIf { activeCoverOverride == null },
+                  isPlaying = isPlaying,
                 )
               }
             }
@@ -1684,10 +1687,12 @@ fun AudioPlayerControls(
                   tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (speedConfigOwned) 0.38f else 1f),
                   modifier = Modifier.size(16.dp),
                 )
+                val speedText = String.format("%.2fx", playbackSpeed ?: 1f)
                 Text(
-                  text = String.format("%.2fx", playbackSpeed ?: 1f),
-                  style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                  text = speedText,
+                  style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold).withTabularDigits(),
                   color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (speedConfigOwned) 0.38f else 1f),
+                  modifier = Modifier.stableNumericWidth(speedText),
                 )
               }
             }
@@ -2594,7 +2599,7 @@ fun AudioPlayerControls(
             )
             .padding(end = controlsSidePadding)
             .clip(RoundedCornerShape(24.dp)),
-          color = MaterialTheme.colorScheme.surfaceContainerLow,
+          color = Color.Transparent,
           shape = RoundedCornerShape(24.dp),
         ) {
           DualPaneSidePanel(
@@ -2725,6 +2730,7 @@ private fun DualPaneSidePanel(
           )
         },
         colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+          containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f),
           selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
           selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
@@ -2734,6 +2740,7 @@ private fun DualPaneSidePanel(
         onClick = { onTabSelected(1) },
         label = { Text(stringResource(R.string.player_lyrics_title), fontWeight = FontWeight.Bold) },
         colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+          containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f),
           selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
           selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
         ),
@@ -2836,7 +2843,7 @@ private fun UpNextPlaylistContent(
             val bgColor = if (isSelected) {
               MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
             } else {
-              MaterialTheme.colorScheme.surfaceContainer
+              MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f)
             }
             Surface(
               modifier = Modifier
@@ -3008,7 +3015,7 @@ private fun UpNextPlaylistItemRow(
   val bgColor = if (isPlaying) {
     MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
   } else {
-    MaterialTheme.colorScheme.surfaceContainer
+    MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f)
   }
 
   val itemCoverArt =

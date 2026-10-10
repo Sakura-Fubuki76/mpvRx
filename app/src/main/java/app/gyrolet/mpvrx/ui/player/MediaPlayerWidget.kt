@@ -178,7 +178,7 @@ class MediaPlayerWidget : AppWidgetProvider() {
           ?: it.title?.takeIf(String::isNotBlank)
       }
       val artist = item?.let {
-        PlaybackSession.getPropertyString("metadata/artist")?.takeIf(String::isNotBlank)
+        PlaybackSession.getPropertyString("metadata/by-key/artist")?.takeIf(String::isNotBlank)
           ?: it.artist?.takeIf(String::isNotBlank)
       }
       val playing = item != null && !session.paused
@@ -316,34 +316,18 @@ class MediaPlayerWidget : AppWidgetProvider() {
         }
       }
 
-      val uri = item?.artworkUri?.takeIf(String::isNotBlank)
-      var publishedEarly = false
-      var composed = false
-      if (uri != null) {
-        val cached = allSizes.map { artworkCache.get(ArtworkKey(uri, it)) }
-        val missing = allSizes.filterIndexed { index, _ -> cached[index] == null }
-        // Only a completely cold artwork cache justifies publishing the placeholder before the
-        // decode finishes. The collector that drives this re-arms several times per open, and a
-        // second updateAppWidget for cached artwork is a wasted binder round-trip: the sizes that
-        // do have artwork already show it, and the rest arrive with the publish at the end.
-        if (missing.isNotEmpty() && cached.none { it != null }) {
-          publish()
-          publishedEarly = true
-        }
-        if (missing.isNotEmpty()) {
-          val artwork = withContext(Dispatchers.IO) { EmbeddedArtworkResolver.decodeArtworkUri(context, uri) }
-          if (artwork != null) {
-            withContext(Dispatchers.Default) {
-              for (size in missing) {
-                if (updates.get() != update) break
-                artworkCache.put(ArtworkKey(uri, size), composeArtwork(artwork, size))
-                composed = true
-              }
-            }
-          }
+      publish()
+      val uri = item?.artworkUri?.takeIf(String::isNotBlank) ?: return
+      val missing = allSizes.filter { artworkCache.get(ArtworkKey(uri, it)) == null }
+      if (missing.isEmpty()) return
+      val artwork = withContext(Dispatchers.IO) { EmbeddedArtworkResolver.decodeArtworkUri(context, uri) } ?: return
+      withContext(Dispatchers.Default) {
+        for (size in missing) {
+          if (updates.get() != update) break
+          artworkCache.put(ArtworkKey(uri, size), composeArtwork(artwork, size))
         }
       }
-      if (!publishedEarly || composed) publish()
+      publish()
     }
 
     internal suspend fun renderPill(context: Context) {

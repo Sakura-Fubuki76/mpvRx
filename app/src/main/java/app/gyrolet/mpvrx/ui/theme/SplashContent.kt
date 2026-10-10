@@ -27,8 +27,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
@@ -119,8 +119,6 @@ fun SplashContent(
   }
 }
 
-internal const val SPLASH_MIN_DURATION_MS = 500
-internal const val SPLASH_MAX_DURATION_MS = 5_000
 internal const val SPLASH_FADE_OUT_DURATION_MS = 320
 internal const val SPLASH_ICON_ENTER_DURATION_MS = 420
 

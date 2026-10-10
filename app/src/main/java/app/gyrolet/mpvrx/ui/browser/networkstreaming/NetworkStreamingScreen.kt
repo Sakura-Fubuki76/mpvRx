@@ -10,16 +10,8 @@
 package app.gyrolet.mpvrx.ui.browser.networkstreaming
 
 import android.content.Context
-import android.content.SharedPreferences
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -27,13 +19,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import app.gyrolet.mpvrx.ui.utils.NavigationPager
@@ -74,10 +64,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -94,14 +82,12 @@ import app.gyrolet.mpvrx.domain.network.ConnectionStatus
 import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
-import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
 import app.gyrolet.mpvrx.domain.torrent.isTorrentSource
 import app.gyrolet.mpvrx.domain.torrent.normalizeTorrentSource
 import app.gyrolet.mpvrx.preferences.YtdlPreferences
 import app.gyrolet.mpvrx.preferences.NetworkBookmarkPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
-import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.repository.wyzie.WyzieSearchRepository
 import app.gyrolet.mpvrx.utils.media.MediaInfoParser
 import app.gyrolet.mpvrx.ui.browser.cards.NetworkConnectionCard
@@ -119,6 +105,8 @@ import app.gyrolet.mpvrx.ui.preferences.YtdlpSettingsScreen
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionInput
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionScreen
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionViewModel
+import app.gyrolet.mpvrx.ui.torrent.loadViewedFileIndices
+import app.gyrolet.mpvrx.ui.torrent.saveViewedFileIndices
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.popSafely
@@ -175,7 +163,11 @@ object NetworkStreamingScreen : Screen {
     var editingConnection by remember { mutableStateOf<NetworkConnection?>(null) }
     var showTorrentPicker by remember { mutableStateOf(false) }
     val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
+    // Main tabs already include mini-player clearance in their navigation height. Pushed
+    // screens (such as Profile -> Network) have no navigation bar, so reserve it here.
+    val bottomOverlayClearance = maxOf(navigationBarHeight, app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance)
     val coroutineScope = rememberCoroutineScope()
+    val navigationHaptics = app.gyrolet.mpvrx.ui.utils.rememberAppHaptics()
 
     // yt-dlp install gate for the "paste link -> Play" flow: instead of silently installing
     // yt-dlp in the background while the player buffers on first use, we ask up front.
@@ -419,8 +411,9 @@ object NetworkStreamingScreen : Screen {
               Tab(
                 selected = pagerState.currentPage == index,
                 onClick = {
-                  navigateTab(index)
-                },
+                   if (pagerState.currentPage != index) navigationHaptics.selection(true)
+                   navigateTab(index)
+                 },
                 text = {
                   Text(
                     text = stringResource(tab.titleResId),
@@ -448,7 +441,7 @@ object NetworkStreamingScreen : Screen {
                   stringResource(R.string.ui_add_connection),
                 )
               },
-              modifier = Modifier.padding(bottom = navigationBarHeight),
+              modifier = Modifier.padding(bottom = bottomOverlayClearance),
             )
           }
           NetworkTab.MEDIA.ordinal -> {
@@ -456,7 +449,7 @@ object NetworkStreamingScreen : Screen {
               onClick = { showAddMediaDialog = true },
               icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
               text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_media)) },
-              modifier = Modifier.padding(bottom = navigationBarHeight),
+              modifier = Modifier.padding(bottom = bottomOverlayClearance),
             )
           }
         }
@@ -592,6 +585,7 @@ object NetworkStreamingScreen : Screen {
 
       AddConnectionSheet(
         isOpen = showAddSheet,
+        savedConnections = connections,
         onDismiss = { showAddSheet = false },
         onSave = { connection ->
           viewModel.addConnection(connection)
@@ -666,6 +660,7 @@ object NetworkStreamingScreen : Screen {
       editingConnection?.let { connection ->
         EditConnectionSheet(
           connection = connection,
+          savedConnections = connections,
           isOpen = true,
           onDismiss = { editingConnection = null },
           onSave = { updatedConnection, clearPassword ->
@@ -785,9 +780,10 @@ private fun LocalNetworkContent(
   onManageBookmarks: () -> Unit,
 ) {
   val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+  val bottomOverlayClearance = maxOf(navBarHeight, app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance)
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
+    contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = bottomOverlayClearance + 16.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
     // 1. Stream Link Section (URL input & recent streams with Save to Media action)
@@ -863,6 +859,7 @@ private fun MediaContent(
 
   var selectedDetailGroup by remember { mutableStateOf<MediaStreamGroup?>(null) }
   val navBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
+  val bottomOverlayClearance = maxOf(navBarHeight, app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance)
 
   val heroGroups =
     remember(mediaGroups) {
@@ -893,7 +890,7 @@ private fun MediaContent(
     if (mediaGroups.isEmpty()) {
       LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = bottomOverlayClearance + 16.dp),
       ) {
         item {
           EmptyStateCard(
@@ -906,7 +903,7 @@ private fun MediaContent(
     } else {
       LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = navBarHeight + 24.dp),
+        contentPadding = PaddingValues(bottom = bottomOverlayClearance + 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
       ) {
         // 1. Featured Hero Carousel Banner
@@ -1313,25 +1310,4 @@ private fun StreamLinkSection(
       }
     }
   }
-}
-
-private fun loadViewedFileIndices(
-  preferences: SharedPreferences,
-  infoHash: String,
-): Set<Int> =
-  preferences
-    .getStringSet(infoHash, emptySet())
-    .orEmpty()
-    .mapNotNull(String::toIntOrNull)
-    .toSet()
-
-private fun saveViewedFileIndices(
-  preferences: SharedPreferences,
-  infoHash: String,
-  indices: Set<Int>,
-) {
-  preferences
-    .edit()
-    .putStringSet(infoHash, indices.map(Int::toString).toSet())
-    .apply()
 }

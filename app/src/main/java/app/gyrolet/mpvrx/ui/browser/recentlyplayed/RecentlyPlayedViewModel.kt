@@ -293,15 +293,6 @@ class RecentlyPlayedViewModel(
 
   // Basic video creation function removed as it's no longer used
 
-  suspend fun clearAllRecentlyPlayed() {
-    try {
-      recentlyPlayedRepository.clearAll()
-      // The observe flow will automatically update the UI
-    } catch (e: Exception) {
-      Log.e("RecentlyPlayedViewModel", "Error clearing recent videos", e)
-    }
-  }
-
   suspend fun deleteVideosFromHistory(
     videos: List<Video>,
     deleteFiles: Boolean = false,

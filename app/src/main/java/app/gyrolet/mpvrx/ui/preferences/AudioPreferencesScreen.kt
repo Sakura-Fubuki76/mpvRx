@@ -26,11 +26,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import app.gyrolet.mpvrx.ui.components.AppSlider as Slider
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -60,14 +59,13 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
 import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
-import me.zhanghai.compose.preference.SliderPreference
+import app.gyrolet.mpvrx.ui.preferences.components.AppSliderPreference as SliderPreference
 import me.zhanghai.compose.preference.TextFieldPreference
 import org.koin.compose.koinInject
 
@@ -102,26 +100,9 @@ object AudioPreferencesScreen : Screen {
 
     Scaffold(
       topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = stringResource(R.string.pref_audio),
-              style = MaterialTheme.typography.headlineSmall,
-              fontWeight = FontWeight.ExtraBold,
-              color = MaterialTheme.colorScheme.primary,
-            )
-          },
-          navigationIcon = {
-            if (LocalShowSettingsBackArrow.current) {
-              IconButton(onClick = { backstack.popSafely() }) {
-                Icon(
-                  Icons.RoundedFilled.ArrowBack,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.secondary,
-                )
-              }
-            }
-          },
+        SettingsTopAppBar(
+          title = stringResource(R.string.pref_audio),
+          onBack = { backstack.popSafely() },
         )
       },
     ) { padding ->
@@ -591,6 +572,29 @@ object AudioPreferencesScreen : Screen {
                 },
                 onSliderValueChange = { preferences.volumeBoostCap.set(it.toInt()) },
                 sliderValue = volumeBoostCap.toFloat(),
+              )
+
+              PreferenceDivider()
+              Text(
+                text = stringResource(R.string.pref_lyrics_sources_category),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+              )
+
+              val autoFetchLyricsOnline by preferences.lyricsAutoFetchOnline.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_lyrics_auto_fetch_online),
+                value = autoFetchLyricsOnline,
+                onValueChange = preferences.lyricsAutoFetchOnline::set,
+                title = { Text(stringResource(R.string.pref_lyrics_auto_fetch_online)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_lyrics_auto_fetch_online_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
               )
 
               PreferenceDivider()

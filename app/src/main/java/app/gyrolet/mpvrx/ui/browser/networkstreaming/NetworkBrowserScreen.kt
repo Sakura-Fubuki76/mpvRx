@@ -180,6 +180,14 @@ data class NetworkBrowserScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
 
+    // Keep the last successful directory listing in place on transient failures, but
+    // report the failed operation rather than silently swallowing its error.
+    LaunchedEffect(error, files.isNotEmpty()) {
+      if (error != null && files.isNotEmpty()) {
+        Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+      }
+    }
+
     // UI State
     val isRefreshing = remember { mutableStateOf(false) }
     val sortDialogOpen = rememberSaveable { mutableStateOf(false) }
@@ -191,8 +199,9 @@ data class NetworkBrowserScreen(
       if (isSearching) focusRequester.requestFocus()
     }
 
-    // Load files when connectionId or currentPath changes
-    LaunchedEffect(connectionId, currentPath) {
+    // Each resolved path has its own ViewModel. Reload when that particular
+    // owner changes, including when Navigation 3 restores a previous entry.
+    LaunchedEffect(viewModel) {
       viewModel.loadFiles()
     }
 

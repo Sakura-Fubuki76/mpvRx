@@ -186,6 +186,7 @@ sealed class PlayerUpdates {
 
   data class SubtitleZoom(
     val scale: Float,
+    val secondary: Boolean = false,
   ) : PlayerUpdates()
 
   data class HorizontalSeek(

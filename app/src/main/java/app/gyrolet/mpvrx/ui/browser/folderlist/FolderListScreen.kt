@@ -15,12 +15,13 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
+import app.gyrolet.mpvrx.ui.theme.AppMotion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -78,7 +79,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -593,10 +593,15 @@ object FolderListScreen : Screen {
 
     @Composable
     fun FoldersPane() {
-      Scaffold(
-        containerColor = app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor(),
-        contentWindowInsets = if (embedded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
-        topBar = {
+      val bottomBarBackdrop = rememberBrowserBottomBarBackdrop()
+      val showFloatingBottomBar = selectionManager.isInSelectionMode
+
+      Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+          modifier = Modifier.captureLiquidGlassBackdrop(bottomBarBackdrop),
+          containerColor = app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor(),
+          contentWindowInsets = if (embedded) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
+          topBar = {
           if (embedded) {
             // Embedded inside another screen (e.g. Music tab) which already renders its own top bar.
           } else if (internalIsSearching) {
@@ -855,12 +860,11 @@ object FolderListScreen : Screen {
           }
         },
       ) { padding ->
-        val bottomBarBackdrop = rememberBrowserBottomBarBackdrop()
         Box(modifier = Modifier.padding(padding)) {
           if (isPermissionSetupCompleted && permissionState.status == PermissionStatus.Granted) {
               if (effectiveIsSearching) {
                 // Show search results
-                Box(modifier = Modifier.fillMaxSize().captureLiquidGlassBackdrop(bottomBarBackdrop)) {
+                Box(modifier = Modifier.fillMaxSize()) {
                   if (isSearchLoading) {
                     // Loading state
                     Box(
@@ -908,7 +912,6 @@ object FolderListScreen : Screen {
                 }
               } else {
                 FolderListContent(
-                  modifier = Modifier.captureLiquidGlassBackdrop(bottomBarBackdrop),
                   folders = filteredFolders,
                   foldersWithNewCount = foldersWithNewCount,
                   pinnedFolderPaths = pinnedFolderPaths,
@@ -971,59 +974,81 @@ object FolderListScreen : Screen {
             )
           }
 
-          BrowserBottomBar(
-            backdrop = bottomBarBackdrop,
-            isSelectionMode = selectionManager.isInSelectionMode,
-            onCopyClick = {
-              operationType.value = CopyPasteOps.OperationType.Copy
-              if (CopyPasteOps.canUseDirectFileOperations()) {
-                folderPickerOpen.value = true
-              } else {
-                treePickerLauncher.launch(null)
-              }
-            },
-            onMoveClick = {
-              operationType.value = CopyPasteOps.OperationType.Move
-              if (CopyPasteOps.canUseDirectFileOperations()) {
-                folderPickerOpen.value = true
-              } else {
-                treePickerLauncher.launch(null)
-              }
-            },
-            onRenameClick = { renameDialogOpen = true },
-            onDeleteClick = { pendingDeleteFolders = selectionManager.getSelectedItems() },
-            onAddToPlaylistClick = { },
-            onPinClick = {
-              val selectedFolders = selectionManager.getSelectedItems()
-              if (selectedFolders.isNotEmpty()) {
-                val pinned = foldersPreferences.pinnedFolders.get()
-                val paths = selectedFolders.map { it.path }.toSet()
-                foldersPreferences.pinnedFolders.set(if (pinned.containsAll(paths)) pinned - paths else pinned + paths)
-                selectionManager.clear()
-              }
-            },
-            unpinSelected =
-              selectionManager.getSelectedItems().let { selected ->
-                selected.isNotEmpty() && selected.all { it.path in pinnedFolderPaths }
-              },
-            showCopy = true,
-            showMove = true,
-            showRename = selectionManager.isSingleSelection,
-            showDownscale = false,
-            showAddToPlaylist = false,
-            modifier =
-              Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 0.dp),
-          )
-
           FabScrollHelper.FabScrim(
             visible = isFabExpanded.value && !quickPlayFabDirect,
             onDismiss = { isFabExpanded.value = false },
           )
         }
       }
+
+      // Independent Floating Bottom Bar - positioned at absolute bottom
+      AnimatedVisibility(
+        visible = showFloatingBottomBar,
+        enter =
+          slideInVertically(
+            animationSpec =
+              spring(
+                dampingRatio = AppMotion.Spatial.Expressive.dampingRatio,
+                stiffness = AppMotion.Spatial.Expressive.stiffness,
+              ),
+            initialOffsetY = { fullHeight -> fullHeight },
+          ),
+        exit =
+          slideOutVertically(
+            animationSpec =
+              spring(
+                dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
+                stiffness = AppMotion.Spatial.Standard.stiffness,
+              ),
+            targetOffsetY = { fullHeight -> fullHeight },
+          ),
+        modifier = Modifier.align(Alignment.BottomCenter),
+      ) {
+        BrowserBottomBar(
+          backdrop = bottomBarBackdrop,
+          isSelectionMode = selectionManager.isInSelectionMode,
+          onCopyClick = {
+            operationType.value = CopyPasteOps.OperationType.Copy
+            if (CopyPasteOps.canUseDirectFileOperations()) {
+              folderPickerOpen.value = true
+            } else {
+              treePickerLauncher.launch(null)
+            }
+          },
+          onMoveClick = {
+            operationType.value = CopyPasteOps.OperationType.Move
+            if (CopyPasteOps.canUseDirectFileOperations()) {
+              folderPickerOpen.value = true
+            } else {
+              treePickerLauncher.launch(null)
+            }
+          },
+          onRenameClick = { renameDialogOpen = true },
+          onDeleteClick = { pendingDeleteFolders = selectionManager.getSelectedItems() },
+          onAddToPlaylistClick = { },
+          onPinClick = {
+            val selectedFolders = selectionManager.getSelectedItems()
+            if (selectedFolders.isNotEmpty()) {
+              val pinned = foldersPreferences.pinnedFolders.get()
+              val paths = selectedFolders.map { it.path }.toSet()
+              foldersPreferences.pinnedFolders.set(if (pinned.containsAll(paths)) pinned - paths else pinned + paths)
+              selectionManager.clear()
+            }
+          },
+          unpinSelected =
+            selectionManager.getSelectedItems().let { selected ->
+              selected.isNotEmpty() && selected.all { it.path in pinnedFolderPaths }
+            },
+          showCopy = true,
+          showMove = true,
+          showRename = selectionManager.isSingleSelection,
+          showDownscale = false,
+          showAddToPlaylist = false,
+          modifier = Modifier.padding(bottom = 0.dp),
+        )
+      }
     }
+  }
 
     if (isDualPaneActive && selectedFolderBucketId != null) {
       Row(modifier = Modifier.fillMaxSize()) {

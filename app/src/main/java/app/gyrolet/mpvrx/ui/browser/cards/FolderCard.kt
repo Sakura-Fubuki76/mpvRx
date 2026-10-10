@@ -248,6 +248,7 @@ fun FolderCard(
     modifier =
       modifier
         .fillMaxWidth()
+        .tvFocusHighlight(cardShape, focusedScale = 1.03f)
         .clip(cardShape)
         .semantics { selected = isSelected }
         .tvContextMenu(onLongClick)
@@ -320,7 +321,7 @@ fun FolderCard(
                   Modifier
                     .align(Alignment.TopEnd)
                     .padding(6.dp)
-                      .cardOverlay(containerColor = Color(0xFFD32F2F))
+                    .cardOverlay(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
                     .padding(horizontal = 6.dp, vertical = 2.dp),
               ) {
                 Text(
@@ -329,7 +330,7 @@ fun FolderCard(
                     MaterialTheme.typography.labelSmall.copy(
                       fontWeight = FontWeight.Bold,
                     ),
-                  color = Color.White,
+                  color = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
               }
             }
@@ -453,7 +454,7 @@ fun FolderCard(
                   Modifier
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
-                      .cardOverlay(containerColor = Color(0xFFD32F2F))
+                    .cardOverlay(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
                     .padding(horizontal = 6.dp, vertical = 2.dp),
               ) {
                 Text(
@@ -462,7 +463,7 @@ fun FolderCard(
                     MaterialTheme.typography.labelSmall.copy(
                       fontWeight = FontWeight.Bold,
                     ),
-                  color = Color.White,
+                  color = MaterialTheme.colorScheme.onTertiaryContainer,
                 )
               }
             }

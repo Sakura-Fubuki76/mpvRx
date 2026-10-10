@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,7 +43,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -322,64 +320,6 @@ fun FolderPickerDialog(
           }
         }
       }
-  }
-}
-
-@Composable
-private fun StorageVolumeItem(
-  context: Context,
-  volume: android.os.storage.StorageVolume,
-  volumePath: String,
-  onClick: () -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  val description = volume.getDescription(context)
-  val isPrimary = volume.isPrimary
-  val isRemovable = volume.isRemovable
-
-  val icon =
-    when {
-      isPrimary -> Icons.RoundedFilled.Home
-      isRemovable && volumePath.contains("usb", ignoreCase = true) -> Icons.RoundedFilled.Usb
-      isRemovable -> Icons.RoundedFilled.SdCard
-      else -> Icons.RoundedFilled.Folder
-    }
-
-  Row(
-    modifier =
-      modifier
-        .fillMaxWidth()
-        .clip(RoundedCornerShape(12.dp))
-        .clickable(onClick = onClick)
-        .padding(horizontal = 12.dp, vertical = 12.dp),
-    horizontalArrangement = Arrangement.spacedBy(12.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    Icon(
-      imageVector = icon,
-      contentDescription = null,
-      tint = MaterialTheme.colorScheme.primary,
-      modifier = Modifier.size(32.dp),
-    )
-    Column(
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      Text(
-        text = description,
-        style = MaterialTheme.typography.bodyLarge,
-        fontWeight = FontWeight.Bold,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-      Text(
-        text = volumePath,
-        style = MaterialTheme.typography.bodyMedium,
-        fontWeight = FontWeight.Medium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-      )
-    }
   }
 }
 

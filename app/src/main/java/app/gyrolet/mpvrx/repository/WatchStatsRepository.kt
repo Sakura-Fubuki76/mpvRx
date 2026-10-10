@@ -34,6 +34,8 @@ data class WatchStatsSnapshot(
 data class WatchMediaStats(
   val title: String,
   val artworkUri: String? = null,
+  /** Original playable identity used to regenerate local/video thumbnails. */
+  val sourceUri: String? = null,
   val seconds: Long = 0,
   val sessions: Long = 0,
   val isAudio: Boolean = false,
@@ -121,6 +123,7 @@ class WatchStatsRepository(context: Context) {
     WatchMediaStats(
       title = item.title?.takeIf(String::isNotBlank) ?: existing?.title ?: item.originalUri.substringAfterLast('/'),
       artworkUri = item.artworkUri ?: existing?.artworkUri,
+      sourceUri = item.originalUri.takeIf(String::isNotBlank) ?: existing?.sourceUri,
       seconds = existing?.seconds ?: 0,
       sessions = existing?.sessions ?: 0,
       isAudio = item.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO,

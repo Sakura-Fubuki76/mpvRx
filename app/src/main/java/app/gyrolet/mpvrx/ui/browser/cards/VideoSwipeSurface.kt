@@ -58,7 +58,6 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.utils.rememberAppHaptics
 import app.gyrolet.mpvrx.utils.device.DeviceFormFactor
-import kotlinx.coroutines.flow.collect
 import org.koin.compose.koinInject
 import kotlin.math.abs
 

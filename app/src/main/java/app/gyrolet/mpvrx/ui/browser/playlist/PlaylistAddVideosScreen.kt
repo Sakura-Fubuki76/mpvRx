@@ -40,7 +40,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -136,12 +135,6 @@ data class PlaylistAddVideosScreen(
     val requestedVideoColumns by videoColumnPreference.collectAsState()
     val videoListState = rememberLazyListState()
     val videoGridState = rememberLazyGridState()
-    val isVideoListScrolling by
-      remember(videoListState, videoGridState, videoLayoutMode) {
-        derivedStateOf {
-          if (videoLayoutMode == MediaLayoutMode.GRID) videoGridState.isScrollInProgress else videoListState.isScrollInProgress
-        }
-      }
 
     val playlistDetailViewModel: PlaylistDetailViewModel =
       viewModel(
@@ -408,7 +401,6 @@ data class PlaylistAddVideosScreen(
                 onClick = { selectionManager?.toggle(video) },
                 onThumbClick = { selectionManager?.toggle(video) },
                 onLongClick = { selectionManager?.handleLongClick(video) },
-                allowThumbnailLoading = !isVideoListScrolling,
                 uiConfig = videoCardUiConfig,
               )
             }
@@ -430,7 +422,6 @@ data class PlaylistAddVideosScreen(
               onClick = { selectionManager?.toggle(video) },
               onThumbClick = { selectionManager?.toggle(video) },
               onLongClick = { selectionManager?.handleLongClick(video) },
-              allowThumbnailLoading = !isVideoListScrolling,
               uiConfig = videoCardUiConfig,
               showSubtitleIndicator = showSubtitleIndicator,
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
