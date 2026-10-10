@@ -302,12 +302,11 @@ internal fun AnimeLibraryContent(
         item {
           val directory = libraryGroups[path]?.directory ?: currentPath
           val regularFiles = files.filter { (it.path in libraryGroups[path]?.regularPaths.orEmpty() || animeSectionPath(directory, it).isEmpty()) && !parseAnimeFilename(it.name).special }.ifEmpty { files }
-          val resume = regularFiles.firstOrNull { file ->
-            playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.let {
-              it.lastPosition > 0 && !it.hasBeenWatched
-            } == true
-          } ?: regularFiles.firstOrNull { file -> playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.hasBeenWatched != true }
-            ?: regularFiles.firstOrNull()
+          val resume = app.gyrolet.mpvrx.domain.cloud.animeResumeFile(
+            regularFiles, snapshot.recentPaths,
+            isPartial = { file -> playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.lastPosition?.let { it > 0 } == true },
+            isWatched = { file -> playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.hasBeenWatched == true },
+          )
           resume?.let { file ->
             val partial = playback[app.gyrolet.mpvrx.ui.player.PlaybackIdentity.forNetwork(connection.id, file.path)]?.lastPosition?.let { it > 0 } == true
             Button(onClick = { onPlay(file, regularFiles) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {

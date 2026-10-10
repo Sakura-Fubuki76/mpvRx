@@ -17,7 +17,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import java.util.concurrent.TimeUnit
 
-class AnimeLibrarySnapshot(val files: List<NetworkFile> = emptyList(), val groups: Map<String, AnimeVideoGroup> = emptyMap(), val playbackIdentities: Map<String, String> = emptyMap(), val loaded: Boolean = false, val featuredKey: String? = null)
+class AnimeLibrarySnapshot(val files: List<NetworkFile> = emptyList(), val groups: Map<String, AnimeVideoGroup> = emptyMap(), val playbackIdentities: Map<String, String> = emptyMap(), val loaded: Boolean = false, val featuredKey: String? = null, val recentPaths: List<String> = emptyList())
 
 data class AnimeMatchProgress(val running: Boolean = false, val current: String? = null, val completed: Int = 0, val total: Int = 0)
 
@@ -77,7 +77,7 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
       val presented = animeMergeSubjectGroups(animeSplitGroups(structure, splitBindings(folders)),
         folders.associate { it.path to it.subjectId }, folders.associate { it.path to it.episodeOffset })
       val recentPaths = recent.mapNotNull { app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(it.filePath)?.takeIf { reference -> reference.connectionId == id }?.path?.value }
-      AnimeLibrarySnapshot(files, presented.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities, loaded = true, featuredKey = animeFeaturedGroup(presented, recentPaths))
+      AnimeLibrarySnapshot(files, presented.associate { group -> group.key to group.copy(files = group.files.mapNotNull { latest[it.path] }) }, identities, loaded = true, featuredKey = animeFeaturedGroup(presented, recentPaths), recentPaths = recentPaths)
     }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), AnimeLibrarySnapshot())
   }
 
