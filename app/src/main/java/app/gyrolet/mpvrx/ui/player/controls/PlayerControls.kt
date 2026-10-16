@@ -1743,10 +1743,16 @@ is PlayerUpdates.FrameInfo -> {
 
           AnimatedVisibility(
             visible =
-              // Keep the seekbar visible with normal player controls. Only the hidden-controls
-              // horizontal seek gesture is governed by the user preference.
+              // Snapshot the starting visibility: scrubbing hides controls, but must not
+              // make an already visible timeline disappear. The preference applies to
+              // gestures that started with hidden controls.
               (controlsShown ||
-                if (isHorizontalSeekActive) showSeekbarDuringHorizontalSeeking else seekBarShown) &&
+                if (isHorizontalSeekActive) {
+                  showSeekbarDuringHorizontalSeeking ||
+                    (currentPlayerUpdate as PlayerUpdates.HorizontalSeek).startedWithControlsShown
+                } else {
+                  seekBarShown
+                }) &&
                 !areControlsLocked,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },

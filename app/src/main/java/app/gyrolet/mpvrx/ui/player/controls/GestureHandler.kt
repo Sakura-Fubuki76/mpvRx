@@ -1287,6 +1287,7 @@ fun GestureHandler(
 
             var gestureType: String? = null
             var hasStartedSeeking = false
+            var seekStartedWithControlsShown = false
             var initialVideoPosition = 0f
             var pendingSeekPosition: Float? = null
             var wasPlayerAlreadyPaused = false
@@ -1326,6 +1327,7 @@ fun GestureHandler(
                       ) { // Only when no panels are shown
                         if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
                           horizontalSeekHideJob?.cancel()
+                          seekStartedWithControlsShown = viewModel.controlsShown.value
                           viewModel.autoHideControls()
                           gestureType = "horizontal_seek"
                           hasStartedSeeking = true
@@ -1374,7 +1376,11 @@ fun GestureHandler(
 
                         // Use PlayerUpdates system like zoom updates
                         viewModel.playerUpdate.update {
-                          PlayerUpdates.HorizontalSeek(currentTimeStr, deltaStr)
+                          PlayerUpdates.HorizontalSeek(
+                            currentTimeStr,
+                            deltaStr,
+                            startedWithControlsShown = seekStartedWithControlsShown,
+                          )
                         }
 
                         change.consume()

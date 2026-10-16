@@ -192,6 +192,8 @@ sealed class PlayerUpdates {
   data class HorizontalSeek(
     val currentTime: String,
     val seekDelta: String,
+    // Preserve the visible timeline even after screen scrubbing hides the other controls.
+    val startedWithControlsShown: Boolean = false,
   ) : PlayerUpdates()
 
   data class ShowText(
