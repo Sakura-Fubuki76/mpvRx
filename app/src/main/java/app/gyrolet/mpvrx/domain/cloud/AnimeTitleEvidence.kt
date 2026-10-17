@@ -40,6 +40,62 @@ fun animeDiscoveryTerms(raw: String): List<String> {
     .filter { it.isNotBlank() }.distinct()
 }
 
+/**
+ * Trailing roman-numeral season marker ("… II", "… III", "… IV") that release folders use instead
+ * of "Season 2". A lone "I" stays out: it is far more often part of the title than a season.
+ */
+private val trailingSeasonNumeral = Regex("(?i)\\s+(II|III|IV)$")
+
+fun animeTrailingSeasonNumber(raw: String): Int? =
+  trailingSeasonNumeral.find(Normalizer.normalize(raw, Normalizer.Form.NFKC))
+    ?.groupValues?.get(1)
+    ?.let { numeral ->
+      when (numeral.uppercase()) {
+        "II" -> 2
+        "III" -> 3
+        "IV" -> 4
+        else -> null
+      }
+    }
+
+/** The base title a release folder means: "Ore no Imoto II" strips back to "Ore no Imoto". */
+fun animeWithoutTrailingNumeral(raw: String): String =
+  Normalizer.normalize(raw, Normalizer.Form.NFKC).replace(trailingSeasonNumeral, "").trim()
+
+/** Every explicit season a single title string declares, whatever the spelling. */
+fun animeSeasonDeclarations(raw: String): Set<Int> {
+  if (raw.isBlank()) return emptySet()
+  val normalized = Normalizer.normalize(raw, Normalizer.Form.NFKC)
+  return buildSet {
+    animeExplicitSeason(normalized)?.let(::add)
+    animeTrailingSeasonNumber(normalized)?.let(::add)
+    Regex("(?:^|\\s)([2-9])$").find(normalized)?.groupValues?.get(1)?.toIntOrNull()?.let(::add)
+    Regex("[第#]\\s*([2-9])\\s*[季期]").find(normalized)?.groupValues?.get(1)?.toIntOrNull()?.let(::add)
+    Regex("(?i)\\bseason\\s*([2-9])\\b").find(normalized)?.groupValues?.get(1)?.toIntOrNull()?.let(::add)
+    Regex("[\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]([2-9])$").find(normalized)?.groupValues?.get(1)?.toIntOrNull()?.let(::add)
+  }
+}
+
+/**
+ * Romanisation-tolerant identity: vowel-length spellings fold together, so "Ore no Imouto" and
+ * "Ore no Imōto" — or "Ore no Imoto" — share one key. Only used as extra matching evidence.
+ */
+fun animeLooseIdentityKey(raw: String): String = animeIdentityKey(raw)
+  .replace("oh", "o").replace("oo", "o").replace("ou", "o").replace("uu", "u")
+
+/** True when [name] is [base] plus trailing words ("Ore no Imoto" ⊂ "Ore no Imouto ga Konna ni …"). */
+fun animeTitleExtends(base: String, name: String): Boolean {
+  val baseKey = animeLooseIdentityKey(base)
+  if (baseKey.length < 2) return false
+  return animeLooseIdentityKey(name).startsWith(baseKey)
+}
+
+fun animeSeasonDeclarations(subject: AnimeSubject): Set<Int> =
+  (listOf(subject.name, subject.chineseName) + subject.aliases)
+    .filter { it.isNotBlank() }
+    .flatMap(::animeSeasonDeclarations)
+    .toSet()
+
 fun animeMovieBase(raw: String): String? {
   val marker = Regex("(?i)\\b(?:the\\s+)?movie\\b").find(raw) ?: return null
   return animeNameKey(raw.substring(0, marker.range.first))

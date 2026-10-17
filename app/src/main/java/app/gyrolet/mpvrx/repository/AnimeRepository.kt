@@ -201,6 +201,9 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
             }
           }
           if (match == null && parts.isEmpty()) {
+            match = matchBySeasonEvidence(id, group, forceLookup)
+          }
+          if (match == null && parts.isEmpty()) {
             for (term in animeEventTerms(group.query)) {
               val event = matchAnimeEvent(group.query, search(term, forceLookup, 6))
               if (event != null) { match = event; break }
@@ -261,6 +264,8 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
   private suspend fun matchSplitSubjects(query: String, group: AnimeVideoGroup, force: Boolean = false): Map<Int, AnimeSubject> {
     val regular = animePartRegularFiles(group)
     if (regular.size !in 2..4) return emptyMap()
+    // "… II" is a season, not a part ordinal: the season evidence step picks the entry instead.
+    if (animeTrailingSeasonNumber(query) != null) return emptyMap()
     val candidates = animeDiscoveryTerms(query).take(3).flatMap { term -> search(term, force).map { candidateCores[it.id] ?: it } }.distinctBy { it.id }
     val parts = animeNumberedSubjects(query, candidates)
     if (parts.isEmpty()) return emptyMap()
@@ -276,17 +281,71 @@ class AnimeRepository(private val dao: AnimeDao, private val recentDao: app.gyro
     val candidates = mutableMapOf<Long, AnimeSubject>()
     for (term in animeDiscoveryTerms(query).take(3)) {
       val found = search(term, force)
-      matchAnimeSubject(query, found)?.let { return it }
+      matchAnimeSubject(query, found)?.let { return preferEarlierSeason(query, it, force) }
       for (candidate in found.take(6)) {
-        val core = if (!force) candidateCores[candidate.id] else null
-        val detailed = core ?: dao.getSubject(candidate.id)?.let { row ->
-          runCatching { json.decodeFromString<AnimeSubject>(row.payload) }.getOrNull()?.takeIf { it.format.isNotBlank() }
-        } ?: decodeSubject(request("/v0/subjects/${candidate.id}")).also { candidateCores[candidate.id] = it }
+        val detailed = detailedSubject(candidate, force)
         candidates[detailed.id] = detailed
       }
-      (matchAnimeSubject(query, candidates.values.toList()) ?: matchAnimeChapter(query, candidates.values.toList()))?.let { return it }
+      (matchAnimeSubject(query, candidates.values.toList()) ?: matchAnimeChapter(query, candidates.values.toList()))
+        ?.let { return preferEarlierSeason(query, it, force) }
     }
     return null
+  }
+
+  private suspend fun detailedSubject(candidate: AnimeSubject, force: Boolean): AnimeSubject {
+    if (!force) candidateCores[candidate.id]?.let { return it }
+    return dao.getSubject(candidate.id)?.let { row ->
+      runCatching { json.decodeFromString<AnimeSubject>(row.payload) }.getOrNull()?.takeIf { it.format.isNotBlank() }
+    } ?: decodeSubject(request("/v0/subjects/${candidate.id}")).also { candidateCores[candidate.id] = it }
+  }
+
+  /**
+   * A release without a season marker can only reach a later-season entry through an alias (sequel
+   * entries often list the first season's title). Prefer the entry advertising no sequel when the
+   * provider offers one; otherwise the original match stands unchanged.
+   */
+  private suspend fun preferEarlierSeason(query: String, matched: AnimeSubject, force: Boolean): AnimeSubject {
+    if (animeExplicitSeason(query) != null || animeTrailingSeasonNumber(query) != null) return matched
+    if (animeSeasonDeclarations(matched).none { it > 1 }) return matched
+    val base = (listOf(matched.name, matched.chineseName) + matched.aliases).firstOrNull { name ->
+      name.isNotBlank() && animeSeasonDeclarations(name).isEmpty() && animeIdentityKey(name) == animeIdentityKey(query)
+    } ?: return matched
+    val baseKey = animeLooseIdentityKey(base)
+    val cleaner = runCatching { search(base, force) }.getOrNull().orEmpty()
+      .filter { it.id != matched.id && animeSeasonDeclarations(it).isEmpty() }
+      .filter { candidate ->
+        (listOf(candidate.name, candidate.chineseName) + candidate.aliases)
+          .any { it.isNotBlank() && animeLooseIdentityKey(it) == baseKey }
+      }
+      .singleOrNull()
+    if (cleaner == null) return matched
+    CloudTrace.event("anime.season.prefer", 0, matched.id.toString(), "subject=${cleaner.id}")
+    return cleaner
+  }
+
+  /**
+   * Last-resort season evidence: a folder titled "… II/III/IV" whose title does not resolve on its
+   * own can still be identified through its base title when exactly one candidate both declares
+   * that season and carries the base title. Anything ambiguous stays unmatched.
+   */
+  private suspend fun matchBySeasonEvidence(id: Long, group: AnimeVideoGroup, force: Boolean): AnimeSubject? {
+    val season = animeTrailingSeasonNumber(group.query) ?: return null
+    if (season <= 1) return null
+    val base = animeWithoutTrailingNumeral(group.query)
+    if (base.isBlank()) return null
+    val candidates = mutableMapOf<Long, AnimeSubject>()
+    for (term in (listOf(base) + group.queries).distinct().filter { animeTrailingSeasonNumber(it) == null }.take(4)) {
+      runCatching { search(term, force) }.getOrNull().orEmpty().take(8)
+        .forEach { candidates[it.id] = candidateCores[it.id] ?: it }
+    }
+    val chosen = candidates.values
+      .filter { animeSeasonDeclarations(it).contains(season) }
+      .singleOrNull { subject ->
+        (listOf(subject.name, subject.chineseName) + subject.aliases)
+          .any { it.isNotBlank() && animeTitleExtends(base, it) }
+      } ?: return null
+    CloudTrace.event("anime.season.evidence", id, group.key, "season=$season subject=${chosen.id}")
+    return chosen
   }
 
   private val sourceAdaptations = java.util.concurrent.ConcurrentHashMap<Long, List<Long>>()
