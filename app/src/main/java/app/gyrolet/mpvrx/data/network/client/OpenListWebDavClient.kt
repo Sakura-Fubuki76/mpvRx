@@ -5,8 +5,8 @@ import app.gyrolet.mpvrx.domain.network.NetworkPath
 import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import java.util.concurrent.ConcurrentHashMap
 
-/** AList/OpenList is a capability of a WebDAV storage, not a separate user-facing protocol. */
-class AlistWebDavClient(
+/** OpenList is a capability of a WebDAV storage, not a separate user-facing protocol. */
+class OpenListWebDavClient(
   private val connection: NetworkConnection,
   private val dav: NetworkClient = WebDavClient(connection),
   private val api: NetworkClient = createApi(connection),
@@ -42,7 +42,7 @@ class AlistWebDavClient(
       // OpenList server lost its API. Whole-tree refreshes encounter these independently.
       val apiSupported = result.isSuccess || supported() == true
       capabilities[connection.id] = Capability(connection.copy(lastConnected = 0, name = "", autoConnect = false).hashCode(), apiSupported, System.currentTimeMillis())
-      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("alist.list", connection.id, path, "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0}")
+      app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("openlist.list", connection.id, path, "success=${result.isSuccess} items=${result.getOrNull()?.size ?: 0}")
       if (result.isSuccess) return result
     }
     app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("dav.list.fallback", connection.id, path)

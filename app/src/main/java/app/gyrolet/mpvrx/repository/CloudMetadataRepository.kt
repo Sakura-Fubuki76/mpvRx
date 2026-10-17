@@ -244,7 +244,7 @@ class CloudMetadataRepository(
   fun observeFolders(connectionId: Long) = dao.observeFolders(connectionId).distinctUntilChanged()
 
   suspend fun registerIndexedFiles(connectionId: Long, files: List<NetworkFile>): List<NetworkFile> = withContext(Dispatchers.IO) {
-    // AList search omits modified timestamps; absence must not invalidate a listed file's version.
+    // OpenList search omits modified timestamps; absence must not invalidate a listed file's version.
     val resolved = files.map { file ->
       val current = dao.getItem(connectionId, NetworkPath.from(file.path).value)
       if (current != null && current.size == file.size && file.lastModified == 0L)
