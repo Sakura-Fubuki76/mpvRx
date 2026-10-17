@@ -76,20 +76,6 @@ jobs:
             abis: universal
             asset: no-vulkan
             package: apk
-          - id: playstore
-            name: Play Store
-            gradle: Playstore
-            dir: playstore
-            abis: universal
-            asset: playstore
-            package: apk
-          - id: playstore_bundle
-            name: Play Store
-            gradle: Playstore
-            dir: playstore
-            abis: ''
-            asset: playstore
-            package: aab
     env:
       VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
       GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
@@ -261,7 +247,7 @@ jobs:
         run: |
           set -euo pipefail
           : > checksums.txt
-          variants=(universal arm64-v8a armeabi-v7a x86 x86_64 fongmi no-vulkan playstore)
+          variants=(universal arm64-v8a armeabi-v7a x86 x86_64 fongmi no-vulkan)
           for variant in "${variants[@]}"; do
             asset="release-assets/mpvRx-${variant}-${VERSION_TAG}.apk"
             if [[ ! -f "$asset" ]]; then
@@ -271,13 +257,6 @@ jobs:
             fi
             sha256sum "$asset" | tee -a checksums.txt
           done
-
-          bundle="release-assets/mpvRx-playstore-${VERSION_TAG}.aab"
-          if [[ ! -f "$bundle" ]]; then
-            echo "Missing expected Play Store bundle: $bundle"
-            exit 1
-          fi
-          sha256sum "$bundle" | tee -a checksums.txt
 
       - name: Prepare release notes
         shell: bash
@@ -308,7 +287,6 @@ jobs:
           - **Standard** (`mpvRx-<architecture>-<version>.apk`): Recommended for most devices. Available as Universal and architecture-specific APKs with the standard Vulkan-capable playback backend.
           - **FongMi** (`mpvRx-fongmi-<version>.apk`): Universal package using the FongMi native profile for Vulkan, direct MediaCodec, and Dolby Vision playback.
           - **Non-Vulkan** (`mpvRx-no-vulkan-<version>.apk`): Universal OpenGL-only package for devices without compatible Vulkan support or with unstable legacy GPU drivers.
-          - **Play Store** (`mpvRx-playstore-<version>.apk`): Universal APK of the Google Play build, which leaves out features Google Play does not allow, such as yt-dlp, torrent streaming, and in-app updates. `mpvRx-playstore-<version>.aab` is the same build as an app bundle for Play Console upload.
           """.strip()
           Path('release-notes.md').write_text(
               latest + '\n\n---\n' + variant_guide + '\n\n### SHA-256 checksums\n\n```text\n',
@@ -330,6 +308,5 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-assets/*.apk
-            release-assets/*.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
