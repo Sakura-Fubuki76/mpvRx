@@ -22,7 +22,8 @@ data class AnimeSubject(
   val displayLogo: String get() = manualArtworkLogo ?: titleLogo
   val title: String get() = chineseName.ifBlank { name }
   val detailCover: String get() = manualArtworkCover ?: artworkCover.ifBlank { cover }.ifBlank { artworkBackdrop }
-  val libraryCover: String get() = manualArtworkPoster ?: artworkPoster.ifBlank { cover }
+  // Home surfaces prefer the provider cover; the TMDB poster is the fallback, not the default.
+  val libraryCover: String get() = manualArtworkPoster ?: cover.ifBlank { artworkPoster }
 }
 
 @Serializable

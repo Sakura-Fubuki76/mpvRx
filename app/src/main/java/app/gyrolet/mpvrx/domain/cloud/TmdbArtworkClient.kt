@@ -70,7 +70,7 @@ internal fun selectTmdbPoster(images: JsonObject): String {
   val path = images.tmdbRows("posters")
     .filter { it["iso_639_1"]?.jsonPrimitive?.contentOrNull != null && it.tmdbText("file_path").startsWith('/') }
     .sortedWith(tmdbLocalizedArtworkOrder).firstOrNull()?.tmdbText("file_path")
-  return path?.let { "https://image.tmdb.org/t/p/w780$it" }.orEmpty()
+  return path?.let { "https://image.tmdb.org/t/p/original$it" }.orEmpty()
 }
 
 internal class TmdbArtworkClient(private val http: OkHttpClient) {
@@ -162,7 +162,7 @@ internal class TmdbArtworkClient(private val http: OkHttpClient) {
           .thenByDescending { it["vote_count"]?.jsonPrimitive?.intOrNull ?: 0 }
         else tmdbLocalizedArtworkOrder).map { row ->
         val path = row.tmdbText("file_path")
-        AnimeArtworkChoice("https://image.tmdb.org/t/p/${if (logo) "original" else if (target == AnimeArtworkTarget.LIBRARY_POSTER) "w780" else "original"}$path",
+        AnimeArtworkChoice("https://image.tmdb.org/t/p/original$path",
           "https://image.tmdb.org/t/p/${if (logo) "w300" else "w185"}$path",
           listOf(label, row.tmdbText("iso_639_1").ifBlank { "—" }, "${row.tmdbText("width")}×${row.tmdbText("height")}").filter { it.isNotBlank() }.joinToString(" · "), row["iso_639_1"]?.jsonPrimitive?.contentOrNull)
       }

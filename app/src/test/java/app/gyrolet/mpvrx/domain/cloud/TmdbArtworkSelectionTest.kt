@@ -58,10 +58,12 @@ class TmdbArtworkSelectionTest {
   }
   @Test fun legacyManualCoverOnlyOverridesDetailsAndHomeCanBeChangedIndependently() {
     val subject=AnimeSubject(1,"Example",cover="bangumi",artworkCover="auto-neutral",artworkPoster="auto-title",manualArtworkCover="user-neutral")
-    assertEquals("user-neutral",subject.detailCover);assertEquals("auto-title",subject.libraryCover)
+    assertEquals("user-neutral",subject.detailCover);assertEquals("bangumi",subject.libraryCover)
     val changed=subject.copy(manualArtworkPoster="user-title")
     assertEquals("user-neutral",changed.detailCover);assertEquals("user-title",changed.libraryCover)
-    assertEquals("auto-title",changed.copy(manualArtworkPoster=null).libraryCover)
+    // Home falls back to the TMDB poster only when the provider has no cover.
+    assertEquals("bangumi",changed.copy(manualArtworkPoster=null).libraryCover)
+    assertEquals("auto-title",changed.copy(manualArtworkPoster=null,cover="").libraryCover)
   }
   @Test fun tmdbIdLooksUpTheExplicitMediaTypeInsteadOfSearchingItsDigits() = runBlocking {
     val client=client(mapOf("movie/216074" to """{"id":216074,"title":"Expected movie","poster_path":"/poster.jpg"}"""))

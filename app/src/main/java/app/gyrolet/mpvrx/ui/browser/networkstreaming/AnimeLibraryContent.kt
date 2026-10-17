@@ -179,7 +179,7 @@ internal fun AnimeLibraryContent(
       Column(horizontalAlignment = if (centerTitles) Alignment.CenterHorizontally else Alignment.Start) {
         Card(onClick = { onOpenDetails(path, libraryGroups.getValue(path).directory, subject?.title ?: fallback) }, shape = RoundedCornerShape(20.dp)) {
           Box(Modifier.fillMaxWidth().aspectRatio(2f / 3f).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-            if (showPoster && subject?.cover?.isNotBlank() == true) {
+            if (showPoster && subject?.libraryCover?.isNotBlank() == true) {
               RemoteImage(subject.libraryCover, subject.title, Modifier.fillMaxSize(), ContentScale.Crop)
             } else {
               Text(fallback, Modifier.align(Alignment.Center).padding(20.dp), style = MaterialTheme.typography.titleMedium)
@@ -363,7 +363,7 @@ private fun AnimeDetailsTitle(title: String, logo: String, showLogo: Boolean, mo
   Box(modifier.fillMaxWidth().heightIn(min = 80.dp), contentAlignment = Alignment.Center) {
     if (showLogo && logo.isNotBlank()) RemoteImage(logo, title,
       Modifier.fillMaxWidth(.8f).height(112.dp), ContentScale.Fit,
-      onAspectRatio = { logoReady = true })
+      onAspectRatio = { logoReady = true }, fadeIn = true)
     if (!showLogo || !logoReady) Text(title, Modifier.fillMaxWidth(),
       style = MaterialTheme.typography.headlineMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
   }

@@ -15,6 +15,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.SystemClock
 import android.util.LruCache
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,6 +61,8 @@ fun RemoteImage(
    * trusting the disk cache indefinitely.
    */
   cacheTtlMs: Long? = null,
+  /** Fade the bitmap in the first time it appears. For hero/logo images; lists keep the hard cut. */
+  fadeIn: Boolean = false,
 ) {
   val context = LocalContext.current
   val client = koinInject<OkHttpClient>()
@@ -74,6 +78,10 @@ fun RemoteImage(
     bitmap?.let { onAspectRatio?.invoke(it.width.toFloat() / it.height.coerceAtLeast(1)) }
   }
   val imageBitmap = remember(bitmap) { bitmap?.asImageBitmap() }
+  val appear = remember(url) { Animatable(if (fadeIn) 0f else 1f) }
+  LaunchedEffect(imageBitmap) {
+    if (imageBitmap != null && fadeIn && appear.value < 1f) appear.animateTo(1f, tween(durationMillis = 220))
+  }
   if (imageBitmap != null) {
     Image(
       bitmap = imageBitmap,
@@ -81,7 +89,7 @@ fun RemoteImage(
       modifier = modifier,
       contentScale = contentScale,
       alignment = alignment,
-      alpha = alpha,
+      alpha = alpha * appear.value,
     )
   }
 }
