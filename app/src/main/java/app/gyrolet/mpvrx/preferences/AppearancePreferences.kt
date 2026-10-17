@@ -109,14 +109,19 @@ class AppearancePreferences(
   val showSnapshotTab = preferenceStore.getBoolean("show_snapshot_tab", false)
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
   val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
-  /** Persistent visual order of bottom navigation tabs. Home remains the root destination. */
+  /**
+   * Persistent visual order of bottom navigation tabs. Home remains the root destination.
+   *
+   * Every stored id is kept: the tab set grows over time, and filtering against a fixed list here
+   * used to silently drop newer entries (CLOUD/WebDAV) so reordering them never reached the bar.
+   */
   val bottomNavigationOrder = preferenceStore.getObject(
     key = "bottom_navigation_tab_order",
-    defaultValue = listOf("HOME", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE"),
+    defaultValue = listOf("HOME", "CLOUD", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE"),
     serializer = { order -> order.joinToString(",") },
     deserializer = { stored ->
-      val defaults = listOf("HOME", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE")
-      val parsed = stored.split(",").map(String::trim).filter { it in defaults }.distinct()
+      val defaults = listOf("HOME", "CLOUD", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE")
+      val parsed = stored.split(",").map(String::trim).filter { it.isNotEmpty() }.distinct()
       parsed + defaults.filterNot { it in parsed }
     },
   )
