@@ -18,7 +18,6 @@ import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -67,7 +66,9 @@ data class AnimeDetailsScreen(
     val title = catalog.subjects[catalog.folders[groupKey]?.subjectId]?.title ?: initialTitle
     var editMatch by remember { mutableStateOf(false) }
     var editArtwork by remember(subjectId) { mutableStateOf<Boolean?>(null) }
-    val useCoverColors by koinInject<AppearancePreferences>().animeCoverColors.collectAsState()
+    // Anime detail pages always tint themselves from the cover; the preference toggle was
+    // removed, so this is unconditional.
+    val useCoverColors = true
     val subject = catalog.subjects[catalog.folders[groupKey]?.subjectId]
     val cover = subject?.detailCover
     val showPoster by koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>().animeFields.showFolderThumbnails.collectAsState()
