@@ -1454,16 +1454,23 @@ class ThumbnailRepository(
       if (layout?.fragmented == true && (strategy is ThumbnailStrategy.Hybrid || strategy is ThumbnailStrategy.EmbeddedOrHybrid)) {
         // Android's retriever cannot reliably seek an fMP4 without a sample table. Decode a
         // bounded, complete first video fragment locally instead of scanning the whole movie.
+        //
+        // The clip only covers the movie's opening, so when every sampled frame there is blank
+        // (a black lead-in, most commonly) it must not end the search: the streaming chain below
+        // reads the full file through the proxy and can seek past the opening.
         val clip = app.gyrolet.mpvrx.domain.cloud.FragmentedMp4Support.previewClip(localUrl, layout,
-          File(context.cacheDir, "network_fragment_previews")) ?: return null
-        try {
-          for (position in listOf(0.0, 10.0, 2.0, 5.0, 20.0)) {
-            val bitmap = FastThumbnails.generateAsync(clip.path, position,
-              maxOf(targetWidth, targetHeight, MAX_THUMBNAIL_SIZE).coerceAtMost(1080), useHwDec = false)
-            acceptFrame(bitmap, "fragment-$position")?.let { return it }
+          File(context.cacheDir, "network_fragment_previews"))
+        if (clip != null) {
+          try {
+            for (position in listOf(0.0, 2.0, 5.0, 10.0, 20.0)) {
+              val bitmap = FastThumbnails.generateAsync(clip.path, position,
+                maxOf(targetWidth, targetHeight, MAX_THUMBNAIL_SIZE).coerceAtMost(1080), useHwDec = false)
+              acceptFrame(bitmap, "fragment-$position")?.let { return it }
+            }
+          } finally {
+            clip.delete()
           }
-          return null
-        } finally { clip.delete() }
+        }
       }
       acceptFrame(extractKeyframeByIndex(localUrl, path, connection, strategy, fileSize, lastModified), "index")
         ?: acceptFrame(extractNetworkVideoFrame(

@@ -14,12 +14,25 @@ class FragmentedMp4SupportTest {
     val body = parts.fold(byteArrayOf()) { all, part -> all + part }
     return ByteBuffer.allocate(8 + body.size).putInt(8 + body.size).put(type.toByteArray()).put(body).array()
   }
-  private fun track(id: Int, handler: String, version: Int = 0): ByteArray {
+  private fun track(id: Int, handler: String, version: Int = 0, timescale: Int = 0): ByteArray {
     val header = ByteBuffer.allocate(if (version == 1) 28 else 20)
     header.putInt(version shl 24)
     if (version == 1) { header.putLong(0); header.putLong(0) } else { header.putInt(0); header.putInt(0) }
     header.putInt(id); header.putInt(0)
-    return box("trak", box("tkhd", header.array()), box("mdia", box("hdlr", ByteArray(8), handler.toByteArray())))
+    val media = if (timescale > 0) {
+      val mdhd = ByteBuffer.allocate(24)
+      mdhd.putInt(0).putInt(0).putInt(0).putInt(timescale).putInt(0).putShort(0).putShort(0)
+      box("mdia", box("hdlr", ByteArray(8), handler.toByteArray()), box("mdhd", mdhd.array()))
+    } else {
+      box("mdia", box("hdlr", ByteArray(8), handler.toByteArray()))
+    }
+    return box("trak", box("tkhd", header.array()), media)
+  }
+  private fun fragmentAt(id: Int, decodeTime: Long): ByteArray {
+    val tfhd = ByteArray(8)
+    ByteBuffer.wrap(tfhd).putInt(4).putInt(id)
+    val tfdt = ByteBuffer.allocate(8).putInt(0).putInt(decodeTime.toInt()).array()
+    return box("moof", box("traf", box("tfhd", tfhd), box("tfdt", tfdt))) + box("mdat", ByteArray(32))
   }
   @Test fun identifiesVideoTrackRatherThanFirstAudioTrack() {
     val data = box("ftyp", ByteArray(16)) + box("moov", track(482, "soun"), track(481, "vide"), box("mvex"))
@@ -53,6 +66,16 @@ class FragmentedMp4SupportTest {
       val file = FragmentedMp4Support.previewClip("http://example.test/video", FragmentedMp4Support.Layout(true, 1), directory,
         client(expected + fragment(1)))!!
       assertArrayEquals(expected, file.readBytes())
+    } finally { directory.deleteRecursively() }
+  }
+  @Test fun previewStopsOnceTheOpeningSpanIsCovered() {
+    val header = box("ftyp", ByteArray(16)) + box("moov", track(1, "vide", timescale = 1000), box("mvex"))
+    val covered = fragmentAt(1, 0) + fragmentAt(1, 2_000) + fragmentAt(1, 4_000) + fragmentAt(1, 6_000)
+    val directory = Files.createTempDirectory("fragment-test").toFile()
+    try {
+      val file = FragmentedMp4Support.previewClip("http://example.test/video", FragmentedMp4Support.Layout(true, 1, 1000), directory,
+        client(header + covered + fragmentAt(1, 8_000) + fragmentAt(1, 10_000)))!!
+      assertArrayEquals(header + covered, file.readBytes())
     } finally { directory.deleteRecursively() }
   }
   @Test fun sizeLimitKeepsOnlyTheLastCompleteVideoFragment() {

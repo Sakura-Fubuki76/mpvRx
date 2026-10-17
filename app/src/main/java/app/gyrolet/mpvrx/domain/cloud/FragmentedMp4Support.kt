@@ -11,8 +11,11 @@ import java.util.concurrent.TimeUnit
 
 /** Bounded container inspection; no frame decoding and no credentials in cache identities. */
 internal object FragmentedMp4Support {
-  internal data class Layout(val fragmented: Boolean, val videoTrack: Int = 0)
+  internal data class Layout(val fragmented: Boolean, val videoTrack: Int = 0, val timescale: Int = 0)
   private const val MAX_PREFIX = 16 * 1024 * 1024
+  /** Cover enough of the opening for the blank-frame retry without downloading more than needed. */
+  private const val CLIP_TARGET_SPAN_MS = 6_000.0
+  private const val CLIP_MAX_VIDEO_FRAGMENTS = 24
   private val probeHttp by lazy { SharedHttpClient.derive { callTimeout(3, TimeUnit.SECONDS) } }
   private val clipHttp by lazy { SharedHttpClient.derive { callTimeout(20, TimeUnit.SECONDS) } }
 
@@ -20,13 +23,20 @@ internal object FragmentedMp4Support {
     val key = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
       .joinToString("") { "%02x".format(it) }
     val prefs = context.getSharedPreferences("cloud_mp4_layout_v1", Context.MODE_PRIVATE)
-    if (prefs.contains(key)) return prefs.getInt(key, -1).let { Layout(it > 0, it.coerceAtLeast(0)) }
+    if (prefs.contains(key)) {
+      return prefs.getInt(key, -1).let { Layout(it > 0, it.coerceAtLeast(0), prefs.getInt("$key:timescale", 0)) }
+    }
     return try {
       probeHttp.newCall(Request.Builder().url(url).header("Range", "bytes=0-65535")
         .header("Accept-Encoding", "identity").build()).execute().use { response ->
         if (!response.isSuccessful) return null
         val layout = parseLayout(response.body.byteStream().readNBytes(65536)) ?: return null
-        if (!layout.fragmented || layout.videoTrack > 0) prefs.edit().putInt(key, if (layout.fragmented) layout.videoTrack else -1).apply()
+        if (!layout.fragmented || layout.videoTrack > 0) {
+          prefs.edit()
+            .putInt(key, if (layout.fragmented) layout.videoTrack else -1)
+            .putInt("$key:timescale", layout.timescale)
+            .apply()
+        }
         layout
       }
     } catch (_: IOException) { null }
@@ -40,6 +50,8 @@ internal object FragmentedMp4Support {
     var complete = false
     var lastVideoEnd = 0L
     var videoFragments = 0
+    var firstVideoTime: Long? = null
+    var lastVideoTime: Long? = null
     try {
       client.newCall(Request.Builder().url(url).header("Range", "bytes=0-${MAX_PREFIX - 1}")
         .header("Accept-Encoding", "identity").build()).execute().use { response ->
@@ -69,6 +81,10 @@ internal object FragmentedMp4Support {
                 if (body.size.toLong() != remaining) break
                 output.write(body)
                 videoFragment = fragmentHasTrack(body, layout.videoTrack)
+                if (videoFragment) fragmentDecodeTime(body, layout.videoTrack)?.let { time ->
+                  if (firstVideoTime == null) firstVideoTime = time
+                  lastVideoTime = time
+                }
                 remaining = 0
               }
               while (remaining > 0) {
@@ -80,7 +96,21 @@ internal object FragmentedMp4Support {
               if (type == "mdat" && videoFragment) {
                 lastVideoEnd = total
                 videoFragments++
-                if (videoFragments >= 3) break
+                // Timestamps bound the clip by time: a 2 s fragment set costs the same download as
+                // before, while short fragments keep appending until the opening is covered.
+                val first = firstVideoTime
+                val last = lastVideoTime
+                val spanMs =
+                  if (layout.timescale > 0 && first != null && last != null) {
+                    (last - first) * 1000.0 / layout.timescale
+                  } else {
+                    null
+                  }
+                if (spanMs != null) {
+                  if (spanMs >= CLIP_TARGET_SPAN_MS || videoFragments >= CLIP_MAX_VIDEO_FRAGMENTS) break
+                } else if (videoFragments >= 3) {
+                  break
+                }
               }
             }
           }
@@ -103,13 +133,36 @@ internal object FragmentedMp4Support {
       val tkhd = parts.firstOrNull { it.type == "tkhd" } ?: continue
       if (tkhd.end - tkhd.start < 4) continue
       val mdia = parts.firstOrNull { it.type == "mdia" } ?: continue
-      val hdlr = boxes(bytes, mdia.start, mdia.end).firstOrNull { it.type == "hdlr" } ?: continue
+      val mediaBoxes = boxes(bytes, mdia.start, mdia.end)
+      val hdlr = mediaBoxes.firstOrNull { it.type == "hdlr" } ?: continue
       if (hdlr.end - hdlr.start < 12 || type(bytes, hdlr.start + 8) != "vide") continue
+      val timescale =
+        mediaBoxes.firstOrNull { it.type == "mdhd" }?.let { mdhd ->
+          val offset = mdhd.start + if (bytes[mdhd.start].toInt() == 1) 20 else 12
+          if (offset + 4 <= mdhd.end) uint32(bytes, offset).toInt() else 0
+        } ?: 0
       val idOffset = tkhd.start + if (bytes[tkhd.start].toInt() == 1) 20 else 12
-      if (idOffset + 4 <= tkhd.end) return Layout(true, uint32(bytes, idOffset).toInt())
+      if (idOffset + 4 <= tkhd.end) return Layout(true, uint32(bytes, idOffset).toInt(), timescale)
     }
     return Layout(true)
   }
+
+  /** Base media decode time of this fragment's video track, when it carries one. */
+  internal fun fragmentDecodeTime(body: ByteArray, track: Int): Long? =
+    boxes(body).filter { it.type == "traf" }.firstNotNullOfOrNull { traf ->
+      val parts = boxes(body, traf.start, traf.end)
+      val hasTrack = parts.any { it.type == "tfhd" && it.end - it.start >= 8 && uint32(body, it.start + 4).toInt() == track }
+      if (!hasTrack) return@firstNotNullOfOrNull null
+      val tfdt = parts.firstOrNull { it.type == "tfdt" } ?: return@firstNotNullOfOrNull null
+      val version = if (tfdt.start < tfdt.end) body[tfdt.start].toInt() else 0
+      if (tfdt.start + 4 > tfdt.end) return@firstNotNullOfOrNull null
+      if (version == 1) {
+        if (tfdt.start + 12 > tfdt.end) return@firstNotNullOfOrNull null
+        uint32(body, tfdt.start + 4) * 0x100000000L + uint32(body, tfdt.start + 8)
+      } else {
+        uint32(body, tfdt.start + 4)
+      }
+    }
 
   internal fun fragmentHasTrack(body: ByteArray, track: Int): Boolean = boxes(body).filter { it.type == "traf" }.any { traf ->
     boxes(body, traf.start, traf.end).any { it.type == "tfhd" && it.end - it.start >= 8 && uint32(body, it.start + 4).toInt() == track }
