@@ -11,12 +11,14 @@ package app.gyrolet.mpvrx.utils.media
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Typeface
 import android.net.Uri
 import android.util.Log
 import com.yubyf.truetypeparser.TTFFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 /** Index local fonts using private symlinks; copy only sources requiring provider access. */
 @SuppressLint("UseKtx")
@@ -47,15 +49,45 @@ fun copyFontsFromDirectory(context: Context, uriString: String): Int {
 
 // getSimplifiedPathFromUri is defined in AdvancedPreferencesScreen.kt within this package.
 
-/** Represents a custom font discovered in the app's internal fonts directory. */
+/** A physical font file, not a deduplicated family-name entry. */
 data class CustomFontEntry(
   val familyName: String,
   val file: File,
 )
 
 /**
- * Loads custom fonts (family name + file) from the app's internal fonts directory for previews.
- * Returns one entry per family name (first match kept if duplicates exist).
+ * mpv selects fonts by family name, but users still need to see every imported file.
+ * Give files that share a family a distinct, human-readable label without changing
+ * the family name sent to mpv.
+ */
+data class SubtitleFontChoice(
+  val label: String,
+  val familyName: String,
+)
+
+fun subtitleFontChoices(
+  downloadedFamilies: List<String>,
+  customFonts: List<CustomFontEntry>,
+): List<SubtitleFontChoice> {
+  val downloaded = downloadedFamilies.distinct().toSet()
+  val customFamilyCounts = customFonts.groupingBy { it.familyName }.eachCount()
+  return (
+    downloaded.map { family -> SubtitleFontChoice(label = family, familyName = family) } +
+      customFonts.map { entry ->
+        val nameConflict = (customFamilyCounts[entry.familyName] ?: 0) > 1 || entry.familyName in downloaded
+        SubtitleFontChoice(
+          label = if (nameConflict) "${entry.familyName} (${entry.file.name})" else entry.familyName,
+          familyName = entry.familyName,
+        )
+      }
+    ).distinctBy { it.label }
+    .sortedBy { it.label.lowercase(Locale.ROOT) }
+}
+
+/**
+ * Loads one entry for every valid custom font file, including files with matching
+ * internal family names. A failed name-table parse must not silently discard a
+ * font that Android's font engine can open.
  */
 suspend fun loadCustomFontEntries(context: Context): List<CustomFontEntry> =
   withContext(Dispatchers.IO) {

@@ -261,6 +261,10 @@ class ThumbnailRepository(
       return@withContext scaled
     }
 
+  /** Cheap cold-start gate for Folder/Tree roots: do not enumerate folder contents
+   * when there are no cached thumbnails to display. Call from a worker thread. */
+  fun hasLocalCachedThumbnails(): Boolean = !localDiskDir.list().isNullOrEmpty()
+
   fun getThumbnailFromMemory(
     video: Video,
     widthPx: Int,
@@ -443,6 +447,9 @@ class ThumbnailRepository(
     "video-thumb-v3-master|${diskVideoBaseKey(video)}|${thumbnailModeKey()}|${thumbnailQualityKey(video)}"
 
   private fun canonicalLocalPath(video: Video): String {
+    if (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY && video.uri.scheme == "content") {
+      return video.uri.toString()
+    }
     val raw = video.path.ifBlank { video.uri.toString() }
     if (isNetworkUrl(raw)) return raw
     if (ZipArchiveMedia.isPlaybackUri(raw)) return raw
@@ -640,17 +647,32 @@ class ThumbnailRepository(
       }
     }.getOrNull()
 
-  private fun generateEmbeddedArtwork(video: Video): Bitmap? =
-    runCatching {
-      val retriever = MediaMetadataRetriever()
-      try {
-        val canonicalPath = canonicalLocalPath(video)
-        setLocalDataSource(retriever, video)
-        EmbeddedArtworkResolver.decodeEmbeddedArtwork(canonicalPath, retriever)?.scaleToThumbnailMax(thumbnailMaxSize())
-      } finally {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) retriever.close() else retriever.release()
-      }
-    }.getOrNull()
+  private fun generateEmbeddedArtwork(video: Video): Bitmap? {
+    val canonicalPath = canonicalLocalPath(video)
+    // Some Android retrievers reject Matroska attachments or SAF providers. Their failure must
+    // not prevent the independent container/sidecar artwork paths from being tried.
+    val retrieverArtwork =
+      runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+          setLocalDataSource(retriever, video)
+          EmbeddedArtworkResolver.decodeRetrieverArtwork(retriever)
+        } finally {
+          runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) retriever.close() else retriever.release()
+          }
+        }
+      }.getOrNull()
+    return (
+      retrieverArtwork
+        ?: EmbeddedArtworkResolver.decodeContainerOrSidecar(
+          videoPath = canonicalPath,
+          context = context,
+          videoUri = video.uri,
+          displayName = video.displayName,
+        )
+      )?.scaleToThumbnailMax(thumbnailMaxSize())
+  }
 
   private suspend fun generateWithFastThumbnails(
     video: Video,
@@ -678,10 +700,7 @@ class ThumbnailRepository(
       }
     val lastSafePosition = (durationSeconds - 0.1).coerceAtLeast(0.0)
     val positions =
-      when (mode) {
-        ThumbnailMode.Smart -> listOf(requestedPosition, 10.0, 20.0, 30.0)
-        else -> listOf(requestedPosition)
-      }.map { position ->
+      listOf(requestedPosition).map { position ->
         if (durationSeconds > 0.0) position.coerceIn(0.0, lastSafePosition) else position.coerceAtLeast(0.0)
       }.distinct()
 
@@ -775,6 +794,8 @@ class ThumbnailRepository(
   ) {
     val canonicalPath = canonicalLocalPath(video)
     when {
+      app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY && video.uri.scheme == "content" ->
+        retriever.setDataSource(context, video.uri)
       canonicalPath.isNotBlank() && !canonicalPath.contains("://") && File(canonicalPath).exists() ->
         retriever.setDataSource(canonicalPath)
       video.path.isNotBlank() && !video.path.contains("://") -> retriever.setDataSource(video.path)
@@ -1046,7 +1067,7 @@ class ThumbnailRepository(
         is ThumbnailStrategy.Hybrid -> decodeHybridFrame(retriever, strategy.percentage, targetWidth, targetHeight)
         is ThumbnailStrategy.EmbeddedOrHybrid ->
           embeddedPicture?.also { shouldRotate = false }
-            ?: decodeHybridFrame(retriever, strategy.percentage, targetWidth, targetHeight)
+            ?: getFrameAt(retriever, frameTimeMicros(retriever, strategy.percentage), targetWidth, targetHeight)
       } ?: return null
 
     return if (shouldRotate) rotateBitmapIfNeeded(retriever, raw) else raw
@@ -1648,7 +1669,7 @@ class ThumbnailRepository(
     val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
     val processorCount = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
     return when {
-      activityManager?.isLowRamDevice == true || processorCount <= 2 -> 1
+      activityManager?.isLowRamDevice == true || android.os.Build.VERSION.SDK_INT <= 29 || processorCount <= 2 -> 1
       // Bound decode pressure on larger mobile SoCs so returning to the library cannot launch
       // four simultaneous thumbnail decoders beside UI image work.
       else -> 2

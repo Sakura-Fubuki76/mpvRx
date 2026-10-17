@@ -44,6 +44,7 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.liquidglass.LiquidButton
@@ -61,7 +62,6 @@ import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
 @Serializable
@@ -73,6 +73,21 @@ object LiquidGlassPreferencesScreen : Screen {
     val backstack = LocalBackStack.current
     val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val enabled by preferences.liquidGlassEnabled.collectAsState()
+    val glassInHdr by preferences.liquidGlassInHdr.collectAsState()
+    var showHdrWarning by rememberSaveable { mutableStateOf(false) }
+
+    if (showHdrWarning) {
+      ConfirmDialog(
+        title = stringResource(R.string.pref_liquid_glass_in_hdr_warning_title),
+        subtitle = stringResource(R.string.pref_liquid_glass_in_hdr_warning_message),
+        confirmText = stringResource(R.string.pref_liquid_glass_in_hdr_warning_confirm),
+        onConfirm = {
+          showHdrWarning = false
+          preferences.liquidGlassInHdr.set(true)
+        },
+        onCancel = { showHdrWarning = false },
+      )
+    }
 
     Scaffold(
       topBar = {
@@ -82,7 +97,7 @@ object LiquidGlassPreferencesScreen : Screen {
         )
       },
     ) { padding ->
-      ProvidePreferenceLocals {
+      ProvideExpressivePreferenceLocals {
         val (listState, highlight) =
           rememberSettingsSearchList(LiquidGlassPreferencesScreen, MaterialTheme.colorScheme.primary)
         BoxWithConstraints(
@@ -120,6 +135,22 @@ object LiquidGlassPreferencesScreen : Screen {
                     },
                     enabled = supported,
                     modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_liquid_glass_title),
+                  )
+                  PreferenceDivider()
+                  SwitchPreference(
+                    value = glassInHdr && enabled && supported,
+                    onValueChange = { checked ->
+                      if (checked) showHdrWarning = true else preferences.liquidGlassInHdr.set(false)
+                    },
+                    title = { Text(stringResource(R.string.pref_liquid_glass_in_hdr_title)) },
+                    summary = {
+                      Text(
+                        text = stringResource(R.string.pref_liquid_glass_in_hdr_summary),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
+                    },
+                    enabled = enabled && supported,
+                    modifier = Modifier.settingsSearchTarget(R.string.pref_liquid_glass_in_hdr_title),
                   )
                 }
               }
@@ -186,8 +217,8 @@ private fun LiquidGlassPreview(enabled: Boolean, height: Dp = 200.dp, compact: B
                   )
                 },
                 highlight = { settings.highlight(Highlight.Default) },
-                shadow = { settings.shadow(Shadow.Default) },
-                innerShadow = { settings.innerShadow(InnerShadow(radius = 4.dp, alpha = 0.2f)) },
+                shadow = { Shadow.Default },
+                innerShadow = { InnerShadow(radius = 4.dp, alpha = 0.2f) },
                 onDrawSurface = { drawRect(settings.surfaceColor(colors.surface.copy(alpha = 0.35f))) },
               )
             } else {

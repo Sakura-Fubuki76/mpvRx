@@ -101,7 +101,7 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallPromptDialog
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallProgressDialog
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
-import app.gyrolet.mpvrx.ui.preferences.YtdlpSettingsScreen
+import app.gyrolet.mpvrx.ui.preferences.NetworkConfigurationPreferencesScreen
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionInput
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionScreen
 import app.gyrolet.mpvrx.ui.torrent.TorrentSelectionViewModel
@@ -351,7 +351,7 @@ object NetworkStreamingScreen : Screen {
                   )
                 }
               },
-              shape = RoundedCornerShape(28.dp),
+              shape = MaterialTheme.shapes.extraLarge,
               tonalElevation = 6.dp,
             )
           } else {
@@ -622,7 +622,7 @@ object NetworkStreamingScreen : Screen {
         onConfigure = {
           showYtdlpInstallPrompt = false
           pendingYtdlpUrl = null
-          backstack.navigateTo(YtdlpSettingsScreen)
+          backstack.navigateTo(NetworkConfigurationPreferencesScreen)
         },
         onDismiss = {
           showYtdlpInstallPrompt = false
@@ -697,21 +697,35 @@ private fun AddMediaDialog(
   val clipboard = androidx.compose.ui.platform.LocalClipboard.current
   val coroutineScope = rememberCoroutineScope()
 
-  androidx.compose.material3.AlertDialog(
+  app.gyrolet.mpvrx.presentation.components.AppAlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.ui_saved_media)) },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        val p2pAvailable = !app.gyrolet.mpvrx.BuildConfig.IS_PLAY_STORE_BUILD
         Text(
-          text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_paste_a_torrent_magnet_link_direct_video_stream_hls_mp4_mkv_or_youtube_url_),
+          text =
+            if (p2pAvailable) {
+              androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_paste_a_torrent_magnet_link_direct_video_stream_hls_mp4_mkv_or_youtube_url_)
+            } else {
+              androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_paste_a_direct_video_stream_to_save_and_play)
+            },
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
           value = inputUrl,
           onValueChange = { inputUrl = it },
-          label = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_stream_or_magnet_url)) },
-          placeholder = { Text("magnet:?xt=... or https://...") },
+          label = {
+            Text(
+              if (p2pAvailable) {
+                androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_stream_or_magnet_url)
+              } else {
+                stringResource(R.string.ui_stream_url)
+              },
+            )
+          },
+          placeholder = { Text(if (p2pAvailable) "magnet:?xt=... or https://..." else "https://...") },
           modifier = Modifier.fillMaxWidth(),
           singleLine = true,
           trailingIcon = {
@@ -752,7 +766,7 @@ private fun AddMediaDialog(
       }
     },
     dismissButton = {
-      androidx.compose.material3.TextButton(onClick = onDismiss) {
+      app.gyrolet.mpvrx.presentation.components.AppDialogTextButton(onClick = onDismiss) {
         Text(stringResource(R.string.generic_cancel))
       }
     },

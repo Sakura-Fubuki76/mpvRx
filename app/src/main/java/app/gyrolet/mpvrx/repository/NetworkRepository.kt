@@ -349,8 +349,6 @@ class NetworkRepository(
       }
     }
 
-  fun getActiveClient(connectionId: Long): NetworkClient? = activeClients[connectionId]
-
   fun isConnected(connectionId: Long): Boolean = hasConnectedClient(connectionId)
 
   /**

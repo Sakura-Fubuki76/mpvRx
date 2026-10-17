@@ -10,6 +10,9 @@
 package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import android.net.Uri
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -22,9 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,6 +43,43 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.TrackNode
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.liquidglass.LocalPlayerGlassSurfaceActive
+
+/**
+ * Shared Material 3 Expressive state colors for player selection sheets.
+ * No background panel behind whole option groups; each selectable row owns its surface.
+ * A frosted sheet keeps its existing transparency without stacking another blur layer.
+ */
+@Composable
+internal fun playerSheetSelectionColor(
+  selected: Boolean,
+  frosted: Boolean = LocalPlayerGlassSurfaceActive.current,
+): Color {
+  val colors = MaterialTheme.colorScheme
+  return when {
+    selected && frosted -> colors.secondaryContainer.copy(alpha = 0.65f)
+    selected -> colors.secondaryContainer
+    frosted -> colors.surfaceContainerLow.copy(alpha = 0.35f)
+    else -> colors.surfaceContainerHigh
+  }
+}
+
+/** Every player option gets its own animated Material 3 state surface. */
+@Composable
+internal fun animatedPlayerSheetSelectionColor(
+  selected: Boolean,
+  frosted: Boolean = LocalPlayerGlassSurfaceActive.current,
+  label: String = "playerOptionSelection",
+): Color {
+  val reduceMotion = AppMotion.playerReducedMotion()
+  val value by animateColorAsState(
+    targetValue = playerSheetSelectionColor(selected, frosted),
+    animationSpec = if (reduceMotion) snap() else AppMotion.Effect.Color,
+    label = label,
+  )
+  return value
+}
 
 data class TrackBadge(
   val text: String,
@@ -90,14 +133,16 @@ fun AddTrackRow(
   title: String,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
+  shape: Shape = MaterialTheme.shapes.medium,
   actions: @Composable RowScope.() -> Unit = {},
 ) {
   Row(
     modifier =
       modifier
         .fillMaxWidth()
-        .tvFocusHighlight(MaterialTheme.shapes.medium, focusedScale = 1.01f)
-        .clip(MaterialTheme.shapes.medium)
+        .tvFocusHighlight(shape, focusedScale = 1.01f)
+        .clip(shape)
+        .background(animatedPlayerSheetSelectionColor(false))
         .clickable(role = Role.Button, onClick = onClick)
         .heightIn(min = 56.dp)
         .padding(horizontal = 20.dp, vertical = 8.dp),

@@ -316,8 +316,20 @@ fun MpvrxTheme(
       else -> GoogleSansRounded
     }
   val typography =
-    remember(resolvedFontFamily, useSystemFont, localeNeedsSystemFont) {
-      if (useSystemFont || localeNeedsSystemFont) SystemTypography else typographyWithFontFamily(resolvedFontFamily)
+    remember(resolvedFontFamily, downloadedFontFamily, useSystemFont, localeNeedsSystemFont) {
+      if (useSystemFont || localeNeedsSystemFont) {
+        SystemTypography
+      } else {
+        typographyWithFontFamily(
+          fontFamily = resolvedFontFamily,
+          displayFontFamily =
+            if (downloadedFontFamily == null) {
+              GoogleSansExpressiveDisplay
+            } else {
+              resolvedFontFamily
+            },
+        )
+      }
     }
   val emphasizedTypography = remember(typography) { emphasizedTypography(typography) }
 
@@ -394,8 +406,11 @@ internal fun resolveAppColorScheme(
             surfaceDim = surfaceDimPureBlack,
             surfaceBright = surfaceBrightPureBlack,
             surfaceContainerLowest = surfaceContainerLowestPureBlack,
-            surfaceContainerLow = surfaceContainerLowPureBlack,
-            surfaceContainer = surfaceContainerPureBlack,
+            // AMOLED keeps the background fully black while preference tiles share
+            // one neutral raised tone. Previously "Low" was nearly black and
+            // "High" was tinted, so adjacent settings looked unrelated.
+            surfaceContainerLow = surfaceContainerHighPureBlack,
+            surfaceContainer = surfaceContainerHighPureBlack,
             surfaceContainerHigh = surfaceContainerHighPureBlack,
             surfaceContainerHighest = surfaceContainerHighestPureBlack,
           )

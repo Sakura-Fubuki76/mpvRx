@@ -11,61 +11,28 @@ package app.gyrolet.mpvrx.ui.player.controls
 
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.indication
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalRippleConfiguration
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.GesturePreferences
@@ -73,11 +40,6 @@ import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.components.LeftSideOvalShape
-import app.gyrolet.mpvrx.presentation.components.RightSideOvalShape
-import app.gyrolet.mpvrx.ui.player.controls.components.stableNumericWidth
-import app.gyrolet.mpvrx.ui.icons.Icon
-import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerUpdates
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
@@ -90,8 +52,6 @@ import app.gyrolet.mpvrx.ui.player.findSubtitleGestureTarget
 import app.gyrolet.mpvrx.ui.player.draggedSubtitlePosition
 import app.gyrolet.mpvrx.ui.player.getTrackSelectionId
 import app.gyrolet.mpvrx.ui.player.isSecondarySubtitleActive
-import app.gyrolet.mpvrx.ui.theme.AppMotion
-import app.gyrolet.mpvrx.ui.theme.playerRippleConfiguration
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -122,11 +82,11 @@ private fun nearestHoldSpeedPreset(speed: Float): Float =
 @Composable
 fun GestureHandler(
   viewModel: PlayerViewModel,
-  interactionSource: MutableInteractionSource,
   modifier: Modifier = Modifier,
   externalPanelShown: Boolean = false,
   onDismissExternalPanel: () -> Unit = {},
   onLockedTouchSideChanged: (isLeft: Boolean) -> Unit = {},
+  onSeekRipple: (SeekRippleRequest) -> Unit = {},
 ) {
   val playerPreferences = koinInject<PlayerPreferences>()
   val audioPreferences = koinInject<AudioPreferences>()
@@ -134,6 +94,7 @@ fun GestureHandler(
   val subtitlesPreferences = koinInject<SubtitlesPreferences>()
   val context = LocalContext.current
   val currentOnLockedTouchSideChanged by rememberUpdatedState(onLockedTouchSideChanged)
+  val currentOnSeekRipple by rememberUpdatedState(onSeekRipple)
   val subtitleTracks by viewModel.subtitleTracks.collectAsState(emptyList())
   // Pointer handlers outlive recomposition; always resolve against the current tracks.
   val subtitleRegions by rememberUpdatedState<(Float, Float) -> List<SubtitleGestureRegion>> { width, height ->
@@ -147,6 +108,18 @@ fun GestureHandler(
         preserveAssLayout || PlaybackSession.getPropertyString("sub-use-margins") == "no",
       )
     }
+  }
+
+  val primarySubtitleDragRegion by rememberUpdatedState<(Float, Float) -> SubtitleGestureRegion?> { width, height ->
+    val target = SubtitleGestureTarget.Primary
+    val track = subtitleTracks.find { it.id == getTrackSelectionId(target.selectionProperty) }
+    val isAss = track?.codec?.let { it.contains("ass", true) || it.contains("ssa", true) } == true
+    val preserveAssLayout = isAss && PlaybackSession.getPropertyString("sub-ass-override") != "force"
+    getSubtitleGestureRegion(
+      target, width, height,
+      preserveAssLayout || PlaybackSession.getPropertyString("sub-use-margins") == "no",
+      includeWhenTextEmpty = true,
+    )?.takeUnless { MpvConfigOverridePolicy.isOwnedByMpvConf("sub-pos") }
   }
 
   val panelShown by viewModel.panelShown.collectAsState()
@@ -329,7 +302,7 @@ fun GestureHandler(
             }
 
             // Calculate regions
-            val seekAreaFraction = doubleTapSeekAreaWidth / 100f
+            val seekAreaFraction = (doubleTapSeekAreaWidth / 100f).coerceIn(0.01f, 0.5f)
             val leftBoundary = size.width * seekAreaFraction
             val rightBoundary = size.width * (1f - seekAreaFraction)
             val region =
@@ -338,6 +311,14 @@ fun GestureHandler(
                 downPosition.x < leftBoundary -> "left"
                 else -> "center"
               }
+            // Normalize within the physical seek region so feedback stays under the finger
+            // in either orientation, including right-to-left interface languages.
+            val seekRegionWidth = (size.width * seekAreaFraction).coerceAtLeast(1f)
+            val seekRegionStart = if (region == "right") rightBoundary else 0f
+            val ripplePosition = Offset(
+              x = ((downPosition.x - seekRegionStart) / seekRegionWidth).coerceIn(0f, 1f),
+              y = (downPosition.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f),
+            )
 
             // Track for potential drag
             var isDrag = false
@@ -411,6 +392,7 @@ fun GestureHandler(
                             viewModel.updateSeekAmount(0)
                           }
                           lastSeekRegion = "right"
+                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = true))
                         }
                         viewModel.handleRightDoubleTap()
                       }
@@ -423,6 +405,7 @@ fun GestureHandler(
                             viewModel.updateSeekAmount(0)
                           }
                           lastSeekRegion = "left"
+                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = false))
                         }
                         viewModel.handleLeftDoubleTap()
                       }
@@ -447,6 +430,7 @@ fun GestureHandler(
                             viewModel.updateSeekAmount(0)
                           }
                           lastSeekRegion = "right"
+                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = true))
                         }
                         viewModel.handleRightDoubleTap()
                       }
@@ -457,6 +441,7 @@ fun GestureHandler(
                             viewModel.updateSeekAmount(0)
                           }
                           lastSeekRegion = "left"
+                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = false))
                         }
                         viewModel.handleLeftDoubleTap()
                       }
@@ -498,6 +483,7 @@ fun GestureHandler(
               !brightnessGesture &&
                 !volumeGesture &&
                 !centerVerticalSubtitlePositionGesture &&
+                !enableCenterSwipeUpGesture &&
                 !enableVideoMiniPlayer &&
                 multipleSpeedGesture <= 0f
             ) ||
@@ -513,15 +499,27 @@ fun GestureHandler(
             val isVerticalGestureDeadZone =
               startPosition.y <= topGestureDeadZonePx ||
                 startPosition.y >= size.height - bottomGestureDeadZonePx
-            val touchedSubtitle = if (centerVerticalSubtitlePositionGesture) {
+            val subtitleHit = if (centerVerticalSubtitlePositionGesture) {
               findSubtitleGestureTarget(
                 subtitleRegions(size.width.toFloat(), size.height.toFloat()),
                 startPosition.x, startPosition.y, 12.dp.toPx(),
-              )?.takeUnless { MpvConfigOverridePolicy.isOwnedByMpvConf("${it.target.prefix}-pos") }
+              )
             } else null
+            val touchedSubtitle = subtitleHit?.takeUnless {
+              MpvConfigOverridePolicy.isOwnedByMpvConf("${it.target.prefix}-pos")
+            }
+            // Direct subtitle hits select that track; a center hold elsewhere selects primary.
+            // This is independent of the center swipe-up toggle, so ordinary swipes keep working.
+            val centerSubtitle = if (subtitleHit == null && centerVerticalSubtitlePositionGesture &&
+              !isVerticalGestureDeadZone &&
+              startPosition.x in (size.width * 0.35f)..(size.width * 0.65f)
+            ) {
+              primarySubtitleDragRegion(size.width.toFloat(), size.height.toFloat())
+            } else null
+            val selectedSubtitle = touchedSubtitle ?: centerSubtitle
             val subtitleGestureGeneration = PlaybackSession.state.value.generation
-            val isStartOnSubtitleText = touchedSubtitle != null
-            speedHoldPending = paused == false && multipleSpeedGesture > 0f && !isStartOnSubtitleText
+            val isStartOnSubtitleText = subtitleHit != null
+            speedHoldPending = paused == false && multipleSpeedGesture > 0f && selectedSubtitle == null
 
             // Reset long press tracking at the start of each gesture
             longPressTriggeredDuringTouch = false
@@ -529,7 +527,6 @@ fun GestureHandler(
             // State for vertical gestures (volume/brightness)
             var startingY = 0f
             var mpvVolumeStartingY = 0f
-            var prevDragY = 0f
             var originalVolumePercent = currentVolumePercent
             var originalMPVVolume = currentMPVVolume
             var originalBrightness = currentBrightness
@@ -541,10 +538,10 @@ fun GestureHandler(
             val volumeGestureSens = 0.1f
             val mpvVolumeGestureSens = 0.1f
             var subtitleDragStartY = startPosition.y
-            var subtitleDragPosition = touchedSubtitle?.position ?: 0f
+            var subtitleDragPosition = selectedSubtitle?.position ?: 0f
             var lastDraggedPosition: Float? = null
             // A moving finger is a swipe, not a pending subtitle long-press.
-            var subtitleHoldEligible = isStartOnSubtitleText
+            var subtitleHoldEligible = selectedSubtitle != null
             var subtitleHighlightShown = false
 
             // Original speed for long press
@@ -563,7 +560,9 @@ fun GestureHandler(
                     if (subtitleHoldEligible && claimGesture(GestureOwner.SUBTITLE_VERTICAL)) {
                       longPressTriggered = true
                       isSubtitleHoldActive = true
-                      viewModel.setSubtitleGestureHighlight(true, touchedSubtitle?.target)
+                      speedHoldPending = false
+                      suppressHorizontalSeekForPointer = true
+                      viewModel.setSubtitleGestureHighlight(true, selectedSubtitle?.target)
                       subtitleHighlightShown = true
                       longPressTriggeredDuringTouch = true
                       actionHaptics.pickup()
@@ -573,7 +572,7 @@ fun GestureHandler(
                         )
                       }
                     } else if (
-                      !isStartOnSubtitleText &&
+                      selectedSubtitle == null &&
                       paused == false &&
                       multipleSpeedGesture > 0f &&
                       claimGesture(GestureOwner.SPEED)
@@ -669,6 +668,7 @@ fun GestureHandler(
                               claimGesture(GestureOwner.PLAYLIST)
                             ) {
                               gestureType = "playlist_swipe"
+                              actionHaptics.pickup()
                               viewModel.isPlaylistSwipeActive.value = true
                               viewModel.playlistSwipeOffset.value = deltaY
                               viewModel.sheetShown.update { Sheets.Playlist }
@@ -729,9 +729,9 @@ fun GestureHandler(
                           "subtitle_vertical" -> {
                             isVerticalGestureActive = true
                             subtitleDragStartY = currentPosition.y
-                            subtitleDragPosition = touchedSubtitle?.position ?: subtitleDragPosition
+                            subtitleDragPosition = selectedSubtitle?.position ?: subtitleDragPosition
                             if (!subtitleHighlightShown) {
-                              viewModel.setSubtitleGestureHighlight(true, touchedSubtitle?.target)
+                              viewModel.setSubtitleGestureHighlight(true, selectedSubtitle?.target)
                               subtitleHighlightShown = true
                             }
                             startingY = 0f
@@ -811,8 +811,10 @@ fun GestureHandler(
                         }
                         "subtitle_vertical" -> {
                           if (isSubtitleHoldActive && gestureOwner == GestureOwner.SUBTITLE_VERTICAL) {
-                            val selected = touchedSubtitle
-                            if (selected != null && PlaybackSession.state.value.generation == subtitleGestureGeneration) {
+                            val selected = selectedSubtitle
+                            if (selected != null && PlaybackSession.state.value.generation == subtitleGestureGeneration &&
+                              getTrackSelectionId(selected.target.selectionProperty) == selected.trackId
+                            ) {
                               // Lock the target for this entire touch, even if the tracks cross.
                               val newPosition = draggedSubtitlePosition(
                                 subtitleDragPosition, currentPosition.y - subtitleDragStartY, selected.positionHeight,
@@ -1022,7 +1024,7 @@ fun GestureHandler(
               longPressJob.cancel()
               if (subtitleHighlightShown) viewModel.setSubtitleGestureHighlight(false)
               if (PlaybackSession.state.value.generation == subtitleGestureGeneration) {
-                val selected = touchedSubtitle
+                val selected = selectedSubtitle
                 lastDraggedPosition?.let { position ->
                   if (selected != null && getTrackSelectionId(selected.target.selectionProperty) == selected.trackId) {
                     viewModel.persistSubtitleGesturePosition(selected.target, position)
@@ -1070,8 +1072,6 @@ fun GestureHandler(
             var lastCalculatedSubScale = 1f
             var initialSecondarySubScale = 1f
             var lastCalculatedSecondarySubScale = 1f
-            var initialPinchMidY = 0f
-            var lastPinchSubPos = 100f
             var scaleChanged = false
             var linkedScaleChanged = false
             var linkSecondaryScale = false
@@ -1122,7 +1122,7 @@ fun GestureHandler(
 
                     selectedSubtitle = if (pinchToZoomSubtitles) {
                       val regions = subtitleRegions(sw, sh)
-                      regions.find { it.target == firstTouchedSubtitle?.target && it.trackId == firstTouchedSubtitle?.trackId }
+                      regions.find { it.target == firstTouchedSubtitle?.target && it.trackId == firstTouchedSubtitle.trackId }
                         ?: findSubtitleGestureTarget(regions, midX, midY, 12.dp.toPx())
                     } else null
 
@@ -1135,8 +1135,6 @@ fun GestureHandler(
                       initialSecondarySubScale =
                         PlaybackSession.getPropertyFloat("secondary-sub-scale") ?: subtitlesPreferences.secondarySubScale.get()
                       lastCalculatedSecondarySubScale = initialSecondarySubScale
-                      initialPinchMidY = midY
-                      lastPinchSubPos = selected.position
                       linkSecondaryScale = selected.target == SubtitleGestureTarget.Primary && secondarySubPinchZoomEnabled &&
                         isSecondarySubtitleActive() && !MpvConfigOverridePolicy.isOwnedByMpvConf("secondary-sub-scale")
                       // A linked pinch resizes both tracks, so keep both visible.
@@ -1150,8 +1148,10 @@ fun GestureHandler(
                     }
                   } else {
                     if (isSubZoomMode) {
-                      val midDriftY = abs(midY - initialPinchMidY)
-                      if (!gestureStarted && (abs(dist - initialDist) > 5f || midDriftY > 12f)) {
+                      // Pinch is zoom-only: vertical midpoint drift must not move the
+                      // subtitle position. Position changes only via press-and-hold
+                      // single-finger vertical drag (subtitle_vertical path above).
+                      if (!gestureStarted && abs(dist - initialDist) > 5f) {
                         gestureStarted = true
                       }
 
@@ -1172,15 +1172,6 @@ fun GestureHandler(
                           }
                           viewModel.playerUpdate.update {
                             PlayerUpdates.SubtitleZoom(currentSubScale, selected.target == SubtitleGestureTarget.Secondary)
-                          }
-                        }
-                        if (centerVerticalSubtitlePositionGesture &&
-                          !MpvConfigOverridePolicy.isOwnedByMpvConf("${selected.target.prefix}-pos")
-                        ) {
-                          val newPosition = draggedSubtitlePosition(selected.position, midY - initialPinchMidY, selected.positionHeight)
-                          if (newPosition != lastPinchSubPos) {
-                            viewModel.previewSubtitlePosition(newPosition, selected.target)
-                            lastPinchSubPos = newPosition
                           }
                         }
                       }
@@ -1249,11 +1240,8 @@ fun GestureHandler(
               val selected = selectedSubtitle
               val stillSameTrack = selected != null && PlaybackSession.state.value.generation == subtitleGestureGeneration &&
                 getTrackSelectionId(selected.target.selectionProperty) == selected.trackId
-              if (stillSameTrack && selected != null && lastPinchSubPos != selected.position) {
-                viewModel.persistSubtitleGesturePosition(selected.target, lastPinchSubPos)
-              }
               if (scaleChanged && stillSameTrack) {
-                if (selectedSubtitle?.target == SubtitleGestureTarget.Secondary) {
+                if (selectedSubtitle.target == SubtitleGestureTarget.Secondary) {
                   subtitlesPreferences.secondarySubScale.set(lastCalculatedSubScale)
                 } else {
                   subtitlesPreferences.subScale.set(lastCalculatedSubScale)
@@ -1431,108 +1419,6 @@ fun GestureHandler(
   )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DoubleTapToSeekOvals(
-  amount: Int,
-  text: String?,
-  showOvals: Boolean,
-  showSeekIcon: Boolean,
-  showSeekTime: Boolean,
-  interactionSource: MutableInteractionSource,
-  modifier: Modifier = Modifier,
-) {
-  val gesturePreferences = koinInject<GesturePreferences>()
-  val doubleTapSeekAreaWidth by gesturePreferences.doubleTapSeekAreaWidth.collectAsState()
-  val seekAreaFraction = doubleTapSeekAreaWidth / 100f
-  val seekOverlayTextStyle =
-    MaterialTheme.typography.headlineSmall.copy(
-      fontSize = 22.sp,
-      fontWeight = FontWeight.Bold,
-      fontFeatureSettings = "tnum",
-    )
-
-  val alpha by animateFloatAsState(if (amount == 0) 0f else 0.2f, label = "double_tap_animation_alpha")
-
-  // Scale animation for text
-  var scaleTarget by remember { mutableStateOf(1f) }
-  val scale by animateFloatAsState(
-    targetValue = scaleTarget,
-    animationSpec = tween(durationMillis = 150),
-    label = "text_scale",
-  )
-
-  LaunchedEffect(amount) {
-    if (amount != 0) {
-      scaleTarget = 1.2f
-      delay(100)
-      scaleTarget = 1f
-    } else {
-      scaleTarget = 1f
-    }
-  }
-
-  Box(
-    modifier = modifier.fillMaxSize(),
-    contentAlignment = if (amount > 0) Alignment.CenterEnd else Alignment.CenterStart,
-  ) {
-    CompositionLocalProvider(
-      LocalRippleConfiguration provides playerRippleConfiguration,
-    ) {
-      if (amount != 0) {
-        Box(
-          modifier =
-            Modifier
-              .fillMaxHeight()
-              .fillMaxWidth(seekAreaFraction),
-          contentAlignment = Alignment.Center,
-        ) {
-          if (showOvals) {
-            Box(
-              modifier =
-                Modifier
-                  .fillMaxSize()
-                  .clip(if (amount > 0) RightSideOvalShape else LeftSideOvalShape)
-                  .background(Color.White.copy(alpha))
-                  .indication(interactionSource, ripple()),
-            )
-          }
-          if (showSeekIcon || showSeekTime) {
-            Row(
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.Center,
-            ) {
-              if (amount < 0) {
-                CombiningChevronsAnimation(isRight = false, trigger = amount)
-                Spacer(modifier = Modifier.width(8.dp))
-                val seekText = "- ${abs(amount)}"
-                Text(
-                  text = seekText,
-                  style = seekOverlayTextStyle,
-                  textAlign = TextAlign.Center,
-                  color = Color.White,
-                  modifier = Modifier.stableNumericWidth(seekText).scale(scale),
-                )
-              } else {
-                val seekText = "+ ${abs(amount)}"
-                Text(
-                  text = seekText,
-                  style = seekOverlayTextStyle,
-                  textAlign = TextAlign.Center,
-                  color = Color.White,
-                  modifier = Modifier.stableNumericWidth(seekText).scale(scale),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                CombiningChevronsAnimation(isRight = true, trigger = amount)
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-
 fun calculateNewVerticalGestureValue(
   originalValue: Int,
   startingY: Float,
@@ -1557,79 +1443,4 @@ private fun formatSeekTime(seconds: Int): String {
   } else {
     String.format("%02d:%02d", minutes, secs)
   }
-}
-
-@Composable
-fun CombiningChevronsAnimation(
-  isRight: Boolean,
-  trigger: Int,
-  modifier: Modifier = Modifier,
-) {
-  // List of active animations (unique IDs)
-  val animations = remember { mutableStateListOf<Long>() }
-
-  // Fire a new animation whenever trigger changes
-  LaunchedEffect(trigger) {
-    animations.add(System.nanoTime())
-  }
-
-  Row(
-    modifier =
-      if (isRight) {
-        modifier
-      } else {
-        modifier.scale(scaleX = -1f, scaleY = 1f)
-      },
-  ) {
-    Box {
-      // Static Chevron
-      Icon(
-        imageVector = Icons.RoundedFilled.KeyboardArrowRight,
-        contentDescription = null,
-        tint = Color.White,
-        modifier = Modifier.size(48.dp),
-      )
-
-      // Render active moving chevrons
-      animations.forEach { animId ->
-        key(animId) {
-          MovingChevron(
-            onFinished = { animations.remove(animId) },
-          )
-        }
-      }
-    }
-  }
-}
-
-@Composable
-fun MovingChevron(onFinished: () -> Unit) {
-  val progress = remember { Animatable(0f) }
-
-  LaunchedEffect(Unit) {
-    progress.animateTo(
-      targetValue = 1f,
-      animationSpec =
-        spring(
-          dampingRatio = AppMotion.Spatial.Standard.dampingRatio,
-          stiffness = AppMotion.Spatial.Standard.stiffness,
-        ),
-    )
-    onFinished()
-  }
-
-  val startOffsetDp = -15.dp
-  Icon(
-    imageVector = Icons.RoundedFilled.KeyboardArrowRight,
-    contentDescription = null,
-    tint = Color.White,
-    modifier =
-      Modifier
-        .size(48.dp)
-        .graphicsLayer {
-          val p = 1f - progress.value
-          alpha = p
-          translationX = startOffsetDp.toPx() * p
-        },
-  )
 }

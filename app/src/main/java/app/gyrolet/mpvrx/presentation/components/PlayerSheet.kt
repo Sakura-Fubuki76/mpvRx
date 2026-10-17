@@ -20,6 +20,7 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.TwoWayConverter
 import androidx.compose.animation.core.VectorizedFiniteAnimationSpec
 import androidx.compose.animation.rememberSplineBasedDecay
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.AnchoredDraggableState
@@ -94,17 +95,11 @@ import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusReq
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusGroup
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import androidx.compose.ui.focus.focusProperties
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
-import app.gyrolet.mpvrx.ui.liquidglass.liquidGlassEffects
-import app.gyrolet.mpvrx.ui.liquidglass.rememberLiquidGlassSettings
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
-import com.kyant.backdrop.shadow.Shadow
+import app.gyrolet.mpvrx.ui.liquidglass.playerGlassSurface
+import app.gyrolet.mpvrx.ui.liquidglass.LocalPlayerGlassSurfaceActive
 import org.koin.compose.koinInject
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.LocalMotionPolicy
@@ -134,8 +129,7 @@ fun PlayerSheet(
   val preferences = koinInject<AppearancePreferences>()
   val liquidGlassEnabled by preferences.liquidGlassEnabled.collectAsState()
   val playerBackdrop = LocalKyantPlayerBackdrop.current
-  val isFrosted = useFrostedGlass && liquidGlassEnabled && playerBackdrop != null
-  val glassSettings = rememberLiquidGlassSettings()
+  val isFrosted = useFrostedGlass && liquidGlassEnabled
   // TV/remote: request focus INTO the sheet content when it opens, so the D-pad can navigate/select
   // its rows instead of being trapped behind the (hidden) first-layer player controls. Ported from
   // mpvEx-TV; rememberTvInitialFocusRequester retries across the entrance animation and is TV-gated.
@@ -242,51 +236,16 @@ fun PlayerSheet(
         },
     contentAlignment = Alignment.BottomCenter,
   ) {
-    val sheetShape = MaterialTheme.shapes.extraLarge.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize)
+    val sheetShape = MaterialTheme.shapes.extraLargeIncreased.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize)
     val baseContainerColor = surfaceColor ?: MaterialTheme.colorScheme.surfaceContainerHigh
-    val frostedSurfaceColor = baseContainerColor.copy(alpha = 0.80f)
-    val rimHighlightBrush =
-      remember {
-        Brush.verticalGradient(
-          0.0f to Color.White.copy(alpha = 0.22f),
-          0.06f to Color.White.copy(alpha = 0.05f),
-          0.15f to Color.Transparent,
-        )
-      }
-
-    val glassModifier =
-      if (isFrosted) {
-        Modifier
-          .drawBackdrop(
-            backdrop = playerBackdrop,
-            shape = { sheetShape },
-            effects = {
-              liquidGlassEffects(
-                glassSettings,
-                blurRadius = 16.dp.toPx(),
-                refractionHeight = 12.dp.toPx(),
-                refractionAmount = 20.dp.toPx(),
-                vibrant = true,
-                refractionEnabled = !reducedMotion,
-              )
-            },
-            highlight = {
-              glassSettings.highlight(Highlight.Ambient.copy(alpha = if (reducedMotion) 0.15f else 0.30f))
-            },
-            shadow = {
-              glassSettings.shadow(Shadow(radius = 16.dp, color = Color.Black.copy(alpha = 0.25f)))
-            },
-            innerShadow = {
-              glassSettings.innerShadow(InnerShadow(radius = 2.dp, color = Color.White.copy(alpha = 0.12f)))
-            },
-            onDrawSurface = {
-              drawRect(glassSettings.surfaceColor(frostedSurfaceColor))
-            },
-          )
-          .border(1.dp, rimHighlightBrush, sheetShape)
-      } else {
-        Modifier
-      }
+    val expressiveContainerColor =
+      baseContainerColor.copy(alpha = 1f)
+    val glassModifier = Modifier.playerGlassSurface(
+      backdrop = playerBackdrop.takeIf { isFrosted },
+      shape = sheetShape,
+      containerColor = baseContainerColor,
+      enabled = isFrosted,
+    )
 
     Surface(
       modifier =
@@ -324,14 +283,24 @@ fun PlayerSheet(
           )
           .then(glassModifier),
       shape = sheetShape,
-      color = if (isFrosted) Color.Transparent else (surfaceColor ?: MaterialTheme.colorScheme.surface),
+      color = if (isFrosted) Color.Transparent else expressiveContainerColor,
       tonalElevation = if (isFrosted) 0.dp else tonalElevation,
+      border =
+        if (isFrosted) {
+          null
+        } else {
+          BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
+          )
+        },
       content = {
         BackHandler(
           enabled = anchoredDraggableState.targetValue == 0,
           onBack = internalOnDismissRequest,
         )
         CompositionLocalProvider(
+          LocalPlayerGlassSurfaceActive provides isFrosted,
           LocalMotionPolicy provides MotionPolicy(reduceMotion = reducedMotion),
           androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface,
         ) {
@@ -441,7 +410,7 @@ fun PlayerSheetHeader(
       Text(
         text = title,
         modifier = Modifier.weight(1f).semantics { heading() },
-        style = MaterialTheme.typography.titleLargeEmphasized,
+        style = MaterialTheme.typography.headlineSmall,
         color = MaterialTheme.colorScheme.onSurface,
       )
     } else {
@@ -460,12 +429,27 @@ fun PlayerSheetSectionHeader(
   title: String,
   modifier: Modifier = Modifier,
 ) {
-  Text(
-    text = title,
-    modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp).semantics { heading() },
-    style = MaterialTheme.typography.labelLargeEmphasized,
-    color = MaterialTheme.colorScheme.onSurfaceVariant,
-  )
+  Row(
+    modifier =
+      modifier
+        .fillMaxWidth()
+        .padding(horizontal = 20.dp, vertical = 12.dp)
+        .semantics { heading() },
+    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Surface(
+      modifier = Modifier.size(width = 4.dp, height = 24.dp),
+      shape = MaterialTheme.shapes.extraSmall,
+      color = MaterialTheme.colorScheme.primary,
+      content = {},
+    )
+    Text(
+      text = title,
+      style = MaterialTheme.typography.labelLargeEmphasized,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+  }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)

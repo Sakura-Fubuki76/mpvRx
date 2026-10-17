@@ -70,6 +70,7 @@ class AppearancePreferences(
   val customWallpaperUseColors = preferenceStore.getBoolean("custom_wallpaper_use_colors", false)
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
   val liquidGlassEnabled = preferenceStore.getBoolean("liquid_glass_enabled", true)
+  val liquidGlassInHdr = preferenceStore.getBoolean("liquid_glass_in_hdr", false)
   val liquidGlassOpacity = preferenceStore.getFloat("liquid_glass_opacity", 1f)
   val liquidGlassBlur = preferenceStore.getFloat("liquid_glass_blur", 1f)
   val liquidGlassRefractionHeight = preferenceStore.getFloat("liquid_glass_refraction_height", 1f)
@@ -84,10 +85,6 @@ class AppearancePreferences(
   val liquidGlassHighlightStrength = preferenceStore.getFloat("liquid_glass_highlight_strength", 1f)
   val liquidGlassHighlightWidth = preferenceStore.getFloat("liquid_glass_highlight_width", 1f)
   val liquidGlassHighlightBlur = preferenceStore.getFloat("liquid_glass_highlight_blur", 1f)
-  val liquidGlassShadowStrength = preferenceStore.getFloat("liquid_glass_shadow_strength", 1f)
-  val liquidGlassShadowRadius = preferenceStore.getFloat("liquid_glass_shadow_radius", 1f)
-  val liquidGlassInnerShadowStrength = preferenceStore.getFloat("liquid_glass_inner_shadow_strength", 1f)
-  val liquidGlassInnerShadowRadius = preferenceStore.getFloat("liquid_glass_inner_shadow_radius", 1f)
   val navigationBarGlow = preferenceStore.getBoolean("navigation_bar_glow", true)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val googleFontFamily = preferenceStore.getString("google_font_family", "")
@@ -112,6 +109,17 @@ class AppearancePreferences(
   val showSnapshotTab = preferenceStore.getBoolean("show_snapshot_tab", false)
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
   val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
+  /** Persistent visual order of bottom navigation tabs. Home remains the root destination. */
+  val bottomNavigationOrder = preferenceStore.getObject(
+    key = "bottom_navigation_tab_order",
+    defaultValue = listOf("HOME", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE"),
+    serializer = { order -> order.joinToString(",") },
+    deserializer = { stored ->
+      val defaults = listOf("HOME", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE")
+      val parsed = stored.split(",").map(String::trim).filter { it in defaults }.distinct()
+      parsed + defaults.filterNot { it in parsed }
+    },
+  )
   val showQuickPlayFab = preferenceStore.getBoolean("show_quick_play_fab", true)
   val quickPlayFabDirect = preferenceStore.getBoolean("quick_play_fab_direct", false)
 
@@ -121,7 +129,6 @@ class AppearancePreferences(
       liquidGlassDepthEffect, liquidGlassChromaticAberration, liquidGlassVibrancy,
       liquidGlassSaturation, liquidGlassBrightness, liquidGlassContrast,
       liquidGlassHighlightStyle, liquidGlassHighlightStrength, liquidGlassHighlightWidth, liquidGlassHighlightBlur,
-      liquidGlassShadowStrength, liquidGlassShadowRadius, liquidGlassInnerShadowStrength, liquidGlassInnerShadowRadius,
     ).forEach { it.delete() }
   }
 

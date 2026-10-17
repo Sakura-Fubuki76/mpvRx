@@ -30,6 +30,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -41,6 +42,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,7 +53,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -65,10 +67,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -80,7 +83,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -98,6 +100,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -151,7 +154,11 @@ import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.preferences.PreferencesScreen
 import app.gyrolet.mpvrx.ui.preferences.ProfileWatchStatistics
+import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.ui.theme.AppConnectedShapeTokens
+import app.gyrolet.mpvrx.ui.theme.ConnectedLayout
+import app.gyrolet.mpvrx.ui.theme.rememberConnectedShape
 import app.gyrolet.mpvrx.ui.theme.onWallpaper
 import app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
@@ -249,6 +256,10 @@ object ProfileScreen : Screen {
         else (listState.firstVisibleItemScrollOffset / 180f).coerceIn(0f, 1f)
       }
     }
+    val reduceMotion = AppMotion.shouldReduceMotion()
+    val headerAlphaSpec = if (reduceMotion) AppMotion.ReducedAlpha else AppMotion.Effect.Alpha
+    val headerOffsetSpec = if (reduceMotion) AppMotion.ReducedOffset else AppMotion.Spatial.ExpressiveOffset
+    val headerScaleSpec = if (reduceMotion) AppMotion.ReducedAlpha else AppMotion.Spatial.ExpressiveDefault
 
     fun playRecent(video: Video) {
       scope.launch {
@@ -275,12 +286,14 @@ object ProfileScreen : Screen {
             AnimatedContent(
               targetState = showHeaderAvatar,
               transitionSpec = {
-                if (targetState) {
-                  (fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 2 } + scaleIn(tween(220), initialScale = 0.8f))
-                    .togetherWith(fadeOut(tween(140)) + slideOutVertically(tween(140)) { -it / 2 })
+                if (reduceMotion) {
+                  fadeIn(headerAlphaSpec).togetherWith(fadeOut(headerAlphaSpec))
+                } else if (targetState) {
+                  (fadeIn(headerAlphaSpec) + slideInVertically(headerOffsetSpec) { it / 2 } + scaleIn(headerScaleSpec, initialScale = 0.86f))
+                    .togetherWith(fadeOut(headerAlphaSpec) + slideOutVertically(headerOffsetSpec) { -it / 2 })
                 } else {
-                  (fadeIn(tween(220)) + slideInVertically(tween(220)) { -it / 2 })
-                    .togetherWith(fadeOut(tween(140)) + slideOutVertically(tween(140)) { it / 2 } + scaleOut(tween(140), targetScale = 0.8f))
+                  (fadeIn(headerAlphaSpec) + slideInVertically(headerOffsetSpec) { -it / 2 })
+                    .togetherWith(fadeOut(headerAlphaSpec) + slideOutVertically(headerOffsetSpec) { it / 2 } + scaleOut(headerScaleSpec, targetScale = 0.86f))
                 }
               },
               label = "profileHeaderTransition",
@@ -685,23 +698,30 @@ private fun ProfileOverviewCard(
           containerColor = MaterialTheme.colorScheme.primaryContainer,
           contentDescription = null,
         )
-        Surface(
-          onClick = onEditProfile,
-          shape = CircleShape,
-          color = MaterialTheme.colorScheme.primary,
-          contentColor = MaterialTheme.colorScheme.onPrimary,
-          modifier =
-            Modifier
-              .size(48.dp)
-              .tvFocusHighlight(CircleShape),
-          shadowElevation = 3.dp,
+        // A small visual badge at the lower-right edge, with an independent 48dp
+        // touch target so the edit action remains easy to reach on small devices.
+        Box(
+          modifier = Modifier
+            .size(48.dp)
+            .offset(x = 6.dp, y = 6.dp)
+            .tvFocusHighlight(CircleShape)
+            .clickable(onClick = onEditProfile),
+          contentAlignment = Alignment.Center,
         ) {
-          Box(contentAlignment = Alignment.Center) {
-            Icon(
-              Icons.RoundedFilled.Edit,
-              contentDescription = editLabel,
-              modifier = Modifier.size(if (isTablet) 18.dp else 16.dp),
-            )
+          Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(28.dp),
+            shadowElevation = 2.dp,
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                Icons.RoundedFilled.Edit,
+                contentDescription = editLabel,
+                modifier = Modifier.size(13.dp),
+              )
+            }
           }
         }
       }
@@ -732,101 +752,75 @@ private fun ProfileOverviewCard(
       }
     }
 
-    // Shortcut Tiles
-    if (isTablet || (isLandscape && configuration.screenWidthDp >= 720)) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        ProfileShortcutTile(
-          icon = Icons.RoundedFilled.History,
-          label = stringResource(R.string.ui_recents),
-          count = recentCount,
-          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-          contentColor = MaterialTheme.colorScheme.primary,
-          onClick = onRecents,
-          modifier = Modifier.weight(1f),
-        )
-        ProfileShortcutTile(
-          icon = Icons.RoundedFilled.Subscriptions,
-          label = stringResource(R.string.ui_playlists),
-          count = playlistCount,
-          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-          contentColor = MaterialTheme.colorScheme.secondary,
-          onClick = onPlaylists,
-          modifier = Modifier.weight(1f),
-        )
-        ProfileShortcutTile(
-          icon = Icons.RoundedFilled.Image,
-          label = stringResource(R.string.ui_snapshots),
-          count = snapshotCount,
-          containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-          contentColor = MaterialTheme.colorScheme.tertiary,
-          onClick = onSnapshots,
-          modifier = Modifier.weight(1f),
-        )
-        if (showNetwork) {
-          ProfileShortcutTile(
-            icon = Icons.RoundedFilled.BringYourOwnIp,
-            label = stringResource(R.string.ui_network),
-            count = null,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            onClick = onNetwork,
-            modifier = Modifier.weight(1f),
-          )
-        }
+    // Intentional Material 3 Expressive connected bento group; no large tinted backdrop.
+    // The logical corner radii adapt automatically to 1, 2 or 4 columns and RTL direction.
+    val shortcuts = buildList {
+      add(ProfileShortcutDestination(
+        Icons.RoundedFilled.History, stringResource(R.string.ui_recents), recentCount,
+        MaterialTheme.colorScheme.primary, onRecents,
+      ))
+      add(ProfileShortcutDestination(
+        Icons.RoundedFilled.Subscriptions, stringResource(R.string.ui_playlists), playlistCount,
+        MaterialTheme.colorScheme.secondary, onPlaylists,
+      ))
+      add(ProfileShortcutDestination(
+        Icons.RoundedFilled.Image, stringResource(R.string.ui_snapshots), snapshotCount,
+        MaterialTheme.colorScheme.tertiary, onSnapshots,
+      ))
+      if (showNetwork) add(ProfileShortcutDestination(
+        Icons.RoundedFilled.BringYourOwnIp, stringResource(R.string.ui_network), null,
+        MaterialTheme.colorScheme.primary, onNetwork,
+      ))
+    }
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+      val columns = when {
+        maxWidth < 300.dp -> 1
+        maxWidth >= 680.dp -> 4
+        else -> 2
       }
-    } else {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          ProfileShortcutTile(
-            icon = Icons.RoundedFilled.History,
-            label = stringResource(R.string.ui_recents),
-            count = recentCount,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.primary,
-            onClick = onRecents,
-            modifier = Modifier.weight(1f),
-          )
-          ProfileShortcutTile(
-            icon = Icons.RoundedFilled.Subscriptions,
-            label = stringResource(R.string.ui_playlists),
-            count = playlistCount,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.secondary,
-            onClick = onPlaylists,
-            modifier = Modifier.weight(1f),
-          )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          ProfileShortcutTile(
-            icon = Icons.RoundedFilled.Image,
-            label = stringResource(R.string.ui_snapshots),
-            count = snapshotCount,
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.tertiary,
-            onClick = onSnapshots,
-            modifier = Modifier.weight(1f),
-          )
-          if (showNetwork) {
-            ProfileShortcutTile(
-              icon = Icons.RoundedFilled.BringYourOwnIp,
-              label = stringResource(R.string.ui_network),
-              count = null,
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-              contentColor = MaterialTheme.colorScheme.onSurface,
-              onClick = onNetwork,
-              modifier = Modifier.weight(1f),
-            )
-          } else {
-            Spacer(Modifier.weight(1f))
+      Column(verticalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing)) {
+        shortcuts.chunked(columns).forEachIndexed { rowIndex, rowShortcuts ->
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing),
+          ) {
+            rowShortcuts.forEachIndexed { columnIndex, shortcut ->
+              val index = rowIndex * columns + columnIndex
+              val shape = rememberConnectedShape(
+                index = index,
+                itemCount = shortcuts.size,
+                layout = ConnectedLayout.Grid,
+                columns = columns,
+              )
+              ProfileShortcutTile(
+                icon = shortcut.icon,
+                label = shortcut.label,
+                count = shortcut.count,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                contentColor = shortcut.accent,
+                onClick = shortcut.onClick,
+                shape = shape,
+                modifier = Modifier.weight(1f),
+              )
+            }
+            repeat(columns - rowShortcuts.size) {
+              Spacer(modifier = Modifier.weight(1f))
+            }
           }
         }
       }
     }
   }
 }
+
+/** Existing destinations and counts, with geometry kept separate from navigation behavior. */
+private data class ProfileShortcutDestination(
+  val icon: AppIcon,
+  val label: String,
+  val count: Int?,
+  val accent: Color,
+  val onClick: () -> Unit,
+)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -837,27 +831,28 @@ private fun ProfileShortcutTile(
   containerColor: Color,
   contentColor: Color,
   onClick: () -> Unit,
+  shape: Shape,
   modifier: Modifier = Modifier,
 ) {
   Surface(
     onClick = onClick,
-    shape = MaterialTheme.shapes.large,
+    shape = shape,
     color = containerColor,
     contentColor = contentColor,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
     modifier =
       modifier
-        .heightIn(min = 64.dp)
-        .tvFocusHighlight(MaterialTheme.shapes.large),
+        .heightIn(min = 90.dp)
+        .tvFocusHighlight(shape),
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 16.dp),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
+      horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
       Surface(
         shape = CircleShape,
-        color = contentColor.copy(alpha = 0.12f),
+        color = contentColor.copy(alpha = 0.14f),
         contentColor = contentColor,
         modifier = Modifier.size(40.dp),
       ) {
@@ -872,7 +867,7 @@ private fun ProfileShortcutTile(
         if (count != null) {
           Text(
             text = count.toString(),
-            style = MaterialTheme.typography.titleMediumEmphasized,
+            style = MaterialTheme.typography.titleLargeEmphasized,
             color = MaterialTheme.colorScheme.onSurface,
           )
         }
@@ -1177,7 +1172,11 @@ private fun RecentVideoActionsSheet(
 ) {
   ModalBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    sheetState =
+      rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+      ),
     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
   ) {
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {

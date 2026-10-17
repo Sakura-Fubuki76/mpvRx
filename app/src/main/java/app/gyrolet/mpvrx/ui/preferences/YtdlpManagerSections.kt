@@ -11,16 +11,12 @@ package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.YtdlPreferences
@@ -33,27 +29,23 @@ import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpInstallationStatus
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpReleaseChannel
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
+import app.gyrolet.mpvrx.ui.theme.AppConnectedControlShapeTokens
+import app.gyrolet.mpvrx.ui.theme.AppConnectedShapeTokens
+import app.gyrolet.mpvrx.ui.theme.ConnectedLayout
+import app.gyrolet.mpvrx.ui.theme.rememberConnectedShape
 import app.gyrolet.mpvrx.ui.theme.spacing
-import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
-import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
-@Serializable
-object YtdlpSettingsScreen : Screen {
-  @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-  @Composable
-  override fun Content() {
+/** Complete manager UI, shared by the Network page and the legacy deep-link screen. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun YtdlpManagerSections(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val backStack = LocalBackStack.current
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
-    val settingsHighlight =
-      rememberSettingsSearchHighlight(YtdlpSettingsScreen, scrollState, MaterialTheme.colorScheme.primary)
     var isRunning by remember { mutableStateOf(false) }
     var operationError by remember { mutableStateOf<String?>(null) }
 
@@ -107,36 +99,16 @@ object YtdlpSettingsScreen : Screen {
         stringResource(R.string.ui_switch_to_nightly)
       }
 
-    Scaffold(
-      topBar = {
-        TopAppBar(
-          title = {
-            Text(
-              text = stringResource(R.string.ui_yt_dlp_streaming),
-              style = MaterialTheme.typography.titleLarge,
-              fontWeight = FontWeight.Bold,
-            )
-          },
-          navigationIcon = {
-            IconButton(onClick = { backStack.popSafely() }) {
-              Icon(Icons.RoundedFilled.ArrowBack, contentDescription = stringResource(R.string.back))
-            }
-          },
-          colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface),
-        )
-      },
-    ) { padding ->
-      ProvidePreferenceLocals {
-        Column(
-          modifier =
-            Modifier
-              .fillMaxSize()
-              .padding(padding)
-              .then(settingsHighlight)
-              .verticalScroll(scrollState)
-              .padding(bottom = 32.dp),
+    ProvideExpressivePreferenceLocals {
+      Column(
+          modifier = modifier,
           verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
         ) {
+          PreferenceSectionHeader(position = PreferenceSectionPosition.First, 
+            title = stringResource(R.string.ui_yt_dlp_streaming),
+            topPadding = 12.dp,
+            modifier = Modifier.settingsSearchTarget(R.string.ui_yt_dlp_manager),
+          )
           YtdlpInstallationStatus(
             info = installationInfo,
             isRunning = isRunning,
@@ -155,15 +127,12 @@ object YtdlpSettingsScreen : Screen {
             }
           }
 
-          PreferenceSectionHeader(
-            title = stringResource(R.string.ui_release_channel),
-            modifier = Modifier.settingsSearchTarget(R.string.ui_yt_dlp_manager),
-          )
+          PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.ui_release_channel), topPadding = 18.dp)
 
-          PreferenceCard {
+          ExpressivePreferenceGroup {
             Column(
-              modifier = Modifier.fillMaxWidth().padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
+              modifier = Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing),
             ) {
               Button(
                 onClick = {
@@ -177,7 +146,13 @@ object YtdlpSettingsScreen : Screen {
                 },
                 enabled = !isRunning,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape =
+                  rememberConnectedShape(
+                    index = 0,
+                    itemCount = 2,
+                    layout = ConnectedLayout.Vertical,
+                    tokens = AppConnectedControlShapeTokens,
+                  ),
               ) {
                 Icon(Icons.RoundedFilled.Download, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -190,7 +165,13 @@ object YtdlpSettingsScreen : Screen {
                 },
                 enabled = !isRunning && isInstalled,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                shape =
+                  rememberConnectedShape(
+                    index = 1,
+                    itemCount = 2,
+                    layout = ConnectedLayout.Vertical,
+                    tokens = AppConnectedControlShapeTokens,
+                  ),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
               ) {
                 Icon(Icons.RoundedFilled.Update, null, modifier = Modifier.size(18.dp))
@@ -200,11 +181,10 @@ object YtdlpSettingsScreen : Screen {
             }
           }
 
-          PreferenceSectionHeader(title = stringResource(R.string.ytdlp_subtitles_language))
+          PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.ytdlp_subtitles_language))
 
-          PreferenceCard {
-            Column(modifier = Modifier.padding(vertical = 4.dp)) {
-              SwitchPreference(
+          ExpressivePreferenceGroup {
+            SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_download_media_subtitles),
                 value = writeSubs,
                 enabled = playbackOptionsEnabled,
@@ -213,9 +193,10 @@ object YtdlpSettingsScreen : Screen {
                 summary = {
                   Text(stringResource(R.string.ui_automatically_extract_and_load_physical_subtitle_tracks_from_sup))
                 },
+                groupIndex = 0,
+                groupSize = 2,
               )
-              PreferenceDivider()
-              SwitchPreference(
+            SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_include_auto_generated_subtitles),
                 value = writeAutoSubs,
                 enabled = playbackOptionsEnabled,
@@ -224,40 +205,45 @@ object YtdlpSettingsScreen : Screen {
                 summary = {
                   Text(stringResource(R.string.ui_fetch_auto_caption_tracks_e_g_youtube_speech_to_text_when_regula))
                 },
+                groupIndex = 1,
+                groupSize = 2,
               )
-            }
           }
 
-          PreferenceSectionHeader(
+          PreferenceSectionHeader(position = PreferenceSectionPosition.Last, 
             title = stringResource(R.string.ytdlp_playlist_behavior),
             modifier = Modifier.settingsSearchTarget(R.string.ytdlp_playlist_behavior),
           )
 
-          PreferenceCard {
-            FlowRow(
-              modifier = Modifier.fillMaxWidth().padding(16.dp),
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-              YtdlPlaylistMode.entries.forEach { mode ->
-                FilterChip(
-                  selected = playlistMode == mode,
-                  enabled = playbackOptionsEnabled,
-                  onClick = { ytdlPreferences.playlistMode.set(mode) },
-                  label = { Text(mode.title) },
-                  leadingIcon =
-                    if (playlistMode == mode) {
-                      { Icon(Icons.RoundedFilled.Check, null, modifier = Modifier.size(16.dp)) }
-                    } else {
-                      null
-                    },
+          SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+          ) {
+            YtdlPlaylistMode.entries.forEachIndexed { index, mode ->
+              SegmentedButton(
+                selected = playlistMode == mode,
+                enabled = playbackOptionsEnabled,
+                onClick = { ytdlPreferences.playlistMode.set(mode) },
+                shape = SegmentedButtonDefaults.itemShape(
+                  index = index,
+                  count = YtdlPlaylistMode.entries.size,
+                ),
+                icon = { SegmentedButtonDefaults.Icon(active = playlistMode == mode) },
+              ) {
+                Text(
+                  text = mode.title,
+                  style = MaterialTheme.typography.labelMedium,
+                  maxLines = 2,
                 )
               }
             }
           }
         }
       }
-    }
-  }
+}
 
+/** Restores old saved navigation stacks directly into the new one-level-up Network page. */
+@Serializable
+object YtdlpSettingsScreen : Screen {
+  @Composable
+  override fun Content() = NetworkConfigurationPreferencesScreen.Content()
 }

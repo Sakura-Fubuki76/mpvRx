@@ -50,6 +50,7 @@ import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -80,15 +81,20 @@ import app.gyrolet.mpvrx.preferences.GesturePreferences
 import app.gyrolet.mpvrx.preferences.MediaLayoutMode
 import app.gyrolet.mpvrx.preferences.SortOrder
 import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
 import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionListGap
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionGridGap
+import app.gyrolet.mpvrx.ui.browser.cards.mediaSelectionNeighbors
 import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
 import app.gyrolet.mpvrx.presentation.components.captureLiquidGlassBackdrop
 import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
 import app.gyrolet.mpvrx.ui.browser.components.rememberBrowserBottomBarBackdrop
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
+import app.gyrolet.mpvrx.ui.browser.components.mediaItemMotion
 import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
 import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
 import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
@@ -105,6 +111,7 @@ import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
 import app.gyrolet.mpvrx.ui.browser.selection.SelectionManager
 import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
 import app.gyrolet.mpvrx.ui.browser.states.EmptyState
+import app.gyrolet.mpvrx.ui.browser.states.LoadingState
 import app.gyrolet.mpvrx.ui.components.InlineSearchBar
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
@@ -120,7 +127,10 @@ import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.MediaUtils
 import app.gyrolet.mpvrx.utils.media.MediaSearchEngine
 import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
+import app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner
 import app.gyrolet.mpvrx.utils.sort.SortUtils
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
@@ -142,6 +152,8 @@ data class VideoListScreen(
     val coroutineScope = rememberCoroutineScope()
     val backstack = LocalBackStack.current
     val browserPreferences = koinInject<BrowserPreferences>()
+    val playerPreferences = koinInject<PlayerPreferences>()
+    val playlistMode by playerPreferences.playlistMode.collectAsState()
     val appearancePreferences = koinInject<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
@@ -152,6 +164,15 @@ data class VideoListScreen(
         key = "VideoListViewModel_${bucketId}_${isAudio}",
         factory = VideoListViewModel.factory(context.applicationContext as android.app.Application, bucketId, isAudio),
       )
+    androidx.lifecycle.compose.LifecycleResumeEffect(viewModel) {
+      if (app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner.isScopedFolder(bucketId)) {
+        // SAF providers do not produce FileObserver events; re-read the selected folder on resume.
+        viewModel.refresh()
+      } else {
+        viewModel.startWatching()
+      }
+      onPauseOrDispose { viewModel.stopWatching() }
+    }
     val videos by viewModel.videos.collectAsState()
     val videosWithPlaybackInfo by viewModel.videosWithPlaybackInfo.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -159,6 +180,7 @@ data class VideoListScreen(
     val lastPlayedInFolderPath by viewModel.lastPlayedInFolderPath.collectAsState()
     val videosWereDeletedOrMoved by viewModel.videosWereDeletedOrMoved.collectAsState()
     val archiveFolder = remember(bucketId) { ZipArchiveMedia.isBrowserPath(bucketId) }
+    val scopedFolder = remember(bucketId) { ScopedHiddenFolderScanner.isScopedFolder(bucketId) }
 
     // Sorting
     val videoSortType by browserPreferences.videoSortType.collectAsState()
@@ -349,7 +371,7 @@ data class VideoListScreen(
             query = internalSearchQuery,
             onQueryChange = { internalSearchQuery = it },
             onSearch = { },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             inputFieldModifier = Modifier.focusRequester(focusRequester),
             placeholder = { Text(stringResource(R.string.ui_search_videos)) },
             leadingIcon = {
@@ -457,6 +479,20 @@ data class VideoListScreen(
                   ),
               onClick = {
                 coroutineScope.launch {
+                  if (scopedFolder) {
+                    val folderPaths = sortedVideos.mapTo(hashSetOf()) { it.path }
+                    val lastPlayed =
+                      RecentlyPlayedOps.getRecentlyPlayed(limit = 100)
+                        .firstOrNull { it.filePath in folderPaths }
+                    val startIndex =
+                      sortedVideos.indexOfFirst { it.path == lastPlayed?.filePath }.coerceAtLeast(0)
+                    if (playlistMode) {
+                      MediaUtils.playFiles(sortedVideos, context, startIndex, "video_list")
+                    } else {
+                      MediaUtils.playFile(sortedVideos[startIndex], context, "video_list")
+                    }
+                    return@launch
+                  }
                   val folderPath =
                     sortedVideosWithInfo
                       .firstOrNull()
@@ -508,9 +544,14 @@ data class VideoListScreen(
             if (selectionManager.isInSelectionMode && !archiveFolder) {
               selectionManager.toggleFromUser(video)
             } else if (!selectionManager.isInSelectionMode) {
-              if (archiveFolder) {
-                val startIndex = sortedVideos.indexOfFirst { it.id == video.id }.coerceAtLeast(0)
-                MediaUtils.playFiles(sortedVideos, context, startIndex, "zip_folder")
+              if (archiveFolder || (scopedFolder && playlistMode)) {
+                val startIndex = sortedVideos.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
+                MediaUtils.playFiles(
+                  sortedVideos,
+                  context,
+                  startIndex,
+                  if (archiveFolder) "zip_folder" else "video_list",
+                )
               } else {
                 MediaUtils.playFile(video, context, "video_list")
               }
@@ -766,7 +807,7 @@ data class VideoListScreen(
 
       // Private Space Completion Dialog
       if (showPrivateSpaceCompletionDialog.value) {
-        androidx.compose.material3.AlertDialog(
+        app.gyrolet.mpvrx.presentation.components.AppAlertDialog(
           onDismissRequest = { showPrivateSpaceCompletionDialog.value = false },
           title = {
             Text(
@@ -940,19 +981,12 @@ internal fun VideoListContent(
 
   when {
     isLoading && videosWithInfo.isEmpty() -> {
-      Box(
-        modifier =
-          modifier
-            .fillMaxSize()
-            .padding(bottom = 80.dp),
-        // Account for bottom navigation bar
-        contentAlignment = Alignment.Center,
-      ) {
-        CircularProgressIndicator(
-          modifier = Modifier.size(48.dp),
-          color = MaterialTheme.colorScheme.primary,
-        )
-      }
+      LoadingState(
+        icon = Icons.RoundedFilled.VideoLibrary,
+        title = stringResource(R.string.ui_scanning_for_videos),
+        message = "Please wait while we search your device",
+        modifier = modifier.fillMaxSize().padding(bottom = 80.dp),
+      )
     }
 
     videosWithInfo.isEmpty() && !isLoading && videosWereDeletedOrMoved -> {
@@ -1064,25 +1098,32 @@ internal fun VideoListContent(
           }
 
         LaunchedEffect(
-          folderId,
-          showVideoThumbnails,
-          thumbWidthPx,
-          thumbHeightPx,
-          mediaLayoutMode,
-          thumbnailListKey,
+          folderId, showVideoThumbnails, thumbWidthPx, thumbHeightPx,
+          mediaLayoutMode, thumbnailListKey, listState, gridState,
         ) {
           val generationId = "$folderId:${mediaLayoutMode.name}"
-          if (!showVideoThumbnails || archiveFolder || latestVideosWithInfo.isEmpty()) {
+          try {
+            if (showVideoThumbnails && !archiveFolder && latestVideosWithInfo.isNotEmpty()) {
+              snapshotFlow {
+                if (mediaLayoutMode == MediaLayoutMode.LIST) listState.isScrollInProgress
+                else gridState.isScrollInProgress
+              }.collectLatest { scrolling ->
+                // Visible cards have priority: bulk work resumes only after the scroll settles.
+                thumbnailRepository.cancelFolderThumbnailGeneration(generationId)
+                if (!scrolling) {
+                  delay(850L)
+                  thumbnailRepository.startFolderThumbnailGeneration(
+                    folderId = generationId,
+                    videos = latestVideosWithInfo.map { it.video },
+                    widthPx = thumbWidthPx,
+                    heightPx = thumbHeightPx,
+                  )
+                }
+              }
+            }
+          } finally {
             thumbnailRepository.cancelFolderThumbnailGeneration(generationId)
-            return@LaunchedEffect
           }
-
-          thumbnailRepository.startFolderThumbnailGeneration(
-            folderId = generationId,
-            videos = latestVideosWithInfo.map { it.video },
-            widthPx = thumbWidthPx,
-            heightPx = thumbHeightPx,
-          )
         }
 
         FabScrollHelper.trackScrollForFabVisibility(
@@ -1138,8 +1179,8 @@ internal fun VideoListContent(
                     top = 8.dp,
                     bottom = bottomPadding + 8.dp,
                   ),
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+                verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
               ) {
                 items(
                   count = videosWithInfo.size,
@@ -1151,9 +1192,13 @@ internal fun VideoListContent(
 
                   VideoCard(
                       video = videoWithInfo.video,
+                      modifier = mediaItemMotion(),
                       progressPercentage = videoWithInfo.progressPercentage,
                       isRecentlyPlayed = isRecentlyPlayed,
                       isSelected = selectionManager.isSelected(videoWithInfo.video),
+                      selectionNeighbors = mediaSelectionNeighbors(index, videosWithInfo.size, columns) { neighbor ->
+                        selectionManager.isSelected(videosWithInfo[neighbor].video)
+                      },
                       isOldAndUnplayed = videoWithInfo.isOldAndUnplayed,
                       isWatched = videoWithInfo.isWatched,
                       isPinned = videoWithInfo.video.path in pinnedVideoPaths,
@@ -1200,6 +1245,7 @@ internal fun VideoListContent(
               LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap),
                 contentPadding =
                   PaddingValues(
                     start = 8.dp,
@@ -1218,9 +1264,13 @@ internal fun VideoListContent(
 
                   VideoCard(
                       video = videoWithInfo.video,
+                      modifier = mediaItemMotion(),
                       progressPercentage = videoWithInfo.progressPercentage,
                       isRecentlyPlayed = isRecentlyPlayed,
                       isSelected = selectionManager.isSelected(videoWithInfo.video),
+                      selectionNeighbors = mediaSelectionNeighbors(index, videosWithInfo.size, 1) { neighbor ->
+                        selectionManager.isSelected(videosWithInfo[neighbor].video)
+                      },
                       isOldAndUnplayed = videoWithInfo.isOldAndUnplayed,
                       isWatched = videoWithInfo.isWatched,
                       isPinned = videoWithInfo.video.path in pinnedVideoPaths,

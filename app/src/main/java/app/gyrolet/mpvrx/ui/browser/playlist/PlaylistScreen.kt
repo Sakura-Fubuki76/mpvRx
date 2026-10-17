@@ -27,7 +27,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
+import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -39,7 +39,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -78,6 +78,8 @@ import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
 import app.gyrolet.mpvrx.ui.browser.NavigationBarSelectionEffect
 import app.gyrolet.mpvrx.ui.browser.NavigationBarState
 import app.gyrolet.mpvrx.ui.browser.cards.PlaylistCard
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionListGap
+import app.gyrolet.mpvrx.ui.browser.cards.mediaSelectionNeighbors
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
 import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
 import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
@@ -611,11 +613,13 @@ object PlaylistScreen : Screen {
           ) {
             items(count = playlistsWithCount.size, key = { playlistsWithCount[it].playlist.id }) { index ->
               val playlistWithCount = playlistsWithCount[index]
+              val neighbors = mediaSelectionNeighbors(index, playlistsWithCount.size, folderGridColumns) { n -> selectionManager.isSelected(playlistsWithCount[n]) }
               PlaylistCard(
                 playlist = playlistWithCount.playlist,
                 itemCount = playlistWithCount.itemCount,
                 sources = playlistWithCount.sources,
                 isSelected = selectionManager.isSelected(playlistWithCount),
+                selectionNeighbors = neighbors,
                 onClick = { onPlaylistClick(playlistWithCount) },
                 onLongClick = { onPlaylistLongClick(playlistWithCount) },
                 onThumbClick = { onPlaylistClick(playlistWithCount) },
@@ -653,13 +657,17 @@ object PlaylistScreen : Screen {
             state = listState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = bottomPadding),
+            verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap),
           ) {
-            items(playlistsWithCount, key = { it.playlist.id }) { playlistWithCount ->
+            items(count = playlistsWithCount.size, key = { playlistsWithCount[it].playlist.id }) { index ->
+              val playlistWithCount = playlistsWithCount[index]
+              val neighbors = mediaSelectionNeighbors(index, playlistsWithCount.size, 1) { n -> selectionManager.isSelected(playlistsWithCount[n]) }
               PlaylistCard(
                 playlist = playlistWithCount.playlist,
                 itemCount = playlistWithCount.itemCount,
                 sources = playlistWithCount.sources,
                 isSelected = selectionManager.isSelected(playlistWithCount),
+                selectionNeighbors = neighbors,
                 onClick = { onPlaylistClick(playlistWithCount) },
                 onLongClick = { onPlaylistLongClick(playlistWithCount) },
                 onThumbClick = { onPlaylistClick(playlistWithCount) },

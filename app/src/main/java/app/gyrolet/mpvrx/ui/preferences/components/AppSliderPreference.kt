@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.components.AppSlider
+import app.gyrolet.mpvrx.ui.preferences.ExpressivePreferenceItem
 import me.zhanghai.compose.preference.LocalPreferenceTheme
 import me.zhanghai.compose.preference.Preference
 import org.koin.compose.koinInject
@@ -37,20 +39,21 @@ fun AppSliderPreference(
   val preferences = koinInject<AppearancePreferences>()
   val glassEnabled by preferences.liquidGlassEnabled.collectAsState()
   if (!glassEnabled) {
-    me.zhanghai.compose.preference.SliderPreference(
+    ExpressivePreferenceItem(modifier = modifier) {
+      me.zhanghai.compose.preference.SliderPreference(
       value = value,
       onValueChange = onValueChange,
       sliderValue = sliderValue,
       onSliderValueChange = onSliderValueChange,
       title = title,
-      modifier = modifier,
       valueRange = valueRange,
       valueSteps = valueSteps,
       enabled = enabled,
       icon = icon,
       summary = summary,
       valueText = valueText,
-    )
+      )
+    }
     return
   }
 
@@ -61,16 +64,19 @@ fun AppSliderPreference(
       observedValue = value
     }
   }
+  ExpressivePreferenceItem(modifier = modifier) {
   Preference(
     title = title,
-    modifier = modifier,
     enabled = enabled,
     icon = icon,
     summary = {
       Column {
         summary?.invoke()
         Row(verticalAlignment = Alignment.CenterVertically) {
-          var latestSliderValue = sliderValue
+          // Completion may arrive after recomposition; retain the last pointer value.
+          var latestSliderValue by remember { mutableFloatStateOf(sliderValue) }
+          var isUserInteracting by remember { mutableStateOf(false) }
+          SideEffect { if (!isUserInteracting) latestSliderValue = sliderValue }
           AppSlider(
             value = sliderValue,
             onValueChange = { changedValue ->
@@ -82,6 +88,7 @@ fun AppSliderPreference(
             valueRange = valueRange,
             steps = valueSteps,
             onValueChangeFinished = { onValueChange(latestSliderValue) },
+            onInteractionChange = { isUserInteracting = it },
           )
           if (valueText != null) {
             Box(Modifier.padding(start = LocalPreferenceTheme.current.horizontalSpacing)) {
@@ -92,4 +99,5 @@ fun AppSliderPreference(
       }
     },
   )
+  }
 }

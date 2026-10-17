@@ -21,7 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.AlertDialog
+import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -29,7 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,7 +68,6 @@ import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.Preference
 import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
 @Serializable
@@ -103,7 +102,7 @@ object DecoderPreferencesScreen : Screen {
         )
       },
     ) { padding ->
-      ProvidePreferenceLocals {
+      ProvideExpressivePreferenceLocals {
         val (settingsListState, settingsHighlight) =
           rememberSettingsSearchList(DecoderPreferencesScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
@@ -115,7 +114,7 @@ object DecoderPreferencesScreen : Screen {
               .then(settingsHighlight),
         ) {
           item {
-            PreferenceSectionHeader(
+            PreferenceSectionHeader(position = PreferenceSectionPosition.Single, 
               title = stringResource(R.string.pref_decoder),
               modifier = Modifier.settingsSearchTarget(R.string.pref_decoder),
             )
@@ -125,6 +124,7 @@ object DecoderPreferencesScreen : Screen {
             PreferenceCard {
               val profile by preferences.profile.collectAsState()
               val currentProfile = MPVProfile.fromValue(profile)
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_profile_title),
                 value = currentProfile,
@@ -139,6 +139,7 @@ object DecoderPreferencesScreen : Screen {
                   )
                 },
               )
+              }
 
               PreferenceDivider()
 
@@ -270,6 +271,7 @@ object DecoderPreferencesScreen : Screen {
               PreferenceDivider()
 
               val debanding by preferences.debanding.collectAsState()
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_debanding_title),
                 value = debanding,
@@ -284,6 +286,7 @@ object DecoderPreferencesScreen : Screen {
                   )
                 },
               )
+              }
 
               PreferenceDivider()
 
@@ -322,7 +325,7 @@ object DecoderPreferencesScreen : Screen {
                 },
                 title = { Text(stringResource(R.string.pref_anime4k_title)) },
                 summary = {
-                  Column {
+                  Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
                       stringResource(R.string.pref_anime4k_summary),
                       color = MaterialTheme.colorScheme.outline,
@@ -405,6 +408,7 @@ object DecoderPreferencesScreen : Screen {
                         PreferenceDivider()
 
                         val anime4kQuality by preferences.anime4kQuality.collectAsState()
+                        ExpressivePreferenceItem {
                         ListPreference(
                           value = anime4kQuality,
                           onValueChange = { preferences.anime4kQuality.set(it) },
@@ -418,6 +422,7 @@ object DecoderPreferencesScreen : Screen {
                             )
                           },
                         )
+                        }
 
                         PreferenceDivider()
 

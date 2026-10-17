@@ -15,6 +15,9 @@ import androidx.compose.material3.SliderState
 import androidx.compose.material3.RangeSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -53,17 +56,21 @@ fun AppSlider(
   onValueChangeFinished: (() -> Unit)? = null,
   colors: SliderColors = SliderDefaults.colors(),
   interactionSource: MutableInteractionSource = remember { MutableInteractionSource() },
+  onInteractionChange: (Boolean) -> Unit = {},
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val glassEnabled by appearancePreferences.liquidGlassEnabled.collectAsState()
   if (!glassEnabled || !valueRange.start.isFinite() || !valueRange.endInclusive.isFinite() || valueRange.endInclusive <= valueRange.start) {
+    val pressed by interactionSource.collectIsPressedAsState()
+    val dragged by interactionSource.collectIsDraggedAsState()
+    LaunchedEffect(pressed, dragged) { onInteractionChange(pressed || dragged) }
+    val materialState = remember(steps, valueRange) { SliderState(value, steps, valueRange) }
+    materialState.value = value
     androidx.compose.material3.Slider(
-      value = value,
+      state = materialState,
       onValueChange = onValueChange,
       modifier = modifier,
       enabled = enabled,
-      valueRange = valueRange,
-      steps = steps,
       onValueChangeFinished = onValueChangeFinished,
       colors = colors,
       interactionSource = interactionSource,
@@ -72,7 +79,12 @@ fun AppSlider(
   }
 
   val sliderState = remember(steps, valueRange) { SliderState(value, steps, valueRange) }
-  SideEffect { sliderState.value = value }
+  var isUserInteracting by remember(sliderState) { mutableStateOf(false) }
+  // Incoming preference/MPV updates must not overwrite a value owned by the active drag.
+  // Sync only when the external value changes, rather than on every recomposition.
+  LaunchedEffect(value, sliderState) {
+    if (!isUserInteracting) sliderState.value = value
+  }
   val surfaceColor = MaterialTheme.colorScheme.surfaceContainerHigh
   val canvasBackdrop = rememberCanvasBackdrop { drawRect(surfaceColor) }
   val backdrop = LocalKyantPlayerBackdrop.current ?: canvasBackdrop
@@ -107,6 +119,11 @@ fun AppSlider(
       },
     enabled = enabled,
     onValueChangeFinished = onValueChangeFinished,
+    interactionSource = interactionSource,
+    onInteractionChange = {
+      isUserInteracting = it
+      onInteractionChange(it)
+    },
     accentColor = if (enabled) colors.activeTrackColor else colors.disabledActiveTrackColor,
     trackColor = if (enabled) colors.inactiveTrackColor else colors.disabledInactiveTrackColor,
   )
@@ -151,8 +168,8 @@ private fun GlassSliderThumb(
           )
         },
         highlight = { settings.highlight(Highlight.Ambient) },
-        shadow = { settings.shadow(Shadow(radius = 4.dp)) },
-        innerShadow = { settings.innerShadow(InnerShadow(radius = 4.dp)) },
+        shadow = { Shadow(radius = 4.dp) },
+        innerShadow = { InnerShadow(radius = 4.dp) },
         onDrawSurface = { drawRect(settings.surfaceColor(tint)) },
       )
   Box(Modifier.size(40.dp, 24.dp).then(materialModifier))
@@ -172,20 +189,20 @@ fun AppRangeSlider(
 ) {
   val preferences = koinInject<AppearancePreferences>()
   val glassEnabled by preferences.liquidGlassEnabled.collectAsState()
+  val state = remember(steps, valueRange) { RangeSliderState(value.start, value.endInclusive, steps, valueRange) }
   if (!glassEnabled) {
+    state.startValue = value.start
+    state.endValue = value.endInclusive
     androidx.compose.material3.RangeSlider(
-      value = value,
+      state = state,
       onValueChange = onValueChange,
       modifier = modifier,
       enabled = enabled,
-      valueRange = valueRange,
-      steps = steps,
       onValueChangeFinished = onValueChangeFinished,
       colors = colors,
     )
     return
   }
-  val state = remember(steps, valueRange) { RangeSliderState(value.start, value.endInclusive, steps, valueRange) }
   SideEffect {
     state.startValue = value.start
     state.endValue = value.endInclusive

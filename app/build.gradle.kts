@@ -6,6 +6,7 @@ import com.android.build.api.instrumentation.InstrumentationScope
 import com.android.build.api.variant.FilterConfiguration
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.Opcodes
 import org.objectweb.asm.commons.ClassRemapper
 import org.objectweb.asm.commons.Remapper
 import java.util.Properties
@@ -18,7 +19,7 @@ abstract class SmbRpcExceptionCompatibility : AsmClassVisitorFactory<Instrumenta
     classData.className.startsWith("com.rapid7.client.dcerpc.")
 
   override fun createClassVisitor(classContext: ClassContext, nextClassVisitor: ClassVisitor): ClassVisitor =
-    ClassRemapper(nextClassVisitor, object : Remapper() {
+    ClassRemapper(nextClassVisitor, object : Remapper(Opcodes.ASM9) {
       override fun map(internalName: String): String =
         if (internalName == "java/rmi/UnmarshalException") {
           "app/gyrolet/mpvrx/data/network/client/SmbRpcDecodeException"
@@ -43,7 +44,13 @@ val activeAbis =
   } else {
     listOf("arm64-v8a", "armeabi-v7a") + x86Abis
   }
-val universalOnlyDistributions = setOf("noVulkan", "fongmi")
+val universalOnlyDistributions = setOf("noVulkan", "fongmi", "playstore")
+// Distributions outside Google Play. Play forbids downloaded executable code (yt-dlp) and torrent
+// streaming, so only these flavors enable yt-dlp and ship yt-dlp and libtorrent native payloads.
+val sideloadDistributions = setOf("standard", "noVulkan", "fongmi")
+// AGP cannot build an app bundle while ABI splits produce multiple APKs (issuetracker 402800800).
+val isBundleBuild =
+  gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }
 val releaseVersionCode = 275
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
@@ -111,6 +118,7 @@ android {
   productFlavors {
     create("standard") {
       dimension = "distribution"
+      buildConfigField("boolean", "IS_PLAY_STORE_BUILD", "false")
       buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
       buildConfigField("String", "UPDATE_APK_VARIANT", "\"standard\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
@@ -118,8 +126,19 @@ android {
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
     }
 
+    create("playstore") {
+      dimension = "distribution"
+      buildConfigField("boolean", "IS_PLAY_STORE_BUILD", "true")
+      buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "false")
+      buildConfigField("String", "UPDATE_APK_VARIANT", "\"standard\"")
+      buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "true")
+      buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
+      buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+    }
+
     create("noVulkan") {
       dimension = "distribution"
+      buildConfigField("boolean", "IS_PLAY_STORE_BUILD", "false")
       buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
       buildConfigField("String", "UPDATE_APK_VARIANT", "\"no-vulkan\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
@@ -129,11 +148,31 @@ android {
 
     create("fongmi") {
       dimension = "distribution"
+      buildConfigField("boolean", "IS_PLAY_STORE_BUILD", "false")
       buildConfigField("boolean", "ENABLE_UPDATE_FEATURE", "true")
       buildConfigField("String", "UPDATE_APK_VARIANT", "\"fongmi\"")
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
+    }
+
+    configureEach {
+      val enableYtdlp = name in sideloadDistributions
+      buildConfigField("boolean", "ENABLE_YTDLP", enableYtdlp.toString())
+      externalNativeBuild {
+        cmake {
+          arguments += "-DMPVRX_ENABLE_YTDLP=${if (enableYtdlp) "ON" else "OFF"}"
+        }
+      }
+    }
+  }
+
+  sourceSets {
+    sideloadDistributions.forEach { flavor ->
+      getByName(flavor).apply {
+        assets.directories.add("src/ytdlp/assets")
+        jniLibs.directories.add("src/ytdlp/jniLibs")
+      }
     }
   }
 
@@ -144,7 +183,7 @@ android {
 
   splits {
     abi {
-      isEnable = true
+      isEnable = !isBundleBuild
       reset()
       include(*activeAbis.toTypedArray())
       isUniversalApk = activeAbis.size > 1
@@ -340,6 +379,7 @@ dependencies {
   implementation(libs.google.cast.framework)
 
   "standardImplementation"(variantOf(libs.mpvlib.standard) { artifactType("aar") })
+  "playstoreImplementation"(variantOf(libs.mpvlib.standard) { artifactType("aar") })
   "noVulkanImplementation"(variantOf(libs.mpvlib.no.vulkan) { artifactType("aar") })
   "fongmiImplementation"(variantOf(libs.mpvlib.fongmi) { artifactType("aar") })
 
@@ -366,13 +406,16 @@ dependencies {
   implementation(libs.kyant.backdrop)
   implementation(libs.kyant.shapes)
 
-  // libtorrent4j's Java API plus the native library for every enabled APK ABI.
+  // libtorrent4j's Java API compiles everywhere; its native library for every enabled APK ABI
+  // ships only where torrent streaming exists.
   implementation(libs.libtorrent4j)
-  implementation(libs.libtorrent4j.android.arm64)
-  implementation(libs.libtorrent4j.android.arm)
-  if (enableX86) {
-    implementation(libs.libtorrent4j.android.x86)
-    implementation(libs.libtorrent4j.android.x8664)
+  sideloadDistributions.forEach { flavor ->
+    "${flavor}Implementation"(libs.libtorrent4j.android.arm64)
+    "${flavor}Implementation"(libs.libtorrent4j.android.arm)
+    if (enableX86) {
+      "${flavor}Implementation"(libs.libtorrent4j.android.x86)
+      "${flavor}Implementation"(libs.libtorrent4j.android.x8664)
+    }
   }
 }
 

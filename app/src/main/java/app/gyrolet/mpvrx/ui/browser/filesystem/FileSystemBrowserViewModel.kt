@@ -20,10 +20,12 @@ import app.gyrolet.mpvrx.domain.browser.PathComponent
 import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.FoldersPreferences
 import app.gyrolet.mpvrx.repository.MediaFileRepository
 import app.gyrolet.mpvrx.ui.browser.base.BaseBrowserViewModel
 import app.gyrolet.mpvrx.ui.player.PlaybackIdentity
 import app.gyrolet.mpvrx.utils.media.MediaLibraryEvents
+import app.gyrolet.mpvrx.utils.media.VisibleDirectoryWatcher
 import app.gyrolet.mpvrx.utils.media.MetadataRetrieval
 import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
 import app.gyrolet.mpvrx.utils.media.PlaybackStateOps
@@ -61,7 +63,7 @@ class FileSystemBrowserViewModel(
   KoinComponent {
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val browserPreferences: BrowserPreferences by inject()
-  private val foldersPreferences: app.gyrolet.mpvrx.preferences.FoldersPreferences by inject()
+  private val foldersPreferences: FoldersPreferences by inject()
   private val appearancePreferences: app.gyrolet.mpvrx.preferences.AppearancePreferences by inject()
 
   // Special marker for "show storage volumes" mode
@@ -98,7 +100,8 @@ class FileSystemBrowserViewModel(
   val watchedVideoIds: StateFlow<Set<Long>> = _watchedVideoIds.asStateFlow()
 
   // Loading state - similar to Fossify's showProgressBar/hideProgressBar
-  private val _isLoading = MutableStateFlow(false)
+  // Cold starts must show the same loading state as Folders before asynchronous root discovery.
+  private val _isLoading = MutableStateFlow(true)
   val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
   // Error state for displaying error messages
@@ -127,6 +130,23 @@ class FileSystemBrowserViewModel(
   // Track previous item count per path to detect if folder became empty
   private val itemCountByPath = mutableMapOf<String, Int>()
   private var directoryLoadJob: Job? = null
+  private var watchActive = false
+  private val liveDirectoryWatcher = VisibleDirectoryWatcher { MediaLibraryEvents.notifyChanged() }
+
+  fun startWatching() {
+    watchActive = true
+    liveDirectoryWatcher.watch(_currentPath.value)
+  }
+
+  fun stopWatching() {
+    watchActive = false
+    liveDirectoryWatcher.stop()
+  }
+
+  override fun onCleared() {
+    liveDirectoryWatcher.stop()
+    super.onCleared()
+  }
 
   companion object {
     private const val TAG = "FileSystemBrowserVM"
@@ -170,6 +190,12 @@ class FileSystemBrowserViewModel(
       loadCurrentDirectory()
     }
 
+    viewModelScope.launch {
+      _currentPath.collect { path ->
+        if (watchActive) liveDirectoryWatcher.watch(path)
+      }
+    }
+
     // Refresh on global media library changes
     // Similar to Fossify's media scan completion listener
     viewModelScope.launch(Dispatchers.IO) {
@@ -178,7 +204,7 @@ class FileSystemBrowserViewModel(
         // Drops the persisted tree snapshot too, so a mutation that did not move MediaStore's
         // generation (an in-app rename, a move, a new .nomedia folder) cannot be served from it.
         MediaStoreGenerationGuard.invalidate(getApplication())
-        loadCurrentDirectory()
+        loadCurrentDirectory(forceFileSystemCheck = true)
       }
     }
 
@@ -193,21 +219,41 @@ class FileSystemBrowserViewModel(
     // Apply sorting whenever items or sort preferences change
     // Based on Fossify's ChangeSortingDialog callback and sorting logic
     viewModelScope.launch {
+      val blacklists =
+        combine(
+          foldersPreferences.blacklistedFolders.changes(),
+          foldersPreferences.blacklistedAudioFolders.changes(),
+        ) { video, audio -> video to audio }
       combine(
         _unsortedItems,
         browserPreferences.folderSortType.changes(),
         browserPreferences.folderSortOrder.changes(),
-        foldersPreferences.blacklistedFolders.changes(),
+        blacklists,
         _currentPath,
-      ) { items, sortType, sortOrder, blacklist, currentPath ->
+      ) { items, sortType, sortOrder, (videoBlacklist, audioBlacklist), currentPath ->
         // Sorting using the same logic as Fossify's FileDirItem.sort(), after hiding what the user
         // blacklisted. Folder mode has always applied this list; without it here, blacklisting a
         // folder only hid it from one of the two places it appears in.
-        SortUtils.sortFileSystemItems(blacklistItems(items, blacklist, currentPath), sortType, sortOrder)
+        SortUtils.sortFileSystemItems(
+          blacklistItems(items, videoBlacklist, audioBlacklist, currentPath),
+          sortType,
+          sortOrder,
+        )
       }.collectLatest { sortedItems ->
         _items.value = sortedItems
         Log.d(TAG, "Items sorted: ${sortedItems.size} items")
       }
+    }
+
+    // Blacklist changes must also refresh the cached hierarchy. Simply filtering the top
+    // directory's items leaves parent folders counted entirely from excluded descendants.
+    viewModelScope.launch {
+      combine(
+        foldersPreferences.blacklistedFolders.changes(),
+        foldersPreferences.blacklistedAudioFolders.changes(),
+      ) { video, audio -> video to audio }
+        .drop(1)
+        .collectLatest { loadCurrentDirectory() }
     }
 
     // Recalculate NEW badges when the appearance preference changes.
@@ -336,6 +382,10 @@ class FileSystemBrowserViewModel(
    * Based on Fossify's deleteFiles() logic with folder support
    */
   fun deleteFolders(folders: List<FileSystemItem.Folder>): Pair<Int, Int> {
+    if (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY) {
+      Log.w(TAG, "Folder deletion is unavailable with scoped storage")
+      return 0 to folders.size
+    }
     var successCount = 0
     var failureCount = 0
     val deleteAll = browserPreferences.deleteFolderAllContents.get()
@@ -606,7 +656,8 @@ class FileSystemBrowserViewModel(
 
   /**
    * Hides what the user blacklisted, matching the rule folder mode applies: a blacklisted folder
-   * takes its subfolders with it.
+   * takes its subfolders with it. Audio entries follow the audio blacklist, videos the video one,
+   * and a folder is kept while either view can still show something inside it.
    *
    * The one thing this does not do is blank a directory the user is standing in. Folder mode can
    * hide a blacklisted folder because you cannot navigate into a list you cannot see; tree mode can,
@@ -616,15 +667,19 @@ class FileSystemBrowserViewModel(
    */
   private fun blacklistItems(
     items: List<FileSystemItem>,
-    blacklist: Set<String>,
+    videoBlacklist: Set<String>,
+    audioBlacklist: Set<String>,
     currentPath: String,
   ): List<FileSystemItem> {
-    if (blacklist.isEmpty()) return items
-    if (blacklist.any { currentPath.equals(it, ignoreCase = true) }) return items
+    if (videoBlacklist.isEmpty() && audioBlacklist.isEmpty()) return items
+    if ((videoBlacklist + audioBlacklist).any { currentPath.equals(it, ignoreCase = true) }) return items
     return items.filter { item ->
-      blacklist.none { blocked ->
-        item.path.equals(blocked, ignoreCase = true) ||
-          item.path.startsWith(if (blocked.endsWith("/")) blocked else "$blocked/", ignoreCase = true)
+      val videoHidden = videoBlacklist.any { app.gyrolet.mpvrx.utils.storage.isMediaPathInFolder(item.path, it) }
+      val audioHidden = audioBlacklist.any { app.gyrolet.mpvrx.utils.storage.isMediaPathInFolder(item.path, it) }
+      when (item) {
+        is FileSystemItem.VideoFile -> if (item.video.isAudio) !audioHidden else !videoHidden
+        is FileSystemItem.Folder ->
+          !videoHidden || (browserPreferences.includeAudioBrowser.get() && !audioHidden)
       }
     }
   }
@@ -648,25 +703,32 @@ class FileSystemBrowserViewModel(
 
     videoFiles.forEach { videoFile ->
       val video = videoFile.video
-      val playbackIdentifiers =
-        linkedSetOf(
+      val playbackIdentifiers = if (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY) {
+        app.gyrolet.mpvrx.ui.browser.videolist.videoPlaybackIdentifiers(video)
+      } else linkedSetOf(
           PlaybackIdentity.forLocalPath(video.path),
           PlaybackIdentity.forUri(video.uri.toString()),
           PlaybackIdentity.forUri(video.path),
           PlaybackIdentity.forUri("file://${video.path}"),
         )
       val playbackState = playbackIdentifiers.firstNotNullOfOrNull { playbackStates[it] }
+      val scopedInfo = if (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY) {
+        app.gyrolet.mpvrx.ui.browser.videolist.buildVideoWithPlaybackInfo(
+          video, playbackState, currentTime, appearancePreferences.unplayedOldVideoDays.get(), watchedThreshold,
+        )
+      } else null
       val progressValue =
-        if (playbackState != null && video.duration > 0) {
+        if (scopedInfo != null) scopedInfo.progressPercentage ?: 0f
+        else if (playbackState != null && video.duration > 0) {
           val durationSeconds = video.duration / 1000.0
           val watched = durationSeconds - playbackState.timeRemaining.toDouble()
           (watched / durationSeconds).toFloat().coerceIn(0f, 1f)
         } else {
           0f
         }
-      val isWatched =
+      val isWatched = scopedInfo?.isWatched ?: (
         playbackState?.hasBeenWatched == true ||
-          (watchedThreshold > 0 && progressValue >= watchedThreshold / 100f)
+          (watchedThreshold > 0 && progressValue >= watchedThreshold / 100f))
       if (isWatched) watchedIds += video.id
 
       if (playbackState != null && progressValue in 0.01f..0.99f) {

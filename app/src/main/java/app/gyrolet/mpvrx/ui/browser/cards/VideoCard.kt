@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.flowOn
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -227,6 +228,7 @@ fun VideoCard(
   useFolderNameStyle: Boolean = false,
   allowThumbnailGeneration: Boolean = true,
   allowThumbnailLoading: Boolean = true,
+  deferThumbnailLoading: Boolean = false,
   uiConfig: VideoCardUiConfig? = null,
   onSwipeAction: ((Video, Boolean, VideoSwipeAction) -> Unit)? = null,
   /** Source badge shown ahead of the metadata chips, e.g. "Local". Null renders nothing. */
@@ -238,6 +240,7 @@ fun VideoCard(
   externalThumbnail: Bitmap? = null,
   playbackIdentity: String? = null,
   titleLeading: (@Composable () -> Unit)? = null,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
 ) {
   // Screens hoist this once and pass it down; collecting per card would register a dozen
   // preference observers for every visible item in a grid.
@@ -297,7 +300,6 @@ fun VideoCard(
       app.gyrolet.mpvrx.utils.storage.FileTypeUtils.stripExtension(video.displayName)
     }
 
-  val selectionInset = 2.dp
   val selectionContainerColor = animatedSelectionColor(isSelected)
   val showSelectionBadge = isSelected || selectionContainerColor.alpha > 0.001f
 
@@ -305,36 +307,45 @@ fun VideoCard(
   // Repository memory remains the source of truth for new requests.
   var retainedThumbnail by remember(video.path, video.dateModified, video.size) { mutableStateOf<Bitmap?>(null) }
 
-  val cardShape = AppShapeScale.large
+  val cardShape = rememberMediaSelectionShape(isSelected, isGridMode, selectionNeighbors)
+  val gridFooterHeight = with(LocalDensity.current) {
+    MaterialTheme.typography.titleMedium.lineHeight.toDp() * 2 +
+      MaterialTheme.typography.labelSmall.lineHeight.toDp() * 3 + 64.dp
+  }
 
   VideoSwipeSurface(
     identity = video.path,
     leftAction = resolvedUiConfig.swipeLeft,
     rightAction = resolvedUiConfig.swipeRight,
     isWatched = isWatched,
-    enabled = !isGridMode && !isSelected && video.path.startsWith('/'),
+    enabled = !isGridMode && !isSelected &&
+      (video.path.startsWith('/') ||
+        (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY &&
+          video.uri.scheme == "content" &&
+          android.provider.DocumentsContract.isDocumentUri(
+            androidx.compose.ui.platform.LocalContext.current, video.uri,
+          ))),
     onAction = onSwipeAction?.let { action -> { swipe -> action(video, isWatched, swipe) } },
     modifier =
       modifier
-        .then(
-          if (isGridMode) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(),
-        ).tvFocusHighlight(cardShape, focusedScale = 1.03f)
+        .fillMaxWidth()
+        .then(if (isGridMode) Modifier.mediaGridTileHeight(if (video.isAudio) 1f else 16f / 10f, gridFooterHeight) else Modifier)
+        .tvFocusHighlight(cardShape, focusedScale = 1.03f)
         .clip(cardShape)
-        .semantics { selected = isSelected }
+                .semantics { selected = isSelected }
         .tvContextMenu(onLongClick)
-        .combinedClickable(
+        .mediaCardClickable(
           onClick = onClick,
           onLongClick = onLongClick,
         ),
     shape = cardShape,
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
-    Box(modifier = Modifier.fillMaxWidth()) {
+    Box(modifier = if (isGridMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
       Box(
         modifier =
           Modifier
             .matchParentSize()
-            .padding(selectionInset)
             .clip(cardShape)
             .background(selectionContainerColor),
       )
@@ -410,11 +421,11 @@ fun VideoCard(
           }
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
-          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails, deferThumbnailLoading) {
             thumbnail?.let { retainedThumbnail = it }
             // A fallback frame from another size is displayed immediately; fetch the exact size
             // without clearing it. Memory hits require no disk read or decoding.
-            if (exactMemoryThumbnail == null && showThumbnails) {
+            if (!deferThumbnailLoading && exactMemoryThumbnail == null && showThumbnails) {
               val loaded =
                 withContext(Dispatchers.IO) {
                   if (allowThumbnailGeneration && allowThumbnailLoading) {
@@ -440,7 +451,7 @@ fun VideoCard(
                 .aspectRatio(aspect)
                 .clip(AppShapeScale.medium)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .combinedClickable(
+                .mediaCardClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,
                 ),
@@ -715,7 +726,7 @@ fun VideoCard(
           modifier =
             Modifier
               .fillMaxWidth()
-              .padding(horizontal = 8.dp, vertical = 6.dp),
+              .padding(horizontal = 8.dp, vertical = 2.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           val thumbnailRepository = koinInject<ThumbnailRepository>()
@@ -778,11 +789,11 @@ fun VideoCard(
           }
 
           // Optional immediate generation (used on screens that don't run folder-wide sequential generation).
-          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails) {
+          LaunchedEffect(thumbnailRequestKey, allowThumbnailGeneration, allowThumbnailLoading, showThumbnails, deferThumbnailLoading) {
             thumbnail?.let { retainedThumbnail = it }
             // A fallback frame from another size is displayed immediately; fetch the exact size
             // without clearing it. Memory hits require no disk read or decoding.
-            if (exactMemoryThumbnail == null && showThumbnails) {
+            if (!deferThumbnailLoading && exactMemoryThumbnail == null && showThumbnails) {
               val loaded =
                 withContext(Dispatchers.IO) {
                   if (allowThumbnailGeneration && allowThumbnailLoading) {
@@ -807,7 +818,7 @@ fun VideoCard(
                 .aspectRatio(aspect)
                 .clip(AppShapeScale.medium)
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                .combinedClickable(
+                .mediaCardClickable(
                   onClick = onThumbClick,
                   onLongClick = onLongClick,
                 ),

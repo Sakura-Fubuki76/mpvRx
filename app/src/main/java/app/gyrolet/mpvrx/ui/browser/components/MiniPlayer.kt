@@ -10,6 +10,7 @@
 package app.gyrolet.mpvrx.ui.browser.components
 
 import android.app.Activity
+import android.app.ActivityOptions
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -18,22 +19,24 @@ import android.net.Uri
 import android.text.format.DateUtils
 import android.view.SurfaceHolder
 import android.view.SurfaceView
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +47,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,7 +58,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
@@ -66,6 +68,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,14 +77,22 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.gyrolet.mpvrx.R
@@ -95,32 +106,39 @@ import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.browser.NavigationBarState
 import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.AnimatedIcon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.DeclaredPlaybackMediaKind
 import app.gyrolet.mpvrx.ui.player.MediaPlaybackService
 import app.gyrolet.mpvrx.ui.player.PlaybackPhase
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
-import app.gyrolet.mpvrx.ui.player.PlayerArtworkDestination
-import app.gyrolet.mpvrx.ui.player.PlayerArtworkTransitions
+import app.gyrolet.mpvrx.ui.player.PlayerSheetDestination
+import app.gyrolet.mpvrx.ui.player.PlayerSheetTransitions
 import app.gyrolet.mpvrx.ui.player.TrackNode
 import app.gyrolet.mpvrx.ui.player.declaredMediaKind
-import app.gyrolet.mpvrx.ui.player.playerArtworkAnchor
+import app.gyrolet.mpvrx.ui.player.playerSheetAnchor
+import app.gyrolet.mpvrx.ui.player.swipeUpToFullPlayer
 import app.gyrolet.mpvrx.ui.player.toObject
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 @Composable
 fun MiniPlayer(modifier: Modifier = Modifier) {
-  val isServiceRunning = MediaPlaybackService.isForegroundActive()
+  val isServiceRunning by MediaPlaybackService.foregroundActive.collectAsStateWithLifecycle()
   val context = LocalContext.current
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val playerPreferences: PlayerPreferences = koinInject()
@@ -149,13 +167,50 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
 
   val isMiniPlayerAllowed = isAudioOnlyItem || enableVideoMiniPlayer
 
-  val isMediaActive = isServiceRunning && currentItem != null &&
+  // A full-player collapse lands here before the service flips to foreground; showing the mini
+  // player only after that would make it pop out and slide back in under the finished morph.
+  val collapseHoldId = PlayerSheetTransitions.collapsedMediaId?.takeIf { it == currentItem?.stableId }
+  val expansionHoldId = PlayerSheetTransitions.expandingMediaId?.takeIf { it == currentItem?.stableId }
+  val sheetMotion = PlayerSheetTransitions.motion?.takeIf { it.endpoints.full.mediaId == currentItem?.stableId }
+  LaunchedEffect(collapseHoldId) {
+    val heldId = collapseHoldId ?: return@LaunchedEffect
+    withTimeoutOrNull(2_000L) {
+      MediaPlaybackService.foregroundActive.first { it }
+    }
+    PlayerSheetTransitions.releaseCollapsedHold(heldId)
+  }
+
+  val hasActiveMedia = (isServiceRunning || collapseHoldId != null || expansionHoldId != null) && currentItem != null &&
     !isSettingsScreen &&
     isMiniPlayerAllowed &&
     sessionState.phase != PlaybackPhase.IDLE &&
     sessionState.phase != PlaybackPhase.STOPPING &&
     sessionState.phase != PlaybackPhase.UNINITIALIZED &&
     sessionState.phase != PlaybackPhase.ERROR
+
+  // A tossed-away card is already off-screen when it reports in, so it leaves without an exit
+  // animation and the session ends only then, never re-laying out the card mid-flight.
+  var dismissedMediaId by remember { mutableStateOf<String?>(null) }
+  var exitAfterToss by remember { mutableStateOf(false) }
+  LaunchedEffect(dismissedMediaId, hasActiveMedia) {
+    val dismissed = dismissedMediaId ?: return@LaunchedEffect
+    // Playback that refused to stop must never be left without its controls.
+    if (hasActiveMedia) delay(DISMISS_RESTORE_TIMEOUT_MS)
+    if (dismissedMediaId == dismissed) dismissedMediaId = null
+  }
+  val isMediaActive = hasActiveMedia && dismissedMediaId != currentItem?.stableId
+  LaunchedEffect(isMediaActive) { if (isMediaActive) exitAfterToss = false }
+  val dismissPlayer: () -> Unit = remember(context) {
+    {
+      exitAfterToss = true
+      dismissedMediaId = PlaybackSession.state.value.currentItem?.stableId
+      context.startService(
+        Intent(context, MediaPlaybackService::class.java).setAction(
+          MediaPlaybackService.ACTION_NOTIFICATION_STOP,
+        ),
+      )
+    }
+  }
 
   // Keep the mini player alive while browser selection mode is active. Its outer
   // placement is lifted above the selection actions instead of hiding/overlapping.
@@ -166,7 +221,9 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
   val reduceMotion = AppMotion.shouldReduceMotion()
   AnimatedVisibility(
     visible = isMediaActive,
-    enter = if (reduceMotion) {
+    enter = if (collapseHoldId != null || sheetMotion != null) {
+      EnterTransition.None
+    } else if (reduceMotion) {
       fadeIn(animationSpec = tween(120))
     } else {
       slideInVertically(
@@ -174,13 +231,14 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
         initialOffsetY = { it / 2 },
       ) + fadeIn(animationSpec = tween(240))
     },
-    exit = if (reduceMotion) {
-      fadeOut(animationSpec = tween(120))
-    } else {
-      slideOutVertically(
-        animationSpec = tween(260, easing = FastOutSlowInEasing),
-        targetOffsetY = { it / 2 },
-      ) + fadeOut(animationSpec = tween(200))
+    exit = when {
+      expansionHoldId != null || sheetMotion != null || exitAfterToss -> ExitTransition.None
+      reduceMotion -> fadeOut(animationSpec = tween(120))
+      else ->
+        slideOutVertically(
+          animationSpec = tween(260, easing = FastOutLinearInEasing),
+          targetOffsetY = { it / 2 },
+        ) + fadeOut(animationSpec = tween(200, easing = FastOutLinearInEasing))
     },
     modifier = modifier,
   ) {
@@ -189,10 +247,24 @@ fun MiniPlayer(modifier: Modifier = Modifier) {
       enableVideoMiniPlayer = enableVideoMiniPlayer,
       isAudioOnlyItem = isAudioOnlyItem,
       hasRealVideo = hasRealVideo,
-      detachedPlaybackActive = isServiceRunning,
+      detachedPlaybackActive = isServiceRunning && expansionHoldId == null,
+      onDismiss = dismissPlayer,
     )
   }
 }
+
+private const val DISMISS_RESTORE_TIMEOUT_MS = 3_000L
+
+/** Tilt per card width of travel; the card pivots at its bottom like a held card being thrown. */
+private const val DISMISS_TILT_DEGREES = 8f
+private const val DISMISS_MAX_TILT_DEGREES = 14f
+
+/** Slightly underdamped, so a short drag wobbles home instead of sliding back flat. */
+private val DismissSettleSpring = spring(
+  dampingRatio = 0.6f,
+  stiffness = 420f,
+  visibilityThreshold = 0.5f,
+)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -202,6 +274,7 @@ private fun MiniPlayerContent(
   isAudioOnlyItem: Boolean,
   hasRealVideo: Boolean,
   detachedPlaybackActive: Boolean,
+  onDismiss: () -> Unit,
 ) {
   val sessionState by PlaybackSession.state.collectAsStateWithLifecycle()
   val queueState by PlaybackSession.queue.collectAsStateWithLifecycle()
@@ -232,16 +305,10 @@ private fun MiniPlayerContent(
       ?: currentItem?.title?.takeIf { it.isNotBlank() }
       ?: "Media Track"
 
-  val isVideoMode = detachedPlaybackActive && hasRealVideo && !isAudioOnlyItem && enableVideoMiniPlayer
-
-  DisposableEffect(isVideoMode) {
-    if (isVideoMode) {
-      PlaybackSession.setPropertyBoolean("sub-visibility", false)
-    }
-    onDispose {
-      PlaybackSession.setPropertyBoolean("sub-visibility", true)
-    }
-  }
+  // Service ownership changes before the Activity animation ends. Keep the same content/height
+  // through that handoff; changing to the audio row destroys the Surface and visibly resizes it.
+  val isVideoMode = !isAudioOnlyItem && enableVideoMiniPlayer &&
+    (hasRealVideo || currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO)
 
   val coverArtPath =
     currentItem?.originalUri?.takeIf { it.isNotBlank() }
@@ -256,97 +323,196 @@ private fun MiniPlayerContent(
   val coverArt = artwork?.bitmap
 
   val coroutineScope = rememberCoroutineScope()
-  var offsetX by remember { mutableFloatStateOf(0f) }
-  // Keep one artwork handoff per tap burst, without scheduling a recomposition.
-  val lastExpandAtMs = remember { longArrayOf(0L) }
-  LaunchedEffect(currentItem?.stableId) { offsetX = 0f }
+  val videoSurface = remember { arrayOfNulls<MiniPlayerSurfaceView>(1) }
+  var dismissOffset by remember { mutableFloatStateOf(0f) }
+  val dismissMotion = remember { arrayOfNulls<Job>(1) }
+  // Once thrown, the card ignores further touches and is never pulled back by state changes.
+  var tossed by remember { mutableStateOf(false) }
+  // Resting left, right and window width, so the throw always clears the screen edge.
+  val restBounds = remember { FloatArray(3) }
+  val itemId = currentItem?.stableId
+  LaunchedEffect(itemId) {
+    if (itemId == null || tossed) return@LaunchedEffect
+    dismissMotion[0]?.cancel()
+    dismissOffset = 0f
+  }
   val actionHaptics = app.gyrolet.mpvrx.ui.utils.rememberAppHaptics()
   val density = LocalDensity.current
   val dismissThresholdPx = with(density) { 100.dp.toPx() }
-  val expandThresholdPx = with(density) { 48.dp.toPx() }
-
-  val launchPlayer = remember(context, isAudioOnlyItem) {
-    launch@{
-      val now = android.os.SystemClock.elapsedRealtime()
-      if (now - lastExpandAtMs[0] < 650L) return@launch
-      lastExpandAtMs[0] = now
-      val animateArtwork = isAudioOnlyItem && PlayerArtworkTransitions.begin(
-        PlayerArtworkDestination.FULL,
-        PlaybackSession.state.value.currentItem?.stableId,
-      )
-      val intent = Intent(context, PlayerActivity::class.java).apply {
-        action = MediaPlaybackService.ACTION_OPEN_PLAYER
-        putExtra("is_audio", isAudioOnlyItem)
-        putExtra("internal_launch", true)
-        putExtra("launch_source", "mini_player")
-        flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-      }
-      context.startActivity(intent)
-      if (context is Activity && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-        val enterAnimation = if (animateArtwork) 0 else R.anim.slide_in_up
-        @Suppress("DEPRECATION")
-        context.overridePendingTransition(enterAnimation, 0)
-      }
-    }
-  }
-
-  val dismissPlayer = remember(context) {
-    {
-      context.startService(
-        Intent(context, MediaPlaybackService::class.java).setAction(
-          MediaPlaybackService.ACTION_NOTIFICATION_STOP,
-        ),
-      )
-    }
-  }
-  val miniPlayerShape = AppShapeScale.largeIncreased
+  val dismissFlingVelocityPx = with(density) { 700.dp.toPx() }
+  val tossClearancePx = with(density) { 32.dp.toPx() }
+  val buttonTossVelocityPx = with(density) { 1_600.dp.toPx() }
+  val anticipationPx = with(density) { 14.dp.toPx() }
+  val towardCloseButton = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
   val reduceMotion = AppMotion.playerReducedMotion()
+  val currentOnDismiss by rememberUpdatedState(onDismiss)
+
+  val launchPlayer = remember(context, isAudioOnlyItem, reduceMotion) {
+    launch@{
+      val mediaId = PlaybackSession.state.value.currentItem?.stableId
+      if (!PlayerSheetTransitions.holdExpansion(mediaId)) return@launch false
+      videoSurface[0]?.setPlaybackActive(false)
+
+      fun openPlayer(sheetArrived: Boolean): Boolean {
+        val intent = Intent(context, PlayerActivity::class.java).apply {
+          action = MediaPlaybackService.ACTION_OPEN_PLAYER
+          putExtra("is_audio", isAudioOnlyItem)
+          putExtra("internal_launch", true)
+          putExtra("launch_source", "mini_player")
+          flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val enterAnimation = if (sheetArrived || reduceMotion) 0 else R.anim.slide_in_up
+        try {
+          // Supply the animation at launch; setting it only in the destination's onCreate can
+          // leave a default window animation running underneath the Compose sheet transition.
+          context.startActivity(intent, ActivityOptions.makeCustomAnimation(context, enterAnimation, 0).toBundle())
+        } catch (error: Exception) {
+          PlayerSheetTransitions.releaseExpansionHold()
+          android.util.Log.e("MiniPlayer", "Unable to expand player", error)
+          return false
+        }
+        if (context is Activity && android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+          @Suppress("DEPRECATION")
+          context.overridePendingTransition(enterAnimation, 0)
+        }
+        return true
+      }
+
+      // The browser is idle and already on screen, so it runs the whole expansion. PlayerActivity
+      // is created only once the sheet rests full screen, so its startup never stalls the motion.
+      val animateSheet = isAudioOnlyItem && PlayerSheetTransitions.begin(PlayerSheetDestination.FULL, mediaId) { arrived ->
+        val stillVisible = (context as? androidx.lifecycle.LifecycleOwner)
+          ?.lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) != false
+        when {
+          arrived -> if (!openPlayer(sheetArrived = true)) PlayerSheetTransitions.abandonExpansion()
+          // The morph could not run; still honor the tap unless the user already left the app.
+          stillVisible -> openPlayer(sheetArrived = false)
+          else -> PlayerSheetTransitions.releaseExpansionHold()
+        }
+      }
+      animateSheet || openPlayer(sheetArrived = false)
+    }
+  }
+
+  val miniPlayerShape = AppShapeScale.largeIncreased
+
+  /**
+   * Throws the card off the screen edge in [direction], keeping the release velocity and tilt.
+   * Playback is silenced at once; the session itself ends once the card has left the screen.
+   */
+  fun tossAway(direction: Float, velocity: Float, anticipate: Boolean) {
+    if (tossed) return
+    tossed = true
+    actionHaptics.confirm()
+    PlaybackSession.setPropertyBoolean("pause", true)
+    dismissMotion[0]?.cancel()
+    dismissMotion[0] = coroutineScope.launch {
+      try {
+        if (!reduceMotion) {
+          if (anticipate) {
+            // A small wind-up away from the throw makes the button toss read as deliberate.
+            animate(dismissOffset, -direction * anticipationPx, animationSpec = tween(110, easing = FastOutSlowInEasing)) { value, _ ->
+              dismissOffset = value
+            }
+          }
+          val (left, right, windowWidth) = restBounds
+          val clearance = (right - left) * 0.2f + tossClearancePx
+          val target = if (direction > 0f) windowWidth - left + clearance else -(right + clearance)
+          val launchVelocity = if (anticipate) direction * buttonTossVelocityPx else velocity
+          // Ends once well past the edge instead of creeping through the spring's tail.
+          val toss = spring(dampingRatio = 1f, stiffness = 380f, visibilityThreshold = clearance * 0.5f)
+          animate(dismissOffset, target, launchVelocity, toss) { value, _ -> dismissOffset = value }
+        }
+      } finally {
+        currentOnDismiss()
+      }
+    }
+  }
+
+  /** Throws the card past the edge it was dragged toward, or wobbles it back home. */
+  fun settleDismissOffset(velocity: Float) {
+    if (tossed) return
+    val offset = dismissOffset
+    val towardEdge = offset != 0f && sign(velocity) == sign(offset)
+    val flung = towardEdge && abs(velocity) > dismissFlingVelocityPx
+    val pulledBack = !towardEdge && abs(velocity) > dismissFlingVelocityPx
+    if (offset != 0f && (flung || (abs(offset) > dismissThresholdPx && !pulledBack))) {
+      tossAway(sign(offset), velocity, anticipate = false)
+      return
+    }
+    dismissMotion[0]?.cancel()
+    dismissMotion[0] = coroutineScope.launch {
+      if (reduceMotion) {
+        dismissOffset = 0f
+      } else {
+        animate(offset, 0f, velocity, DismissSettleSpring) { value, _ -> dismissOffset = value }
+      }
+    }
+  }
 
   LiquidGlassSurface(
     modifier = Modifier
-      .offset { IntOffset(offsetX.roundToInt(), 0) }
+      .onGloballyPositioned { coordinates ->
+        // Measured before the toss offset, so these stay the card's resting bounds.
+        val bounds = coordinates.boundsInRoot()
+        restBounds[0] = bounds.left
+        restBounds[1] = bounds.right
+        restBounds[2] = coordinates.findRootCoordinates().size.width.toFloat()
+      }
+      .absoluteOffset { IntOffset(dismissOffset.roundToInt(), 0) }
+      .graphicsLayer {
+        val width = size.width.takeIf { it > 0f } ?: 1f
+        rotationZ = (dismissOffset / width * DISMISS_TILT_DEGREES)
+          .coerceIn(-DISMISS_MAX_TILT_DEGREES, DISMISS_MAX_TILT_DEGREES)
+        transformOrigin = TransformOrigin(0.5f, 1f)
+      }
+      .then(
+        if (isAudioOnlyItem) {
+          Modifier.playerSheetAnchor(
+            PlayerSheetDestination.MINI,
+            currentItem?.stableId,
+            miniPlayerShape,
+            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+          )
+        } else {
+          Modifier
+        },
+      )
       .clip(miniPlayerShape)
-      .pointerInput(launchPlayer, expandThresholdPx) {
-        var verticalDrag = 0f
-        detectVerticalDragGestures(
-          onDragStart = { verticalDrag = 0f },
-          onDragCancel = { verticalDrag = 0f },
-          onDragEnd = {
-            if (verticalDrag < -expandThresholdPx) launchPlayer()
-            verticalDrag = 0f
-          },
-          onVerticalDrag = { change, amount ->
-            change.consume()
-            verticalDrag = (verticalDrag + amount).coerceAtMost(0f)
-          },
-        )
-      }
-      .pointerInput(Unit) {
+      .swipeUpToFullPlayer(
+        mediaId = currentItem?.stableId,
+        animateSheet = isAudioOnlyItem,
+        onExpand = { !tossed && launchPlayer() },
+      )
+      .pointerInput(dismissThresholdPx, dismissFlingVelocityPx, reduceMotion) {
+        val velocityTracker = VelocityTracker()
+        var armed = false
         detectHorizontalDragGestures(
-          onDragEnd = {
-            if (abs(offsetX) > dismissThresholdPx) {
-              dismissPlayer()
-            } else {
-              coroutineScope.launch {
-                androidx.compose.animation.core.Animatable(offsetX).animateTo(0f) {
-                  offsetX = value
-                }
-              }
+          onDragStart = {
+            if (!tossed) {
+              dismissMotion[0]?.cancel()
+              velocityTracker.resetTracking()
+              armed = abs(dismissOffset) > dismissThresholdPx
             }
           },
-          onDragCancel = {
-            coroutineScope.launch {
-              androidx.compose.animation.core.Animatable(offsetX).animateTo(0f) {
-                offsetX = value
+          onDragEnd = { settleDismissOffset(velocityTracker.calculateVelocity().x) },
+          onDragCancel = { settleDismissOffset(0f) },
+          onHorizontalDrag = { change, dragAmount ->
+            change.consume()
+            if (!tossed) {
+              dismissOffset += dragAmount
+              // The card moves with the finger, so track its offset rather than local positions.
+              velocityTracker.addPosition(change.uptimeMillis, Offset(dismissOffset, 0f))
+              val crossed = abs(dismissOffset) > dismissThresholdPx
+              if (crossed != armed) {
+                armed = crossed
+                if (crossed) actionHaptics.tick()
               }
             }
-          },
-          onHorizontalDrag = { _, dragAmount ->
-            offsetX += dragAmount
           },
         )
       }
-      .clickable { launchPlayer() },
+      .clickable { if (!tossed) launchPlayer() },
     shape = miniPlayerShape,
     style = LiquidGlassStyle.MiniPlayer,
     glassColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.30f),
@@ -384,40 +550,12 @@ private fun MiniPlayerContent(
         ) {
           AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { viewContext ->
-              SurfaceView(viewContext).apply {
-                // Render the video above the Compose window layers so the mini
-                // player's Surface/clip does not paint over the SurfaceView.
-                setZOrderMediaOverlay(true)
-                holder.addCallback(object : SurfaceHolder.Callback {
-                  override fun surfaceCreated(holder: SurfaceHolder) {
-                    val attached =
-                      PlaybackSession.bindSurface(
-                        surface = holder.surface,
-                        owner = this@apply,
-                        ownerIsActive = { MediaPlaybackService.isForegroundActive() },
-                      )
-                    if (attached) PlaybackSession.setPropertyBoolean("sub-visibility", false)
-                  }
-
-                  override fun surfaceChanged(
-                    holder: SurfaceHolder,
-                    format: Int,
-                    width: Int,
-                    height: Int,
-                  ) {
-                    if (holder.surface.isValid) {
-                      PlaybackSession.resizeSurface(width, height, owner = this@apply)
-                    }
-                  }
-
-                  override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    if (PlaybackSession.unbindSurface(this@apply)) {
-                      PlaybackSession.setPropertyBoolean("sub-visibility", true)
-                    }
-                  }
-                })
-              }
+            factory = { MiniPlayerSurfaceView(it).also { surface -> videoSurface[0] = surface } },
+            onReset = null,
+            update = { it.setPlaybackActive(detachedPlaybackActive) },
+            onRelease = {
+              it.releaseRenderer()
+              if (videoSurface[0] === it) videoSurface[0] = null
             },
           )
         }
@@ -463,24 +601,17 @@ private fun MiniPlayerContent(
             },
             modifier = Modifier.size(48.dp),
           ) {
-            AnimatedContent(
-              targetState = isPlaying,
-              transitionSpec = {
-                if (reduceMotion) fadeIn(snap()) togetherWith fadeOut(snap()) else fadeIn() togetherWith fadeOut()
-              },
-              label = "mini_video_play_pause",
-            ) { playing ->
-              Icon(
-                imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-                contentDescription = stringResource(if (playing) R.string.audiobook_pause else R.string.ui_play),
-                tint = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(26.dp),
-              )
-            }
+            AnimatedIcon(
+              imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
+              contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
+              tint = MaterialTheme.colorScheme.onSurface,
+              modifier = Modifier.size(26.dp),
+              reduceMotion = reduceMotion,
+            )
           }
 
           IconButton(
-            onClick = { actionHaptics.confirm(); dismissPlayer() },
+            onClick = { tossAway(towardCloseButton, velocity = 0f, anticipate = true) },
             modifier = Modifier.size(48.dp),
           ) {
             Icon(
@@ -526,7 +657,6 @@ private fun MiniPlayerContent(
         Box(
           modifier = Modifier
             .size(48.dp)
-            .playerArtworkAnchor(PlayerArtworkDestination.MINI, currentItem?.stableId, coverArt, 10.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
           contentAlignment = Alignment.Center,
@@ -606,20 +736,13 @@ private fun MiniPlayerContent(
           },
           modifier = Modifier.size(48.dp),
         ) {
-          AnimatedContent(
-            targetState = isPlaying,
-            transitionSpec = {
-              if (reduceMotion) fadeIn(snap()) togetherWith fadeOut(snap()) else fadeIn() togetherWith fadeOut()
-            },
-            label = "mini_play_pause",
-          ) { playing ->
-            Icon(
-              imageVector = if (playing) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
-              contentDescription = stringResource(if (playing) R.string.audiobook_pause else R.string.ui_play),
-              tint = MaterialTheme.colorScheme.onSurface,
-              modifier = Modifier.size(26.dp),
-            )
-          }
+          AnimatedIcon(
+            imageVector = if (isPlaying) Icons.RoundedFilled.Pause else Icons.RoundedFilled.PlayArrow,
+            contentDescription = stringResource(if (isPlaying) R.string.audiobook_pause else R.string.ui_play),
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(26.dp),
+            reduceMotion = reduceMotion,
+          )
         }
 
         // Next Track Action Button
@@ -644,7 +767,7 @@ private fun MiniPlayerContent(
 
         // Close Action Button
         IconButton(
-          onClick = { actionHaptics.confirm(); dismissPlayer() },
+          onClick = { tossAway(towardCloseButton, velocity = 0f, anticipate = true) },
           modifier = Modifier.size(48.dp),
         ) {
           Icon(
@@ -656,6 +779,82 @@ private fun MiniPlayerContent(
         }
       }
     }
+  }
+}
+
+/** A stable surface across the mini player's enter/exit animation and service handoff. */
+private class MiniPlayerSurfaceView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
+  private var playbackActive = false
+  private var previousSubtitleVisibility: Boolean? = null
+
+  init {
+    setZOrderMediaOverlay(true)
+    holder.addCallback(this)
+  }
+
+  fun setPlaybackActive(active: Boolean) {
+    playbackActive = active
+    if (active) {
+      attachIfReady()
+      if (PlaybackSession.isRendererReadyFor(this)) hideSubtitles()
+    } else {
+      restoreSubtitleVisibility()
+    }
+    // Keep the outgoing Surface until the fullscreen owner replaces it or Android destroys it.
+    // An ownership flag alone must not blank the source while its window is still visible.
+  }
+
+  private fun attachIfReady() {
+    if (!playbackActive || !isAttachedToWindow || !holder.surface.isValid ||
+      !MediaPlaybackService.isForegroundActive() || PlaybackSession.isSurfaceAttachedTo(this)
+    ) return
+    PlaybackSession.bindSurface(
+      surface = holder.surface,
+      width = width,
+      height = height,
+      owner = this,
+      ownerIsActive = { playbackActive && isAttachedToWindow && MediaPlaybackService.isForegroundActive() },
+      onRendererReady = {
+        if (playbackActive && MediaPlaybackService.isForegroundActive() && PlaybackSession.isRendererReadyFor(this)) {
+          hideSubtitles()
+          if (PlaybackSession.getPropertyBoolean("pause") == true) {
+            PlaybackSession.command("seek", "0", "relative+exact")
+          }
+        }
+      },
+    )
+  }
+
+  private fun hideSubtitles() {
+    if (previousSubtitleVisibility != null) return
+    previousSubtitleVisibility = PlaybackSession.getPropertyBoolean("sub-visibility") ?: true
+    PlaybackSession.setPropertyBoolean("sub-visibility", false)
+  }
+
+  private fun restoreSubtitleVisibility() {
+    val previous = previousSubtitleVisibility ?: return
+    previousSubtitleVisibility = null
+    if (PlaybackSession.isSurfaceAttachedTo(this)) {
+      PlaybackSession.setPropertyBoolean("sub-visibility", previous)
+    }
+  }
+
+  fun releaseRenderer() {
+    playbackActive = false
+    restoreSubtitleVisibility()
+    PlaybackSession.unbindSurface(this)
+  }
+
+  override fun surfaceCreated(holder: SurfaceHolder) = attachIfReady()
+
+  override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+    if (!PlaybackSession.resizeSurface(width, height, this)) attachIfReady()
+  }
+
+  override fun surfaceDestroyed(holder: SurfaceHolder) {
+    // Retain the active flag: Android can recreate this Surface without a Compose update.
+    restoreSubtitleVisibility()
+    PlaybackSession.unbindSurface(this)
   }
 }
 

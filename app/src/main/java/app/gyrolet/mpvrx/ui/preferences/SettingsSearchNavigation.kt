@@ -76,6 +76,7 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
     LiquidGlassPreferencesScreen to
       listOf(
         SettingsSearchListAnchor(titleRes = R.string.pref_appearance_liquid_glass_title, itemIndex = 1),
+        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_in_hdr_title, itemIndex = 1),
         SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_frost, itemIndex = 3),
         SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_opacity, itemIndex = 5),
         SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_refraction_height, itemIndex = 5),
@@ -90,10 +91,6 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
         SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_strength, itemIndex = 9),
         SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_width, itemIndex = 9),
         SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_highlight_blur, itemIndex = 9),
-        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_shadow_strength, itemIndex = 11),
-        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_shadow_radius, itemIndex = 11),
-        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_inner_shadow_strength, itemIndex = 11),
-        SettingsSearchListAnchor(titleRes = R.string.pref_liquid_glass_inner_shadow_radius, itemIndex = 11),
       ),
     PlayerControlsPreferencesScreen to
       listOf(
@@ -247,9 +244,12 @@ private val settingsSearchListAnchors: Map<Screen, List<SettingsSearchListAnchor
       ),
     NetworkConfigurationPreferencesScreen to
       listOf(
+        SettingsSearchListAnchor(titleRes = R.string.ui_yt_dlp_manager, itemIndex = 0),
+        SettingsSearchListAnchor(titleRes = R.string.ui_release_channel, itemIndex = 0),
+        SettingsSearchListAnchor(titleRes = R.string.ytdlp_subtitles_language, itemIndex = 0),
+        SettingsSearchListAnchor(titleRes = R.string.ytdlp_playlist_behavior, itemIndex = 0),
         SettingsSearchListAnchor(titleRes = R.string.pref_section_p2p_streaming, itemIndex = 0),
-        SettingsSearchListAnchor(titleRes = R.string.pref_enable_p2p_streaming_title, itemIndex = 1),
-        SettingsSearchListAnchor(titleRes = R.string.ui_yt_dlp_manager, itemIndex = 3),
+        SettingsSearchListAnchor(titleRes = R.string.pref_enable_p2p_streaming_title, itemIndex = 0),
       ),
   )
 

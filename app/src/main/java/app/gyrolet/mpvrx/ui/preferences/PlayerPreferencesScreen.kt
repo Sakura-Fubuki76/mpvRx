@@ -21,13 +21,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.AlertDialog
+import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -64,7 +64,6 @@ import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import me.zhanghai.compose.preference.ListPreference
 import me.zhanghai.compose.preference.Preference
-import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import app.gyrolet.mpvrx.ui.preferences.components.AppSliderPreference as SliderPreference
 import me.zhanghai.compose.preference.TextFieldPreference
 import org.koin.compose.koinInject
@@ -99,7 +98,7 @@ object PlayerPreferencesScreen : Screen {
         )
       },
     ) { padding ->
-      ProvidePreferenceLocals {
+      ProvideExpressivePreferenceLocals {
         val (settingsListState, settingsHighlight) =
           rememberSettingsSearchList(PlayerPreferencesScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
@@ -112,7 +111,7 @@ object PlayerPreferencesScreen : Screen {
         ) {
           // ── General ───────────────────────────────────────────────────────
           item {
-            PreferenceSectionHeader(
+            PreferenceSectionHeader(position = PreferenceSectionPosition.First, 
               title = stringResource(R.string.pref_section_general),
               modifier = Modifier.settingsSearchTarget(R.string.pref_player),
             )
@@ -120,6 +119,7 @@ object PlayerPreferencesScreen : Screen {
           item {
             PreferenceCard {
               val orientation by preferences.orientation.collectAsState()
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_orientation),
                 value = orientation,
@@ -129,10 +129,12 @@ object PlayerPreferencesScreen : Screen {
                 title = { Text(stringResource(R.string.pref_player_orientation)) },
                 summary = { Text(stringResource(orientation.titleRes), color = MaterialTheme.colorScheme.outline) },
               )
+              }
 
               PreferenceDivider()
 
               val resumePlaybackMode by preferences.resumePlaybackMode.collectAsState()
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_resume_playback_title),
                 value = resumePlaybackMode,
@@ -147,10 +149,12 @@ object PlayerPreferencesScreen : Screen {
                   )
                 },
               )
+              }
 
               if (resumePlaybackMode == ResumePlaybackMode.MinimumDuration) {
                 PreferenceDivider()
                 val minimumDuration by preferences.minimumResumeDurationSeconds.collectAsState()
+                ExpressivePreferenceItem {
                 SliderPreference(
                   modifier = Modifier.settingsSearchTarget(R.string.pref_player_resume_min_duration),
                   value = minimumDuration.coerceIn(0, 3600).toFloat(),
@@ -167,6 +171,7 @@ object PlayerPreferencesScreen : Screen {
                   onSliderValueChange = { preferences.minimumResumeDurationSeconds.set(it.roundToInt().coerceIn(0, 3600)) },
                   sliderValue = minimumDuration.coerceIn(0, 3600).toFloat(),
                 )
+                }
               }
 
 PreferenceDivider()
@@ -232,6 +237,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
 
               PreferenceDivider()
 
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_background_playback_behavior),
                 value = backgroundPlaybackBehavior,
@@ -241,6 +247,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                 title = { Text(stringResource(R.string.pref_background_playback_behavior)) },
                 summary = { Text(stringResource(backgroundPlaybackBehavior.summaryRes), color = MaterialTheme.colorScheme.outline) },
               )
+              }
 
               PreferenceDivider()
 
@@ -271,6 +278,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
               val selectedNotificationStyle =
                 notificationStyle.takeIf { it.isSupportedOn(Build.VERSION.SDK_INT) }
                   ?: NotificationStyle.Media
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_advanced_notification_style),
                 value = selectedNotificationStyle,
@@ -285,6 +293,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                   )
                 },
               )
+              }
 
               PreferenceDivider()
 
@@ -512,7 +521,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
           }
 
           // ── Seeking ───────────────────────────────────────────────────────
-          item { PreferenceSectionHeader(title = stringResource(R.string.pref_player_seeking_title)) }
+          item { PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_player_seeking_title)) }
           item {
             PreferenceCard {
               val showDoubleTapOvals by preferences.showDoubleTapOvals.collectAsState()
@@ -579,6 +588,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
               PreferenceDivider()
 
               val customSkipDuration by preferences.customSkipDuration.collectAsState()
+              ExpressivePreferenceItem {
               SliderPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_player_custom_skip_duration_title),
                 value = customSkipDuration.toFloat(),
@@ -594,6 +604,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                 onSliderValueChange = { preferences.customSkipDuration.set(it.roundToInt()) },
                 sliderValue = customSkipDuration.toFloat(),
               )
+              }
 
               PreferenceDivider()
 
@@ -615,6 +626,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                 PreferenceDivider()
 
                 val introSegmentProvider by preferences.introSegmentProvider.collectAsState()
+                ExpressivePreferenceItem {
                 ListPreference(
                   modifier = Modifier.settingsSearchTarget(R.string.pref_marker_provider_title),
                   value = introSegmentProvider,
@@ -629,6 +641,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                     )
                   },
                 )
+                }
               }
 
               PreferenceDivider()
@@ -667,6 +680,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                   PreferenceDivider()
 
                   val customIntroKeywords by preferences.customIntroKeywords.collectAsState()
+                  ExpressivePreferenceItem {
                   TextFieldPreference(
                     value = customIntroKeywords,
                     onValueChange = preferences.customIntroKeywords::set,
@@ -696,6 +710,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                       }
                     },
                   )
+                  }
                 }
 
                 PreferenceDivider()
@@ -717,6 +732,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                   PreferenceDivider()
 
                   val customOutroKeywords by preferences.customOutroKeywords.collectAsState()
+                  ExpressivePreferenceItem {
                   TextFieldPreference(
                     value = customOutroKeywords,
                     onValueChange = preferences.customOutroKeywords::set,
@@ -746,6 +762,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                       }
                     },
                   )
+                  }
                 }
               }
 
@@ -784,7 +801,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
           }
 
           // ── Display & Controls ────────────────────────────────────────────
-          item { PreferenceSectionHeader(title = stringResource(R.string.pref_section_display_controls)) }
+          item { PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_section_display_controls)) }
           item {
             PreferenceCard {
               val showControlsDrawer by preferences.showControlsDrawer.collectAsState()
@@ -886,10 +903,11 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
           }
 
           // ── Screenshots ─────────────────────────────────────────────────
-          item { PreferenceSectionHeader(title = stringResource(R.string.pref_screenshots_section)) }
+          item { PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_screenshots_section)) }
           item {
             PreferenceCard {
               val screenshotFormat by preferences.screenshotFormat.collectAsState()
+              ExpressivePreferenceItem {
               ListPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_image_format),
                 value = screenshotFormat,
@@ -909,6 +927,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                   )
                 },
               )
+              }
 
               PreferenceDivider()
 
@@ -929,6 +948,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
               PreferenceDivider()
 
               val screenshotTemplate by preferences.screenshotTemplate.collectAsState()
+              ExpressivePreferenceItem {
               Preference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_filename_template),
                 title = {
@@ -943,10 +963,12 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                   showTemplateDialog = true
                 },
               )
+              }
 
               PreferenceDivider()
 
               val screenshotQuality by preferences.screenshotQuality.collectAsState()
+              ExpressivePreferenceItem {
               SliderPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_jpeg_webp_quality),
                 value = screenshotQuality.toFloat(),
@@ -962,10 +984,12 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                 onSliderValueChange = { preferences.screenshotQuality.set(it.roundToInt().coerceIn(1, 100)) },
                 sliderValue = screenshotQuality.toFloat(),
               )
+              }
 
               PreferenceDivider()
 
               val pngCompression by preferences.screenshotPngCompression.collectAsState()
+              ExpressivePreferenceItem {
               SliderPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.ui_png_compression),
                 value = pngCompression.toFloat(),
@@ -981,6 +1005,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                 onSliderValueChange = { preferences.screenshotPngCompression.set(it.roundToInt().coerceIn(0, 9)) },
                 sliderValue = pngCompression.toFloat(),
               )
+              }
 
               if (screenshotFormat == ScreenshotFormat.WEBP) {
                 PreferenceDivider()
@@ -1009,7 +1034,7 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
           }
 
           // ── Overlays ─────────────────────────────────────────────────────
-          item { PreferenceSectionHeader(title = stringResource(R.string.pref_section_overlays)) }
+          item { PreferenceSectionHeader(position = PreferenceSectionPosition.Last, title = stringResource(R.string.pref_section_overlays)) }
           item {
             PreferenceCard {
               val showVolumeGestureOverlay by preferences.showVolumeGestureOverlay.collectAsState()

@@ -27,7 +27,6 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.util.fastCoerceIn
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.BackdropEffectScope
@@ -37,14 +36,13 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.opacity
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
-import com.kyant.backdrop.shadow.InnerShadow
-import com.kyant.backdrop.shadow.Shadow
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.LiquidGlassHighlightStyle
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.player.controls.PlayerButtonAlpha
 import org.koin.compose.koinInject
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.android.awaitFrame
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -52,6 +50,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 val LocalKyantPlayerBackdrop = staticCompositionLocalOf<Backdrop?> { null }
+
+/** Prevent HDR playback from refracting the sampled video across player glass surfaces. */
+internal val LocalPlayerHdrOutputEnabled = staticCompositionLocalOf { false }
 
 object LiquidControlColors {
     val accent: Color
@@ -83,10 +84,7 @@ data class LiquidGlassSettings(
     val highlightStrength: Float,
     val highlightWidth: Float,
     val highlightBlur: Float,
-    val shadowStrength: Float,
-    val shadowRadius: Float,
-    val innerShadowStrength: Float,
-    val innerShadowRadius: Float,
+    val allowRefraction: Boolean = true,
 ) {
     fun surfaceColor(base: Color): Color = base
 
@@ -101,23 +99,12 @@ data class LiquidGlassSettings(
         width = base.width * highlightWidth,
         blurRadius = base.blurRadius * highlightBlur,
     )
-
-    fun shadow(base: Shadow): Shadow = base.copy(
-        color = base.color.copy(alpha = (base.color.alpha * shadowStrength).coerceIn(0f, 1f)),
-        radius = base.radius * shadowRadius,
-        offset = DpOffset(base.offset.x * shadowRadius, base.offset.y * shadowRadius),
-    )
-
-    fun innerShadow(base: InnerShadow): InnerShadow = base.copy(
-        color = base.color.copy(alpha = (base.color.alpha * innerShadowStrength).coerceIn(0f, 1f)),
-        radius = base.radius * innerShadowRadius,
-        offset = DpOffset(base.offset.x * innerShadowRadius, base.offset.y * innerShadowRadius),
-    )
 }
 
 @Composable
 fun rememberLiquidGlassSettings(): LiquidGlassSettings {
     val preferences = koinInject<AppearancePreferences>()
+    val hdrVideoOutput = LocalPlayerHdrOutputEnabled.current
     val opacity by preferences.liquidGlassOpacity.collectAsState()
     val blur by preferences.liquidGlassBlur.collectAsState()
     val refractionHeight by preferences.liquidGlassRefractionHeight.collectAsState()
@@ -132,10 +119,6 @@ fun rememberLiquidGlassSettings(): LiquidGlassSettings {
     val highlightStrength by preferences.liquidGlassHighlightStrength.collectAsState()
     val highlightWidth by preferences.liquidGlassHighlightWidth.collectAsState()
     val highlightBlur by preferences.liquidGlassHighlightBlur.collectAsState()
-    val shadowStrength by preferences.liquidGlassShadowStrength.collectAsState()
-    val shadowRadius by preferences.liquidGlassShadowRadius.collectAsState()
-    val innerShadowStrength by preferences.liquidGlassInnerShadowStrength.collectAsState()
-    val innerShadowRadius by preferences.liquidGlassInnerShadowRadius.collectAsState()
     fun Float.bounded(default: Float, range: ClosedFloatingPointRange<Float> = 0f..2f): Float =
         if (isFinite()) coerceIn(range) else default
 
@@ -145,8 +128,7 @@ fun rememberLiquidGlassSettings(): LiquidGlassSettings {
         depthEffect, chromaticAberration, vibrancy,
         saturation.bounded(1f), brightness.bounded(0f, -1f..1f), contrast.bounded(1f),
         highlightStyle, highlightStrength.bounded(1f), highlightWidth.bounded(1f), highlightBlur.bounded(1f),
-        shadowStrength.bounded(1f), shadowRadius.bounded(1f),
-        innerShadowStrength.bounded(1f), innerShadowRadius.bounded(1f),
+        allowRefraction = !hdrVideoOutput,
     )
 }
 
@@ -158,10 +140,15 @@ fun BackdropEffectScope.liquidGlassEffects(
     vibrant: Boolean = false,
     refractionEnabled: Boolean = true,
 ) {
-    if (vibrant && settings.vibrancy) vibrancy()
-    colorControls(settings.brightness, settings.contrast, settings.saturation)
+    // HDR playback in TextureView is already composited through the app window's color space.
+    // Running vibrancy/color controls a second time can exaggerate clipped highlights and
+    // produce muddy, stretched-looking glass. Keep a soft blur and the surface tint instead.
+    if (settings.allowRefraction) {
+        if (vibrant && settings.vibrancy) vibrancy()
+        colorControls(settings.brightness, settings.contrast, settings.saturation)
+    }
     if (settings.blur > 0f) blur(blurRadius * settings.blur)
-    if (refractionEnabled && settings.refractionHeight > 0f && settings.refractionAmount > 0f) {
+    if (refractionEnabled && settings.allowRefraction && settings.refractionHeight > 0f && settings.refractionAmount > 0f) {
         lens(
             refractionHeight * settings.refractionHeight,
             refractionAmount * settings.refractionAmount,
@@ -249,9 +236,13 @@ class DampedDragAnimation(
         }
     }
 
+    private var pressJob: Job? = null
+    private var velocityJob: Job? = null
+
     fun press() {
         velocityTracker.resetTracking()
-        animationScope.launch {
+        pressJob?.cancel()
+        pressJob = animationScope.launch {
             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
             launch { scaleYAnimation.animateTo(pressedScale, scaleYAnimationSpec) }
@@ -259,7 +250,8 @@ class DampedDragAnimation(
     }
 
     fun release() {
-        animationScope.launch {
+        pressJob?.cancel()
+        pressJob = animationScope.launch {
             awaitFrame()
             if (value != targetValue) {
                 val threshold = (valueRange.endInclusive - valueRange.start) * 0.025f
@@ -312,11 +304,25 @@ class DampedDragAnimation(
             Offset(value, 0f)
         )
         val targetVelocity = velocityTracker.calculateVelocity().x / (valueRange.endInclusive - valueRange.start)
-        animationScope.launch {
+        velocityJob?.cancel()
+        velocityJob = animationScope.launch {
             velocityAnimation.animateTo(targetVelocity, velocityAnimationSpec)
         }
     }
 }
+
+private const val HIGHLIGHT_SHADER_SRC = """
+    uniform float2 size;
+    layout(color) uniform half4 color;
+    uniform float radius;
+    uniform float2 position;
+
+    half4 main(float2 coord) {
+        float dist = distance(coord, position);
+        float intensity = smoothstep(radius, radius * 0.5, dist);
+        return color * intensity;
+    }
+"""
 
 class InteractiveHighlight(
     val animationScope: CoroutineScope,
@@ -328,33 +334,23 @@ class InteractiveHighlight(
     private val positionAnimation =
         Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
     private var startPosition = Offset.Zero
+    private var dragJob: Job? = null
+    private var pressJob: Job? = null
 
     val pressProgress: Float get() = pressProgressAnimation.value
     val offset: Offset get() = positionAnimation.value - startPosition
 
     private val shader = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        RuntimeShader(
-            """
-            uniform float2 size;
-            layout(color) uniform half4 color;
-            uniform float radius;
-            uniform float2 position;
-
-            half4 main(float2 coord) {
-                float dist = distance(coord, position);
-                float intensity = smoothstep(radius, radius * 0.5, dist);
-                return color * intensity;
-            }
-            """.trimIndent()
-        )
+        RuntimeShader(HIGHLIGHT_SHADER_SRC)
     } else {
         null
     }
+    private val shaderBrush = shader?.let { ShaderBrush(it) }
 
     val modifier: Modifier = Modifier.drawWithContent {
         val progress = pressProgressAnimation.value
         if (progress > 0f) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && shader != null) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && shader != null && shaderBrush != null) {
                 drawRect(
                     Color.White.copy(0.08f * progress),
                     blendMode = BlendMode.Plus
@@ -371,7 +367,7 @@ class InteractiveHighlight(
                     )
                 }
                 drawRect(
-                    ShaderBrush(shader),
+                    shaderBrush,
                     blendMode = BlendMode.Plus
                 )
             } else {
@@ -388,27 +384,35 @@ class InteractiveHighlight(
         inspectDragGestures(
             onDragStart = { down ->
                 startPosition = down.position
-                animationScope.launch {
+                dragJob?.cancel()
+                pressJob?.cancel()
+                pressJob = animationScope.launch {
                     launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
                     launch { positionAnimation.snapTo(startPosition) }
                 }
             },
             onDragEnd = {
-                animationScope.launch {
+                dragJob?.cancel()
+                pressJob?.cancel()
+                pressJob = animationScope.launch {
                     launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
                     launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
                 }
             },
             onDragCancel = {
-                animationScope.launch {
+                dragJob?.cancel()
+                pressJob?.cancel()
+                pressJob = animationScope.launch {
                     launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
                     launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
                 }
             }
         ) { change, _ ->
-            animationScope.launch {
+            dragJob?.cancel()
+            dragJob = animationScope.launch {
                 positionAnimation.snapTo(change.position)
             }
         }
     }
 }
+

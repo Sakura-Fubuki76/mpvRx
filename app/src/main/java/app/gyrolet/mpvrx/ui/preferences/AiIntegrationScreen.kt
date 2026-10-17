@@ -26,7 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
@@ -37,7 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,7 +74,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import me.zhanghai.compose.preference.TextFieldPreference
 import org.koin.compose.koinInject
 
@@ -241,7 +240,7 @@ object AiIntegrationScreen : Screen {
         )
       },
     ) { padding ->
-      ProvidePreferenceLocals {
+      ProvideExpressivePreferenceLocals {
         val (settingsListState, settingsHighlight) =
           rememberSettingsSearchList(AiIntegrationScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
@@ -253,7 +252,7 @@ object AiIntegrationScreen : Screen {
               .then(settingsHighlight),
         ) {
           item {
-            PreferenceSectionHeader(
+            PreferenceSectionHeader(position = PreferenceSectionPosition.First, 
               title = stringResource(R.string.pref_ai_features_section),
               modifier = Modifier.settingsSearchTarget(R.string.pref_section_ai_title),
             )
@@ -281,11 +280,12 @@ object AiIntegrationScreen : Screen {
           }
 
           if (enabled) {
-            item { PreferenceSectionHeader(title = stringResource(R.string.pref_ai_provider_section)) }
+            item { PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_ai_provider_section)) }
 
             item {
               PreferenceCard {
                 val providers = AiProvider.values().toList()
+                ExpressivePreferenceItem {
                 ListPreference(
                   modifier = Modifier.settingsSearchTarget(R.string.pref_ai_provider_title),
                   value = provider,
@@ -307,6 +307,7 @@ object AiIntegrationScreen : Screen {
                     Text(provider.displayName, color = MaterialTheme.colorScheme.outline)
                   },
                 )
+                }
               }
             }
 
@@ -366,7 +367,7 @@ val apiKeyInfo =
 
               if (apiKeyInfo != null) {
                 item {
-                  PreferenceSectionHeader(
+                  PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, 
                     title = stringResource(R.string.pref_api_config_section),
                     modifier = Modifier.settingsSearchTarget(R.string.search_api_key_config_title),
                   )
@@ -374,6 +375,7 @@ val apiKeyInfo =
 
                 item {
                   PreferenceCard {
+                    ExpressivePreferenceItem {
                     TextFieldPreference(
                       value = apiKeyInfo.apiKey,
                       onValueChange = apiKeyInfo.onChange,
@@ -404,6 +406,7 @@ val apiKeyInfo =
                         }
                       },
                     )
+                    }
 
                     PreferenceDivider()
 
@@ -501,7 +504,7 @@ val apiKeyInfo =
                 }
 
                 item {
-                  PreferenceSectionHeader(
+                  PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, 
                     title = stringResource(R.string.pref_model_section),
                     modifier = Modifier.settingsSearchTarget(R.string.search_ai_model_selection_title),
                   )
@@ -574,12 +577,12 @@ val apiKeyInfo =
 
                       Surface(
                         onClick = { showModelDialog = true },
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        shape = if (LocalInsidePreferenceCard.current) MaterialTheme.shapes.small else MaterialTheme.shapes.medium,
+                        color = if (LocalInsidePreferenceCard.current) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                         modifier =
                           Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                            .then(if (LocalInsidePreferenceCard.current) Modifier else Modifier.padding(horizontal = 16.dp, vertical = 4.dp)),
                       ) {
                         Row(
                           verticalAlignment = Alignment.CenterVertically,
@@ -745,7 +748,7 @@ val apiKeyInfo =
                 }
               }
 
-            item { PreferenceSectionHeader(title = stringResource(R.string.pref_ai_features_subsection)) }
+            item { PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_ai_features_subsection)) }
 
             item {
               PreferenceCard {
@@ -792,7 +795,7 @@ val apiKeyInfo =
             }
 
             item {
-              PreferenceSectionHeader(
+              PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, 
                 title = stringResource(R.string.pref_stt_section),
                 modifier = Modifier.settingsSearchTarget(R.string.search_stt_title),
               )
@@ -824,6 +827,7 @@ val apiKeyInfo =
 
                   PreferenceDivider()
 
+                  ExpressivePreferenceItem {
                   ListPreference(
                     value = subtitleGenerationOutputFormat,
                     onValueChange = { preferences.subtitleGenerationOutputFormat.set(it) },
@@ -845,9 +849,11 @@ val apiKeyInfo =
                       )
                     },
                   )
+                  }
 
                   PreferenceDivider()
 
+                  ExpressivePreferenceItem {
                   ListPreference(
                     value = sttProvider,
                     onValueChange = preferences.sttProvider::set,
@@ -870,6 +876,7 @@ val apiKeyInfo =
                       )
                     },
                   )
+                  }
 
                   PreferenceDivider()
 
@@ -889,6 +896,7 @@ val apiKeyInfo =
                   PreferenceDivider()
 
                   val sttLanguage by preferences.sttLanguage.collectAsState()
+                  ExpressivePreferenceItem {
                   ListPreference(
                     modifier = Modifier.settingsSearchTarget(R.string.pref_translation_section),
                     value = sttLanguage,
@@ -952,11 +960,12 @@ val apiKeyInfo =
                       )
                     },
                   )
+                  }
                 }
               }
 
               item {
-                PreferenceSectionHeader(
+                PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, 
                   title = stringResource(R.string.pref_translation_section),
                   modifier = Modifier.settingsSearchTarget(R.string.pref_translation_section),
                 )
@@ -998,7 +1007,7 @@ val apiKeyInfo =
               }
 
             item {
-              PreferenceSectionHeader(
+              PreferenceSectionHeader(position = PreferenceSectionPosition.Last, 
                 title = stringResource(R.string.pref_custom_prompt_section),
                 modifier = Modifier.settingsSearchTarget(R.string.search_custom_ai_prompts_title),
               )
@@ -1269,12 +1278,12 @@ val apiKeyInfo =
         }
         if (!isLoadingStt) refreshModels(openWhenReady = sttModels.isEmpty(), showError = true)
       },
-      shape = MaterialTheme.shapes.medium,
-      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+      shape = if (LocalInsidePreferenceCard.current) MaterialTheme.shapes.small else MaterialTheme.shapes.medium,
+      color = if (LocalInsidePreferenceCard.current) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
       modifier =
         Modifier
           .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 4.dp),
+          .then(if (LocalInsidePreferenceCard.current) Modifier else Modifier.padding(horizontal = 16.dp, vertical = 4.dp)),
     ) {
       Row(
         verticalAlignment = Alignment.CenterVertically,

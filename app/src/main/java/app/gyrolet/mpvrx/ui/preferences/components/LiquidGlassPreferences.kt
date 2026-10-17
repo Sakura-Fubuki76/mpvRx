@@ -28,6 +28,7 @@ import app.gyrolet.mpvrx.preferences.preference.Preference
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.preferences.ExpressivePreferenceItem
 import app.gyrolet.mpvrx.ui.preferences.PreferenceCard
 import app.gyrolet.mpvrx.ui.preferences.PreferenceDivider
 import app.gyrolet.mpvrx.ui.preferences.PreferenceSectionHeader
@@ -116,6 +117,7 @@ fun LazyListScope.liquidGlassPreferences(
         LiquidGlassHighlightStyle.Plain to stringResource(R.string.pref_liquid_glass_highlight_plain),
       )
     PreferenceCard {
+      ExpressivePreferenceItem {
       ListPreference(
         value = highlightStyle,
         onValueChange = preferences.liquidGlassHighlightStyle::set,
@@ -126,6 +128,7 @@ fun LazyListScope.liquidGlassPreferences(
         enabled = enabled,
         modifier = Modifier.settingsSearchTarget(R.string.pref_liquid_glass_highlight_style),
       )
+      }
       PreferenceDivider()
       LiquidGlassSlider(
         preferences.liquidGlassHighlightStrength,
@@ -136,29 +139,6 @@ fun LazyListScope.liquidGlassPreferences(
       LiquidGlassSlider(preferences.liquidGlassHighlightWidth, R.string.pref_liquid_glass_highlight_width, enabled)
       PreferenceDivider()
       LiquidGlassSlider(preferences.liquidGlassHighlightBlur, R.string.pref_liquid_glass_highlight_blur, enabled)
-    }
-  }
-
-  item {
-    PreferenceSectionHeader(title = stringResource(R.string.pref_liquid_glass_shadows))
-  }
-  item {
-    PreferenceCard {
-      LiquidGlassSlider(preferences.liquidGlassShadowStrength, R.string.pref_liquid_glass_shadow_strength, enabled)
-      PreferenceDivider()
-      LiquidGlassSlider(preferences.liquidGlassShadowRadius, R.string.pref_liquid_glass_shadow_radius, enabled)
-      PreferenceDivider()
-      LiquidGlassSlider(
-        preferences.liquidGlassInnerShadowStrength,
-        R.string.pref_liquid_glass_inner_shadow_strength,
-        enabled,
-      )
-      PreferenceDivider()
-      LiquidGlassSlider(
-        preferences.liquidGlassInnerShadowRadius,
-        R.string.pref_liquid_glass_inner_shadow_radius,
-        enabled,
-      )
     }
   }
   item {

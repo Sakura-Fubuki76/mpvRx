@@ -98,6 +98,10 @@ import app.gyrolet.mpvrx.presentation.components.captureLiquidGlassBackdrop
 import app.gyrolet.mpvrx.ui.browser.cards.sourceChipColor
 import app.gyrolet.mpvrx.ui.browser.cards.VideoCard
 import app.gyrolet.mpvrx.ui.browser.cards.VideoCardUiConfig
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionNeighbors
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionGridGap
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionListGap
+import app.gyrolet.mpvrx.ui.browser.cards.mediaSelectionNeighbors
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
 import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
 import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
@@ -321,7 +325,9 @@ data class PlaylistDetailScreen(
             val headersMap = headerExtra?.let { mapOf(it[0] to it[1]) }.orEmpty()
             PlaybackItem.fromUri(
               uri = uri.toString(),
-              stableId = playlistEntry.video.path.takeIf(String::isNotBlank)?.let(PlaybackIdentity::forLocalPath),
+              stableId = if (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY && playlistEntry.video.uri.scheme == "content") {
+                app.gyrolet.mpvrx.ui.browser.videolist.videoPlaybackIdentifiers(playlistEntry.video).first()
+              } else playlistEntry.video.path.takeIf(String::isNotBlank)?.let(PlaybackIdentity::forLocalPath),
               title = playlistEntry.playlistItem.fileName,
               mimeType = if (isAudio) "audio/*" else playlistEntry.video.mimeType,
               headers = headersMap,
@@ -979,7 +985,7 @@ private fun PlaylistVideoListContent(
         .maxByOrNull { it.playlistItem.lastPlayedAt }
     }
 
-  val itemContent: @Composable (PlaylistVideoItem, Boolean, Int, Modifier) -> Unit = { item, grid, columns, itemModifier ->
+  val itemContent: @Composable (PlaylistVideoItem, Boolean, Int, MediaSelectionNeighbors, Modifier) -> Unit = { item, grid, columns, neighbors, itemModifier ->
     val sourceLabel = when {
       isM3uPlaylist -> null
       item.protocol != null -> item.protocol.displayName
@@ -1003,6 +1009,7 @@ private fun PlaylistVideoListContent(
         onThumbClick = thumbnailClick,
         onFavoriteClick = null,
         isSelected = selectionManager.isSelected(item),
+        selectionNeighbors = neighbors,
         isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
         isFavorite = item.playlistItem.isFavorite,
         video = item.video,
@@ -1028,6 +1035,7 @@ private fun PlaylistVideoListContent(
         } else null,
         isRecentlyPlayed = item.playlistItem.id == mostRecentlyPlayedItem?.playlistItem?.id,
         isSelected = selectionManager.isSelected(item),
+        selectionNeighbors = neighbors,
         onClick = { onVideoItemClick(item) },
         onLongClick = { onVideoItemLongClick(item) },
         onThumbClick = thumbnailClick,
@@ -1137,17 +1145,19 @@ private fun PlaylistVideoListContent(
             state = gridState,
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = bottomClearance),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+            verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
           ) {
             items(count = videoItems.size, key = { videoItems[it].playlistItem.id }) { index ->
-              itemContent(videoItems[index], true, columns, Modifier.fillMaxWidth())
+              val neighbors = mediaSelectionNeighbors(index, videoItems.size, columns) { n -> selectionManager.isSelected(videoItems[n]) }
+              itemContent(videoItems[index], true, columns, neighbors, Modifier.fillMaxWidth())
             }
           }
         } else {
         LazyColumn(
           state = listState,
           modifier = Modifier.fillMaxSize(),
+          verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap),
           contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 4.dp, bottom = bottomClearance),
         ) {
           items(
@@ -1156,13 +1166,14 @@ private fun PlaylistVideoListContent(
           ) { index ->
             ReorderableItem(reorderableLazyListState, key = videoItems[index].playlistItem.id) { isDragging ->
               val item = videoItems[index]
+              val neighbors = mediaSelectionNeighbors(index, videoItems.size, 1) { n -> selectionManager.isSelected(videoItems[n]) }
               val elevation = dragElevation(isDragging)
 
               Row(
                 modifier = Modifier.fillMaxWidth().shadow(elevation, MaterialTheme.shapes.medium, clip = false),
                 verticalAlignment = Alignment.CenterVertically,
               ) {
-                itemContent(item, false, 1, Modifier.weight(1f))
+                itemContent(item, false, 1, neighbors, Modifier.weight(1f))
 
                 if (isReorderMode) {
                   IconButton(
@@ -1286,7 +1297,7 @@ private fun StreamUrlDialog(
   onDismiss: () -> Unit,
   onCopy: () -> Unit,
 ) {
-  androidx.compose.material3.AlertDialog(
+  app.gyrolet.mpvrx.presentation.components.AppAlertDialog(
     onDismissRequest = onDismiss,
     title = {
       Text(
@@ -1302,7 +1313,7 @@ private fun StreamUrlDialog(
       )
     },
     confirmButton = {
-      androidx.compose.material3.TextButton(
+      app.gyrolet.mpvrx.presentation.components.AppDialogTextButton(
         onClick = {
           onCopy()
           onDismiss()
@@ -1320,7 +1331,7 @@ private fun StreamUrlDialog(
       }
     },
     dismissButton = {
-      androidx.compose.material3.TextButton(onClick = onDismiss) {
+      app.gyrolet.mpvrx.presentation.components.AppDialogTextButton(onClick = onDismiss) {
         Text(
           androidx.compose.ui.res
             .stringResource(app.gyrolet.mpvrx.R.string.ui_close),
@@ -1340,7 +1351,7 @@ private fun RemoveFromPlaylistDialog(
   if (!isOpen) return
 
 
-  androidx.compose.material3.AlertDialog(
+  app.gyrolet.mpvrx.presentation.components.AppAlertDialog(
     onDismissRequest = onDismiss,
     title = {
       Text(
@@ -1394,7 +1405,7 @@ private fun RemoveFromPlaylistDialog(
       }
     },
     dismissButton = {
-      androidx.compose.material3.TextButton(
+      app.gyrolet.mpvrx.presentation.components.AppDialogTextButton(
         onClick = onDismiss,
         shape = MaterialTheme.shapes.extraLarge,
       ) {

@@ -19,7 +19,6 @@ import app.gyrolet.mpvrx.domain.torrent.formatTorrentSpeed
 
 import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import android.os.Debug
-import android.view.SurfaceView
 import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -33,7 +32,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -100,7 +98,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInParent
@@ -141,10 +138,11 @@ import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerUpdates
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
+import app.gyrolet.mpvrx.ui.player.MPVView
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoOpenAnimationOverlay
-import app.gyrolet.mpvrx.ui.player.components.VideoAmbientFrame
-import app.gyrolet.mpvrx.ui.player.components.rememberVideoAmbientFrame
+import app.gyrolet.mpvrx.ui.player.components.VideoGlassBackdropSource
+import app.gyrolet.mpvrx.ui.player.components.rememberVideoGlassSource
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterH
 import app.gyrolet.mpvrx.ui.player.buildControlsEnterV
 import app.gyrolet.mpvrx.ui.player.buildControlsExitH
@@ -183,6 +181,7 @@ import org.koin.compose.koinInject
 import app.gyrolet.mpvrx.ui.liquidglass.AdaptiveControlsContainer
 import app.gyrolet.mpvrx.ui.liquidglass.LiquidPillButton
 import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
+import app.gyrolet.mpvrx.ui.liquidglass.LocalPlayerHdrOutputEnabled
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlin.math.abs
@@ -207,7 +206,7 @@ fun <T> playerControlsEnterAnimationSpec(durationMillis: Int = 100): FiniteAnima
 fun PlayerControls(
   viewModel: PlayerViewModel,
   onBackPress: () -> Unit,
-  videoSurface: SurfaceView? = null,
+  videoSurface: MPVView? = null,
   modifier: Modifier = Modifier,
 ) {
   val spacing = MaterialTheme.spacing
@@ -219,6 +218,7 @@ fun PlayerControls(
   val realtimeSubsEnabled by aiPreferences.realtimeSubsEnabled.collectAsState()
   val hideBackground by appearancePreferences.hidePlayerButtonsBackground.collectAsState()
   val enableLiquidGlass by appearancePreferences.liquidGlassEnabled.collectAsState()
+  val liquidGlassInHdr by appearancePreferences.liquidGlassInHdr.collectAsState()
   val forceDarkButtonBackground by appearancePreferences.forceDarkPlayerButtonsBackground.collectAsState()
   val portraitPlaybackControlsPosition by
     appearancePreferences.portraitPlaybackControlsPosition.collectAsState()
@@ -229,7 +229,7 @@ fun PlayerControls(
   val showSystemStatusBar by playerPreferences.showSystemStatusBar.collectAsState()
   val showSystemNavigationBar by playerPreferences.showSystemNavigationBar.collectAsState()
   val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
-  val interactionSource = remember { MutableInteractionSource() }
+  var seekRippleRequest by remember { mutableStateOf<SeekRippleRequest?>(null) }
   val controlsShown by viewModel.controlsShown.collectAsState()
   val controlsInteractionEpoch by viewModel.controlsInteractionEpoch.collectAsState()
   val tvPlayFocusRequester = rememberTvInitialFocusRequester(enabled = controlsShown)
@@ -315,7 +315,6 @@ fun PlayerControls(
     }
   }
   var resetControlsTimestamp by remember { mutableStateOf(0L) }
-  val seekText = seekState.text
   val configuredDecoder by PlaybackSession.propString["hwdec"].collectAsState()
   val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsState()
   val decoder = remember(activeDecoder, configuredDecoder) {
@@ -412,6 +411,8 @@ fun PlayerControls(
     val speedPresets by playerPreferences.speedPresets.collectAsState()
     val sortedSpeedPresets = remember(speedPresets) { speedPresets.map { it.toFloat() }.sorted() }
 
+    // Only sheets and panels sample this layer; the controls would otherwise sample themselves.
+    val audioBackdrop = rememberLayerBackdrop()
     Box(modifier = modifier.fillMaxSize()) {
       AudioPlayerControls(
         viewModel = viewModel,
@@ -419,8 +420,12 @@ fun PlayerControls(
         onBackPress = onBackPress,
         onOpenSheet = onOpenSheet,
         onOpenPanel = onOpenPanel,
+        modifier = if (enableLiquidGlass) Modifier.layerBackdrop(audioBackdrop) else Modifier,
       )
 
+      CompositionLocalProvider(
+        LocalKyantPlayerBackdrop provides audioBackdrop.takeIf { enableLiquidGlass },
+      ) {
       PlayerSheets(
         viewModel = viewModel,
         sheetShown = sheetShown,
@@ -468,41 +473,13 @@ fun PlayerControls(
         viewModel = viewModel,
         onDismissRequest = { onOpenPanel(Panels.None) },
       )
+      }
     }
     return
   }
 
   val playerActivity = LocalActivity.current as PlayerActivity
   val configuration = LocalConfiguration.current
-  val hdrScreenMode by viewModel.hdrScreenMode.collectAsState()
-  val canCapturePlayerGlass =
-    enableLiquidGlass &&
-      !isAudioOnly &&
-      playbackSessionState.surfaceAttached &&
-      (playbackSessionState.phase == PlaybackPhase.READY ||
-        playbackSessionState.phase == PlaybackPhase.BACKGROUND)
-  val playerGlassFrame =
-    if (videoSurface != null) {
-      rememberVideoAmbientFrame(
-        surfaceView = videoSurface,
-        active = canCapturePlayerGlass && controlsShown && !areControlsLocked,
-        retainFrameWhenInactive = canCapturePlayerGlass,
-        playbackGeneration = playbackSessionState.generation,
-        hdrScreenMode = hdrScreenMode,
-        orientation = configuration.orientation,
-        isSurfaceReadyProvider = {
-          PlaybackSession.state.value.surfaceAttached && videoSurface.holder.surface.isValid
-        },
-        isPlayingProvider = { !PlaybackSession.state.value.paused },
-        fallbackFrameProvider = { dimension ->
-          withContext(Dispatchers.IO) {
-            runCatching { PlaybackSession.grabThumbnail(dimension) }.getOrNull()
-          }
-        },
-      )
-    } else {
-      VideoAmbientFrame(supported = false)
-    }
   var playerBounds by remember { mutableStateOf(IntSize.Zero) }
   val isPortrait =
     remember(configuration.orientation, playerBounds) {
@@ -649,21 +626,47 @@ fun PlayerControls(
 
   GestureHandler(
     viewModel = viewModel,
-    interactionSource = interactionSource,
     externalPanelShown = showControlsDrawer && isPlayerDrawerShown,
     onDismissExternalPanel = { setPlayerDrawerShown(false) },
     onLockedTouchSideChanged = { isLeft ->
       showUnlockOnLeft = isLeft
       resetControlsTimestamp = System.currentTimeMillis()
     },
+    onSeekRipple = { seekRippleRequest = it },
   )
 
-  DoubleTapToSeekOvals(doubleTapSeekAmount, seekText, showDoubleTapOvals, showSeekTime, showSeekTime, interactionSource)
+  DoubleTapToSeekOvals(
+    amount = doubleTapSeekAmount,
+    showOvals = showDoubleTapOvals,
+    showSeekIcon = showSeekTime,
+    showSeekTime = showSeekTime,
+    rippleRequest = seekRippleRequest,
+  )
 
-  val playerKyantBackdrop = rememberLayerBackdrop()
+  val glassSource = rememberVideoGlassSource(videoSurface)
+  val videoSurfaceReady = videoSurface?.surfaceReady?.collectAsState()?.value == true
+  val videoFrameReady = videoSurface?.textureFrameReadyState?.collectAsState()?.value == true
+  // Recreate the recorder with the actual source scene. The old persistent recorder could
+  // keep painting a released TextureView's pixels after an HDR/native-surface handoff.
+  val videoBackdrop = key(glassSource, isHdrOutputEnabled, liquidGlassInHdr) {
+    // HDR output changes the captured colorspace even when the TextureView stays mounted.
+    // A new recorder must not replay pre-HDR pixels or filters over the new output.
+    rememberLayerBackdrop(onDraw = { with(glassSource) { drawVideo() } })
+  }
+  // Native HDR output is a separate SurfaceView: Kyaant cannot sample it from Compose.
+  // Hide the live sampler during mode changes and use the non-sampling frosted treatment.
+  val playerKyantBackdrop = videoBackdrop.takeIf {
+    enableLiquidGlass &&
+      (!isHdrOutputEnabled || liquidGlassInHdr) &&
+      videoSurface?.isTextureSurface == true &&
+      videoSurfaceReady &&
+      videoFrameReady &&
+      glassSource.scene != null
+  }
 
   CompositionLocalProvider(
     LocalKyantPlayerBackdrop provides playerKyantBackdrop,
+    LocalPlayerHdrOutputEnabled provides isHdrOutputEnabled,
     LocalForceDarkPlayerButtonsBackground provides forceDarkButtonBackground,
     LocalHidePlayerButtonsBackground provides hideBackground,
   ) {
@@ -681,30 +684,8 @@ fun PlayerControls(
       animationState = videoOpenAnimState,
     )
     if (enableLiquidGlass) {
-      // mpv renders in a separate SurfaceView layer, which Compose effects cannot sample directly.
-      // Mirror its tiny, throttled PixelCopy frame into an invisible Compose layer so Kyant glass
-      // refracts the live video without duplicating full-resolution playback work.
-      val glassFrame = playerGlassFrame.frame
-      if (glassFrame != null) {
-        Image(
-          bitmap = glassFrame,
-          contentDescription = null,
-          contentScale = ContentScale.FillBounds,
-          modifier =
-            Modifier
-              .fillMaxSize()
-              .alpha(0f)
-              .layerBackdrop(playerKyantBackdrop),
-        )
-      } else {
-        Box(
-          modifier =
-            Modifier
-              .fillMaxSize()
-              .alpha(0f)
-              .layerBackdrop(playerKyantBackdrop)
-              .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        )
+      if (playerKyantBackdrop != null) {
+        VideoGlassBackdropSource(glassSource, videoBackdrop)
       }
       Box(
         modifier =

@@ -15,11 +15,13 @@ import android.util.AttributeSet
 import android.util.Log
 import android.view.KeyCharacterMap
 import android.view.KeyEvent
+import android.view.Surface
 import androidx.core.view.WindowInsetsCompat
 import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
 import app.gyrolet.mpvrx.domain.hdr.HdrToysManager
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
+import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
 import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
@@ -40,12 +42,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import `is`.xyz.mpv.BaseMPVView
 import `is`.xyz.mpv.KeyMapping
 import `is`.xyz.mpv.MPVLib
 import org.koin.core.component.KoinComponent
@@ -59,9 +62,10 @@ private fun String.toMpvLanguageList(): String =
 class MPVView(
   context: Context,
   attributes: AttributeSet,
-) : BaseMPVView(context, attributes),
+) : MpvSurfaceHost(context, attributes),
   KoinComponent {
   private val audioPreferences: AudioPreferences by inject()
+  private val appearancePreferences: AppearancePreferences by inject()
   private val playerPreferences: PlayerPreferences by inject()
   private val decoderPreferences: DecoderPreferences by inject()
   private val advancedPreferences: AdvancedPreferences by inject()
@@ -74,7 +78,12 @@ class MPVView(
   var isExiting = false
   private var lastRequestedFrameRate = Float.NaN
   var forceOpenGlFallback = false
+  private var renderCallbacksEnabled = true
+  private var surfaceRecovery: Runnable? = null
+  private var pausedFrameRedraw: Runnable? = null
   private val surfaceReadiness = MutableStateFlow(false)
+  /** Prevent glass from sampling a new renderer before the native video output is ready. */
+  internal val surfaceReady: StateFlow<Boolean> = surfaceReadiness.asStateFlow()
   var isSurfaceReady: Boolean
     get() = surfaceReadiness.value
     private set(value) {
@@ -90,6 +99,16 @@ class MPVView(
       if (!value) isSurfaceReady = false
     }
 
+  init {
+    setTextureRendering(
+      shouldUseTextureRendering(
+        liquidGlass = appearancePreferences.liquidGlassEnabled.get(),
+        hdrOutput = decoderPreferences.hdrScreenOutput.get(),
+        liquidGlassInHdr = appearancePreferences.liquidGlassInHdr.get(),
+      ),
+    )
+  }
+
   /**
    * Suspends the media loader until this view's Surface is attached, like mpv-android's
    * `playFile()` deferring `loadfile` to `surfaceCreated`. The bind is re-attempted so a failed or
@@ -102,7 +121,8 @@ class MPVView(
           when {
             ensureSurfaceAttached() -> true
             // A hidden window (backgrounded/locked) will not create a Surface until it returns.
-            isExiting || !surfaceBindingEnabled || (isAttachedToWindow && windowVisibility != VISIBLE) -> false
+            isExiting || !surfaceBindingEnabled || !renderCallbacksEnabled ||
+              (isAttachedToWindow && windowVisibility != VISIBLE) -> false
             else -> null
           }
         }
@@ -116,11 +136,15 @@ class MPVView(
    * rebuilt core and another owner (mini player/PiP) holding the session. Main thread only.
    */
   internal fun ensureSurfaceAttached(): Boolean {
-    if (isExiting || !surfaceBindingEnabled || !holder.surface.isValid) return false
+    val surface = renderSurface ?: return false
+    if (isExiting || !surfaceBindingEnabled || !renderCallbacksEnabled || !surface.isValid) return false
     // A Surface can be JNI-attached while mpv is still processing its nonzero wid.
     // Do not reattach it during that window: JNI replacement briefly resets wid=0.
-    if (PlaybackSession.isSurfaceAttachedTo(this)) return isSurfaceReady
-    surfaceCreated(holder)
+    if (PlaybackSession.isSurfaceAttachedTo(this)) {
+      if (PlaybackSession.isRendererReadyFor(this)) notifyRendererReady()
+      return isSurfaceReady
+    }
+    onRenderSurfaceAvailable(surface, width, height)
     return isSurfaceReady
   }
 
@@ -174,8 +198,7 @@ class MPVView(
 
   /** Binds this Android view to an initialized core. Must be called on the main thread. */
   internal fun attachSessionSurface() {
-    holder.removeCallback(this)
-    holder.addCallback(this)
+    renderCallbacksEnabled = true
     ensureSurfaceAttached()
   }
 
@@ -190,7 +213,10 @@ class MPVView(
   }
 
   fun releaseSurface() {
-    holder.removeCallback(this)
+    renderCallbacksEnabled = false
+    cancelSurfaceRecovery()
+    cancelPausedFrameRedraw()
+    surfaceAttachmentGeneration++
     lastRequestedFrameRate = Float.NaN
     if (isSurfaceReady || PlaybackSession.state.value.surfaceAttached) {
       isSurfaceReady = false
@@ -199,10 +225,44 @@ class MPVView(
   }
 
   fun rebindCurrentSurface() {
-    if (!surfaceBindingEnabled || !holder.surface.isValid) return
+    if (!surfaceBindingEnabled || renderSurface?.isValid != true) return
     isSurfaceReady = false
     PlaybackSession.unbindSurface(this)
-    surfaceCreated(holder)
+    ensureSurfaceAttached()
+  }
+
+  private fun cancelSurfaceRecovery() {
+    surfaceRecovery?.let(::removeCallbacks)
+    surfaceRecovery = null
+  }
+
+  private fun notifyRendererReady() {
+    if (isSurfaceReady) return
+    isSurfaceReady = true
+    applyFrameRate()
+    // Restore BACKGROUND -> READY and the video's saved track before asking mpv to draw.
+    onSurfaceReady?.invoke()
+    refreshPausedFrameAfterForegroundReturn()
+  }
+
+  private fun cancelPausedFrameRedraw() {
+    pausedFrameRedraw?.let(::removeCallbacks)
+    pausedFrameRedraw = null
+  }
+
+  /** Coalesces renderer-ready and Activity start/resume callbacks into a paused-frame redraw. */
+  internal fun refreshPausedFrameAfterForegroundReturn() {
+    if (isExiting || !isSurfaceReady) return
+    cancelPausedFrameRedraw()
+    val generation = surfaceAttachmentGeneration
+    val redraw = Runnable {
+      pausedFrameRedraw = null
+      if (generation == surfaceAttachmentGeneration && isAttachedToWindow &&
+        windowVisibility == VISIBLE
+      ) redrawPausedFrame()
+    }
+    pausedFrameRedraw = redraw
+    postDelayed(redraw, 150L)
   }
 
   private data class StartupShaderSelection(
@@ -372,7 +432,7 @@ class MPVView(
   var secondarySid: Int by TrackDelegate("secondary-sid")
   var aid: Int by TrackDelegate("aid")
 
-  override fun initOptions() {
+  private fun initOptions() {
     val inputs = awaitInitInputs()
     PlaybackSession.setOptionString("profile", inputs.profile)
     val backend = selectRenderBackend(inputs.anime4kEnabled, inputs.gpuNextEnabled, inputs.vulkanCapable)
@@ -490,11 +550,11 @@ class MPVView(
     }
   }
 
-  override fun observeProperties() {
+  private fun observeProperties() {
     for ((name, format) in observedProps) PlaybackSession.observeProperty(name, format)
   }
 
-  override fun postInitOptions() {
+  private fun postInitOptions() {
     // Native initialization can run off the main thread. Start with a safe baseline and let the
     // Activity's WindowInsets listener apply the real cutout margins when the view is attached.
     PlaybackSession.setOptionString("osd-margin-x", DEFAULT_OSD_SAFE_MARGIN.toString())
@@ -575,9 +635,7 @@ class MPVView(
     return true
   }
 
-  override fun surfaceChanged(
-    holder: android.view.SurfaceHolder,
-    format: Int,
+  override fun onRenderSurfaceSizeChanged(
     width: Int,
     height: Int,
   ) {
@@ -597,36 +655,50 @@ class MPVView(
     PlaybackSession.command("seek", "0", "relative+exact")
   }
 
-  override fun surfaceCreated(holder: android.view.SurfaceHolder) {
-    if (!surfaceBindingEnabled) return
+  override fun onRenderSurfaceAvailable(surface: Surface, width: Int, height: Int) {
+    attachRenderSurface(surface, width, height, retriesRemaining = 2)
+  }
+
+  private fun attachRenderSurface(surface: Surface, width: Int, height: Int, retriesRemaining: Int) {
+    if (isExiting || !surfaceBindingEnabled || !renderCallbacksEnabled || renderSurface !== surface) return
     if (PlaybackSession.isSurfaceAttachedTo(this)) return
+    cancelSurfaceRecovery()
     isSurfaceReady = false
-    val bound =
-      PlaybackSession.bindSurface(holder.surface, width, height, this, ownerIsActive = { surfaceBindingEnabled })
-    if (!bound) return
     surfaceAttachmentGeneration++
     val attachedGeneration = surfaceAttachmentGeneration
 
-    fun notifyWhenRendererReady(attempt: Int) {
-      // Ignore checks queued for a Surface that has since been destroyed/replaced.
-      if (isExiting || !surfaceBindingEnabled || !holder.surface.isValid ||
-        surfaceAttachmentGeneration != attachedGeneration || !PlaybackSession.isSurfaceAttachedTo(this)
-      ) return
-      if (PlaybackSession.isRendererReadyFor(this)) {
-        isSurfaceReady = true
-        applyFrameRate()
-        redrawPausedFrame()
-        onSurfaceReady?.invoke()
-      } else if (attempt < 60) {
-        postDelayed({ notifyWhenRendererReady(attempt + 1) }, 16L)
-      } else {
-        android.util.Log.e("MPVView", "Native window never became renderer-ready")
-      }
-    }
-    post { notifyWhenRendererReady(0) }
+    fun isCurrentSurface(): Boolean =
+      !isExiting && surfaceBindingEnabled && renderCallbacksEnabled && surface.isValid &&
+        renderSurface === surface && surfaceAttachmentGeneration == attachedGeneration
+
+    PlaybackSession.bindSurface(
+      surface, width, height, this,
+      ownerIsActive = ::isCurrentSurface,
+      onRendererReady = {
+        if (isCurrentSurface() && PlaybackSession.isRendererReadyFor(this)) notifyRendererReady()
+      },
+      onRendererFailed = {
+        if (isCurrentSurface() && retriesRemaining > 0 && windowVisibility == VISIBLE) {
+          val retry = Runnable {
+            surfaceRecovery = null
+            if (isCurrentSurface() && windowVisibility == VISIBLE &&
+              !PlaybackSession.state.value.surfaceAttached
+            ) {
+              Log.w(TAG, "Retrying playback Surface after native window activation failed")
+              attachRenderSurface(surface, this.width, this.height, retriesRemaining - 1)
+            }
+          }
+          surfaceRecovery = retry
+          postDelayed(retry, SURFACE_RETRY_MS)
+        }
+      },
+    )
   }
 
-  override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+  override fun onRenderSurfaceDestroyed() {
+    cancelSurfaceRecovery()
+    cancelPausedFrameRedraw()
+    surfaceAttachmentGeneration++
     isSurfaceReady = false
     lastRequestedFrameRate = Float.NaN
     PlaybackSession.unbindSurface(this)
@@ -644,7 +716,7 @@ class MPVView(
     val resolved = fps ?: PlaybackSession.getPropertyDouble("container-fps") ?: return
     if (!resolved.isFinite() || resolved <= 0.0 || resolved > 1000.0) return
 
-    val surface = holder.surface
+    val surface = renderSurface ?: return
     if (!surface.isValid) return
 
     val requested = resolved.toFloat()

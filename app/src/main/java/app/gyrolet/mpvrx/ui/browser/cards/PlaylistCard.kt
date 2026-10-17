@@ -13,7 +13,6 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +25,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.DropdownMenu
+import app.gyrolet.mpvrx.presentation.components.AppDropdownMenu as DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -94,6 +93,7 @@ fun PlaylistCard(
   onThumbClick: () -> Unit,
   modifier: Modifier = Modifier,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   isGridMode: Boolean = false,
   thumbnail: Bitmap? = null,
   /** Source kinds present in this playlist; null means a local file. Empty for M3U playlists. */
@@ -255,6 +255,7 @@ fun PlaylistCard(
       secondThumbnail = secondThumbnailBitmap,
       placeholderIcon = placeholderIcon,
       isSelected = isSelected,
+      selectionNeighbors = selectionNeighbors,
       onClick = onClick,
       onLongClick = onLongClick,
       onRenameClick = if (isFavorites) null else onRenameClick,
@@ -334,6 +335,7 @@ fun PlaylistCard(
   FolderCard(
     folder = folderModel,
     isSelected = isSelected,
+    selectionNeighbors = selectionNeighbors,
     isRecentlyPlayed = false,
     onClick = onClick,
     onLongClick = onLongClick,
@@ -424,6 +426,7 @@ private fun YouTubePlaylistGridCard(
   secondThumbnail: ImageBitmap? = null,
   placeholderIcon: AppIcon,
   isSelected: Boolean,
+  selectionNeighbors: MediaSelectionNeighbors,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
   onRenameClick: (() -> Unit)?,
@@ -432,16 +435,18 @@ private fun YouTubePlaylistGridCard(
 ) {
   var menuExpanded by remember { mutableStateOf(false) }
   val selectionColor = animatedSelectionColor(isSelected)
+  val cardShape = rememberMediaSelectionShape(isSelected, grid = true, neighbors = selectionNeighbors)
 
   Column(
     modifier =
       modifier
         .fillMaxWidth()
-        .clip(AppShapeScale.large)
+        .mediaGridTileHeight(16f / 9f, 130.dp)
+        .clip(cardShape)
         .background(selectionColor)
         .semantics { selected = isSelected }
         .tvContextMenu(onLongClick)
-        .combinedClickable(
+        .mediaCardClickable(
           onClick = onClick,
           onLongClick = onLongClick,
         )

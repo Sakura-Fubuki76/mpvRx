@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The custom character artwork as a mark layer for the icon builder. The raster art already
+     carries its own safe-zone padding, so no additional inset is applied. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@mipmap/ic_launcher_foreground"
+    android:inset="0%" />

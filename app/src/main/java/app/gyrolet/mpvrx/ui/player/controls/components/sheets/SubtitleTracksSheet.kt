@@ -11,7 +11,6 @@ package app.gyrolet.mpvrx.ui.player.controls.components.sheets
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.snap
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,7 +42,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -57,12 +55,14 @@ import app.gyrolet.mpvrx.presentation.components.PlayerSheetAction
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetSectionHeader
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
-import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
+import app.gyrolet.mpvrx.ui.liquidglass.LocalPlayerGlassSurfaceActive
 import app.gyrolet.mpvrx.ui.player.TrackNode
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusRequester
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.ConnectedLayout
+import app.gyrolet.mpvrx.ui.theme.rememberConnectedShape
 import app.gyrolet.mpvrx.ui.theme.spacing
 import app.gyrolet.mpvrx.ui.utils.rememberAppHaptics
 import app.gyrolet.mpvrx.utils.device.DeviceFormFactor
@@ -73,6 +73,8 @@ import java.util.Locale
 sealed class SubtitleItem {
   data class Track(
     val node: TrackNode,
+    val groupIndex: Int,
+    val groupSize: Int,
   ) : SubtitleItem()
 
   data class Header(
@@ -133,11 +135,15 @@ fun SubtitlesSheet(
 
       if (internal.isNotEmpty() || external.isNotEmpty()) {
         list.add(SubtitleItem.Header(if (internal.isNotEmpty()) "Embedded Subtitles" else "Local Subtitles"))
-        list.addAll(internal.map { SubtitleItem.Track(it) })
+        internal.forEachIndexed { index, track ->
+          list.add(SubtitleItem.Track(track, groupIndex = index, groupSize = internal.size))
+        }
         if (internal.isNotEmpty() && external.isNotEmpty()) {
           list.add(SubtitleItem.Header("External Subtitles"))
         }
-        list.addAll(external.map { SubtitleItem.Track(it) })
+        external.forEachIndexed { index, track ->
+          list.add(SubtitleItem.Track(track, groupIndex = index, groupSize = external.size))
+        }
       }
 
       list.toImmutableList()
@@ -349,6 +355,8 @@ fun SubtitlesSheet(
         AddTrackRow(
           stringResource(R.string.player_sheets_add_ext_sub),
           onAddSubtitle,
+          modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+          shape = rememberConnectedShape(index = 0, itemCount = 2, layout = ConnectedLayout.Vertical),
           actions = {
             PlayerSheetAction(Icons.RoundedFilled.Search, stringResource(R.string.settings_search_title), onOpenOnlineSearch)
             if (aiEnabled && realtimeSubsEnabled) {
@@ -499,6 +507,8 @@ fun SubtitlesSheet(
                 },
                 translationEnabled = translationEnabled,
                 isCurrentlyTranslating = track.id == translatingTrackId,
+                groupIndex = item.groupIndex,
+                groupSize = item.groupSize,
               )
             }
             is SubtitleItem.Header -> {
@@ -506,13 +516,13 @@ fun SubtitlesSheet(
             }
             is SubtitleItem.Off -> {
               val haptics = rememberAppHaptics()
-              val shape = MaterialTheme.shapes.medium
-              val isFrostedOff = LocalKyantPlayerBackdrop.current != null
+              val shape = rememberConnectedShape(index = 1, itemCount = 2, layout = ConnectedLayout.Vertical)
+              val isFrostedOff = LocalPlayerGlassSurfaceActive.current
               Surface(
                 modifier =
                   Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 3.dp)
+                    .padding(horizontal = 8.dp, vertical = 2.dp)
                     .tvInitialFocus(initialFocusRequester)
                     .tvFocusHighlight(shape)
                     .clip(shape)
@@ -522,22 +532,7 @@ fun SubtitlesSheet(
                     },
                 shape = shape,
                 color =
-                  if (subtitlesOff) {
-                    if (isFrostedOff) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.secondaryContainer
-                  } else {
-                    if (isFrostedOff) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh
-                  },
-                border =
-                  if (subtitlesOff) {
-                    BorderStroke(
-                      2.dp,
-                      Brush.linearGradient(
-                        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
-                      ),
-                    )
-                  } else {
-                    null
-                  },
+                  animatedPlayerSheetSelectionColor(subtitlesOff, frosted = isFrostedOff, label = "subtitlesOffSelection"),
               ) {
                 Row(
                   modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 12.dp, vertical = 10.dp),
@@ -586,35 +581,34 @@ fun SubtitleTrackRow(
   onTranslate: () -> Unit,
   translationEnabled: Boolean,
   isCurrentlyTranslating: Boolean = false,
+  groupIndex: Int? = null,
+  groupSize: Int? = null,
   modifier: Modifier = Modifier,
 ) {
   val isTelevision = DeviceFormFactor.isTelevision(LocalContext.current)
   val haptics = rememberAppHaptics()
-  val shape = MaterialTheme.shapes.medium
-  val isFrosted = LocalKyantPlayerBackdrop.current != null
-  val containerColor by animateColorAsState(
-    targetValue =
-      if (isSelected) {
-        if (isFrosted) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.65f) else MaterialTheme.colorScheme.secondaryContainer
-      } else {
-        if (isFrosted) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceContainerHigh
-      },
-    animationSpec = AppMotion.spatial(AppMotion.Effect.Color, snap()),
+  val shape =
+    if (groupIndex != null && groupSize != null && groupSize > 0) {
+      rememberConnectedShape(
+        index = groupIndex,
+        itemCount = groupSize,
+        layout = ConnectedLayout.Vertical,
+      )
+    } else {
+      MaterialTheme.shapes.medium
+    }
+  val isFrosted = LocalPlayerGlassSurfaceActive.current
+  val containerColor = animatedPlayerSheetSelectionColor(
+    selected = isSelected,
+    frosted = isFrosted,
     label = "subtitleTrackSelection",
   )
-  val selectionBorder =
-    BorderStroke(
-      2.dp,
-      Brush.linearGradient(
-        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary),
-      ),
-    )
   val badges = subtitleTrackBadges(track, selectionIndicator, isExternal)
   Surface(
     modifier =
       modifier
         .fillMaxWidth()
-        .padding(horizontal = 8.dp, vertical = 3.dp)
+        .padding(horizontal = 8.dp, vertical = 2.dp)
         .tvFocusHighlight(shape)
         .clip(shape)
         .toggleable(value = isSelected, role = Role.Checkbox) { selected ->
@@ -623,7 +617,6 @@ fun SubtitleTrackRow(
         },
     shape = shape,
     color = containerColor,
-    border = if (isSelected) selectionBorder else null,
   ) {
     Row(
       modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),

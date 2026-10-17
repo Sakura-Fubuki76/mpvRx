@@ -36,7 +36,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.DropdownMenu
+import app.gyrolet.mpvrx.presentation.components.AppDropdownMenu as DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -73,6 +73,7 @@ import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.utils.media.findChildIgnoreCase
 import app.gyrolet.mpvrx.utils.media.listTreeFilesSafely
 import app.gyrolet.mpvrx.utils.media.openPersistedTreeDocument
 import kotlinx.coroutines.Dispatchers
@@ -730,7 +731,7 @@ private fun saveDebugLogsToConfigDir(
   return runCatching {
     val root = openPersistedTreeDocument(context, configUri, requireWrite = true)
       ?: error("Configuration folder is not writable")
-    val logDirectory = root.findFile(CONFIG_LOG_DIR_NAME) ?: root.createDirectory(CONFIG_LOG_DIR_NAME)
+    val logDirectory = root.findChildIgnoreCase(CONFIG_LOG_DIR_NAME) ?: root.createDirectory(CONFIG_LOG_DIR_NAME)
       ?: error("Could not create configuration logs folder")
     check(logDirectory.isDirectory && logDirectory.canWrite()) { "Configuration logs folder is not writable" }
     val file = logDirectory.createFile("text/plain", "$DEBUG_LOG_FILE_PREFIX${System.currentTimeMillis()}.txt")

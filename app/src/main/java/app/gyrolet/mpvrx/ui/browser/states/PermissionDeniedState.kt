@@ -15,17 +15,25 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.Settings
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,10 +52,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -57,7 +64,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -83,7 +90,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -102,7 +108,10 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.expressiveDisplayFontForText
 import app.gyrolet.mpvrx.utils.device.DeviceFormFactor
+import app.gyrolet.mpvrx.utils.media.findChildIgnoreCase
+import app.gyrolet.mpvrx.utils.permission.PermissionRecovery
 import app.gyrolet.mpvrx.utils.permission.PermissionUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -110,48 +119,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 
-private fun checkFilePermission(context: Context): Boolean {
-  val isPlayStoreBuild = BuildConfig.SCOPED_STORAGE_ONLY
-  return if (!isPlayStoreBuild && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-    Environment.isExternalStorageManager()
-  } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-    true
-  } else {
-    ContextCompat.checkSelfPermission(
-      context,
-      PermissionUtils.getStoragePermission(),
-    ) == PackageManager.PERMISSION_GRANTED
-  }
-}
+private fun checkFilePermission(context: Context): Boolean = PermissionRecovery.isStorageGranted(context)
 
-private fun checkNotificationPermission(context: Context): Boolean {
-  return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    ContextCompat.checkSelfPermission(
-      context,
-      android.Manifest.permission.POST_NOTIFICATIONS,
-    ) == PackageManager.PERMISSION_GRANTED
-  } else {
-    true
-  }
-}
+private fun checkNotificationPermission(context: Context): Boolean =
+  PermissionRecovery.isNotificationGranted(context)
 
-private fun checkAudioPermission(context: Context): Boolean {
-  return ContextCompat.checkSelfPermission(
-    context,
-    android.Manifest.permission.RECORD_AUDIO,
-  ) == PackageManager.PERMISSION_GRANTED
-}
+private fun checkAudioPermission(context: Context): Boolean = PermissionRecovery.isAudioGranted(context)
 
-private fun openStoragePermissionSettings(context: Context): Boolean {
-  val packageUri = Uri.parse("package:${context.packageName}")
-  val intents =
-    listOf(
-      Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply { data = packageUri },
-      Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
-      Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = packageUri },
-    )
-  return intents.any { intent -> runCatching { context.startActivity(intent) }.isSuccess }
-}
+private fun openStoragePermissionSettings(context: Context): Boolean =
+  PermissionRecovery.openAllFilesAccessSettings(context)
 
 private enum class OnboardingStep { STORAGE, CONFIGURATION, NOTIFICATIONS, AUDIO, FINISH }
 
@@ -255,7 +231,7 @@ fun PermissionDeniedState(
           withContext(Dispatchers.IO) {
             val root = DocumentFile.fromTreeUri(context, uri) ?: error("Configuration folder is unavailable")
             listOf("Backup", "Downloads", "fonts", "Subtitles", "scripts", "script-opts", "shaders").forEach { name ->
-              val existing = root.findFile(name)
+              val existing = root.findChildIgnoreCase(name)
               if (existing == null) root.createDirectory(name) else require(existing.isDirectory) { "$name is not a folder" }
             }
             check(downloadLocations.prepareLocationUnderTree(uri, "Downloads") != null) {
@@ -308,7 +284,7 @@ fun PermissionDeniedState(
         add(OnboardingStep.STORAGE)
         add(OnboardingStep.CONFIGURATION)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(OnboardingStep.NOTIFICATIONS)
-        add(OnboardingStep.AUDIO)
+        if (!BuildConfig.IS_PLAY_STORE_BUILD) add(OnboardingStep.AUDIO)
         add(OnboardingStep.FINISH)
       }
     }
@@ -322,6 +298,7 @@ fun PermissionDeniedState(
       OnboardingStep.AUDIO -> isAudioGranted
       OnboardingStep.FINISH -> true
     }
+  val reduceMotion = AppMotion.shouldReduceMotion()
   val stepFocusRequester =
     rememberTvInitialFocusRequester(requestKey = currentStep to currentStepGranted)
   val explanationFocusRequester =
@@ -379,16 +356,29 @@ fun PermissionDeniedState(
           ) {
             steps.forEachIndexed { index, _ ->
               val isCurrent = index == stepIndex
+              val indicatorWidth by
+                animateDpAsState(
+                  targetValue = if (isCurrent) 28.dp else 8.dp,
+                  animationSpec = if (reduceMotion) AppMotion.ReducedDp else AppMotion.Spatial.SnappyDp,
+                  label = "onboarding progress width",
+                )
+              val indicatorColor by
+                animateColorAsState(
+                  targetValue =
+                    if (isCurrent) {
+                      MaterialTheme.colorScheme.primary
+                    } else {
+                      MaterialTheme.colorScheme.surfaceContainerHighest
+                    },
+                  animationSpec = if (reduceMotion) snap() else AppMotion.Effect.Color,
+                  label = "onboarding progress color",
+                )
               Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = if (isCurrent) {
-                  MaterialTheme.colorScheme.primary
-                } else {
-                  MaterialTheme.colorScheme.surfaceContainerHighest
-                },
+                shape = AppShapeScale.full,
+                color = indicatorColor,
                 modifier = Modifier
                   .height(8.dp)
-                  .width(if (isCurrent) 22.dp else 8.dp),
+                  .width(indicatorWidth),
               ) {}
             }
           }
@@ -402,9 +392,35 @@ fun PermissionDeniedState(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
           ) {
-            AnimatedContent(targetState = currentStep, label = "onboarding_step") { step ->
+            AnimatedContent(
+              targetState = currentStep,
+              transitionSpec = {
+                if (reduceMotion) {
+                  fadeIn(animationSpec = tween(120)) togetherWith fadeOut(animationSpec = tween(90))
+                } else {
+                  val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                  (
+                    slideInHorizontally(
+                      animationSpec = tween(360, easing = FastOutSlowInEasing),
+                      initialOffsetX = { width -> direction * width / 4 },
+                    ) +
+                      fadeIn(animationSpec = tween(240, delayMillis = 60)) +
+                      scaleIn(initialScale = 0.97f, animationSpec = tween(360, easing = FastOutSlowInEasing))
+                  ) togetherWith
+                    (
+                      slideOutHorizontally(
+                        animationSpec = tween(240, easing = FastOutSlowInEasing),
+                        targetOffsetX = { width -> -direction * width / 5 },
+                      ) +
+                        fadeOut(animationSpec = tween(150)) +
+                        scaleOut(targetScale = 0.99f, animationSpec = tween(180))
+                    )
+                }
+              },
+              label = "onboarding_step",
+            ) { step ->
               Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
+                horizontalAlignment = if (isTelevision) Alignment.CenterHorizontally else Alignment.Start,
                 modifier = Modifier.fillMaxWidth(),
               ) {
                 val stepIcon = when (step) {
@@ -436,15 +452,28 @@ fun PermissionDeniedState(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(
-                  text = when (step) {
+                val pageTitle =
+                  when (step) {
                     OnboardingStep.FINISH -> stringResource(R.string.onboarding_all_set_title)
                     OnboardingStep.CONFIGURATION -> stringResource(R.string.onboarding_configuration_title)
                     else -> stringResource(R.string.ui_app_permissions)
-                  },
-                  style = MaterialTheme.typography.headlineMedium,
+                  }
+                Text(
+                  text = "${steps.indexOf(step) + 1} / ${steps.size}",
+                  style = MaterialTheme.typography.labelLarge,
                   fontWeight = FontWeight.Bold,
-                  textAlign = TextAlign.Center,
+                  color = MaterialTheme.colorScheme.primary,
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                  text = pageTitle,
+                  style = MaterialTheme.typography.displaySmall.copy(
+                    fontFamily = expressiveDisplayFontForText(pageTitle),
+                    fontWeight = FontWeight.Normal,
+                  ),
+                  textAlign = if (isTelevision) TextAlign.Center else TextAlign.Start,
                   color = MaterialTheme.colorScheme.onSurface,
                 )
 
@@ -456,8 +485,8 @@ fun PermissionDeniedState(
                     OnboardingStep.CONFIGURATION -> stringResource(R.string.onboarding_configuration_desc)
                     else -> stringResource(R.string.ui_permissions_setup_subtitle)
                   },
-                  style = MaterialTheme.typography.bodyMedium,
-                  textAlign = TextAlign.Center,
+                  style = MaterialTheme.typography.bodyLarge,
+                  textAlign = if (isTelevision) TextAlign.Center else TextAlign.Start,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
@@ -559,7 +588,9 @@ fun PermissionDeniedState(
                       if (!isNotificationGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         add(stringResource(R.string.ui_notification_permission_title))
                       }
-                      if (!isAudioGranted) add(stringResource(R.string.ui_audio_record_permission_title))
+                      if (!BuildConfig.IS_PLAY_STORE_BUILD && !isAudioGranted) {
+                        add(stringResource(R.string.ui_audio_record_permission_title))
+                      }
                     }
                     if (missingPermissions.isNotEmpty()) {
                       val warningColor = Color(0xFFFFB300)

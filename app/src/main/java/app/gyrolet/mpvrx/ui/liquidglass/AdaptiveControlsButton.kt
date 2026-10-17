@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.AnimatedIcon
 import app.gyrolet.mpvrx.ui.player.controls.LocalPlayerButtonsClickEvent
 import app.gyrolet.mpvrx.ui.player.controls.PlayerButtonAlpha
 import app.gyrolet.mpvrx.ui.player.controls.components.LocalHidePlayerButtonsBackground
@@ -47,6 +47,8 @@ import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColo
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContentColor
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.appPressFeedback
 import com.kyant.backdrop.Backdrop
 import org.koin.compose.koinInject
 
@@ -84,11 +86,12 @@ fun AdaptiveControlsButton(
     onLongClickLabel = onLongClickLabel,
   ) {
     if (icon != null) {
-      Icon(
+      AnimatedIcon(
         imageVector = icon,
         contentDescription = title ?: text,
         tint = LocalContentColor.current,
         modifier = Modifier.size(PlayerLiquidTokens.IconSize),
+        reduceMotion = AppMotion.playerReducedMotion(),
       )
     }
     if (text != null) {
@@ -124,20 +127,26 @@ fun AdaptiveControlsContainer(
   val preferences = koinInject<AppearancePreferences>()
   val liquidGlassEnabled by preferences.liquidGlassEnabled.collectAsState()
   val clickEvent = LocalPlayerButtonsClickEvent.current
+  val interactionSource = remember { MutableInteractionSource() }
+  val reduceMotion = AppMotion.playerReducedMotion()
   val resolvedTint =
     color.takeUnless { it == Color.Unspecified }
-      ?: if (liquidGlassEnabled) PlayerLiquidTokens.contentColor else playerButtonContentColor()
+      ?: if (hideBackground) LocalContentColor.current
+      else if (liquidGlassEnabled) PlayerLiquidTokens.contentColor else playerButtonContentColor()
   val resolvedSurface =
     surfaceColor.takeUnless { it == Color.Unspecified }
       ?: if (liquidGlassEnabled) PlayerLiquidTokens.surfaceColor else playerButtonContainerColor()
   val contentTint =
     if (enabled) resolvedTint else resolvedTint.copy(alpha = resolvedTint.alpha * PlayerButtonAlpha.DISABLED_CONTENT)
+  val renderLiquidGlass = liquidGlassEnabled && useGlass && !hideBackground
   val controlModifier =
     modifier
-      .tvFocusHighlight(CircleShape, isInteractive && enabled)
+      // LiquidButton already clips its glass to the capsule. Clipping again here, over the larger
+      // minimum touch target, would cut its drop shadow into a hard-edged halo.
+      .tvFocusHighlight(CircleShape, isInteractive && enabled, clipToShape = !renderLiquidGlass)
       .then(if (isInteractive) Modifier.minimumInteractiveComponentSize() else Modifier)
 
-  if (liquidGlassEnabled && useGlass) {
+  if (renderLiquidGlass) {
     CompositionLocalProvider(LocalContentColor provides contentTint) {
       LiquidButton(
         onClick = {
@@ -175,13 +184,19 @@ fun AdaptiveControlsContainer(
       modifier =
         controlModifier
           .heightIn(min = buttonSize)
+          .appPressFeedback(
+            interactionSource,
+            enabled = isInteractive && enabled,
+            pressedScale = 0.94f,
+            reduceMotion = reduceMotion,
+          )
           .clip(CircleShape)
           .then(
             if (isInteractive) {
               Modifier.combinedClickable(
                 enabled = enabled,
                 role = Role.Button,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = ripple(bounded = true),
                 onClick = {
                   clickEvent()

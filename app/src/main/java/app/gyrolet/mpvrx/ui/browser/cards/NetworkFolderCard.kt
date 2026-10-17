@@ -9,14 +9,13 @@
 
 package app.gyrolet.mpvrx.ui.browser.cards
 
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,9 +26,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,6 +64,7 @@ fun NetworkFolderCard(
   isGridMode: Boolean = false,
   useLibraryStyle: Boolean = false,
   connectionId: Long = 0,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
 ) {
   if (useLibraryStyle) {
     val browser = koinInject<BrowserPreferences>()
@@ -103,37 +104,33 @@ fun NetworkFolderCard(
   val browserPreferences = koinInject<BrowserPreferences>()
   val unlimitedNameLines by appearancePreferences.unlimitedNameLines.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
-  val interactionSource = remember { MutableInteractionSource() }
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
+  val cardShape = rememberMediaSelectionShape(isSelected, isGridMode, selectionNeighbors)
+  val selectionColor = animatedSelectionColor(isSelected)
+  val gridFooterHeight = with(LocalDensity.current) {
+    MaterialTheme.typography.titleMedium.lineHeight.toDp() * 2 + 32.dp
+  }
 
   Card(
     modifier =
       modifier
         .fillMaxWidth()
-        .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
-        .clip(AppShapeScale.large)
-        .semantics { selected = isSelected }
+        .then(if (isGridMode) Modifier.mediaGridTileHeight(20f / 17f, gridFooterHeight) else Modifier)
+        .tvFocusHighlight(cardShape, focusedScale = 1.03f)
+        .clip(cardShape)
+                .semantics { selected = isSelected }
         .tvContextMenu(onLongClick)
-        .combinedClickable(
-          interactionSource = interactionSource,
-          indication = LocalIndication.current,
+        .mediaCardClickable(
           onClick = onClick,
           onLongClick = onLongClick,
         ),
-    shape = AppShapeScale.large,
+    shape = cardShape,
     colors = CardDefaults.cardColors(containerColor = Color.Transparent),
   ) {
-    Box(modifier = Modifier.fillMaxWidth()) {
-      if (isSelected) {
-        Box(
-          modifier =
-            Modifier
-              .matchParentSize()
-              .padding(2.dp)
-              .clip(AppShapeScale.large)
-              .background(mediaSelectionColor),
-        )
-      }
+    Box(modifier = if (isGridMode) Modifier.fillMaxSize() else Modifier.fillMaxWidth()) {
+      Box(
+        modifier = Modifier.matchParentSize().clip(cardShape).background(selectionColor),
+      )
 
       if (isGridMode) {
         Column(
@@ -176,7 +173,7 @@ fun NetworkFolderCard(
           modifier =
             Modifier
               .fillMaxWidth()
-              .padding(horizontal = 8.dp, vertical = 6.dp),
+              .padding(horizontal = 8.dp, vertical = 2.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
         Box(
@@ -209,6 +206,7 @@ fun NetworkFolderCard(
           }
         }
       }
+      SelectionIndicator(isSelected, Modifier.align(Alignment.TopEnd).padding(6.dp))
     }
   }
 }

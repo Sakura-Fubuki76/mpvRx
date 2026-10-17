@@ -8,8 +8,6 @@ import android.net.Uri
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -48,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -67,8 +67,13 @@ import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.ui.browser.cards.SelectionIndicator
 import app.gyrolet.mpvrx.ui.browser.cards.VideoSwipeSurface
 import app.gyrolet.mpvrx.ui.browser.cards.animatedSelectionColor
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionNeighbors
+import app.gyrolet.mpvrx.ui.browser.cards.rememberMediaSelectionShape
 import app.gyrolet.mpvrx.ui.icons.AppIcon
 import app.gyrolet.mpvrx.ui.icons.Icon
+import app.gyrolet.mpvrx.ui.icons.AnimatedIcon
+import app.gyrolet.mpvrx.ui.browser.cards.mediaCardClickable
+import app.gyrolet.mpvrx.ui.browser.cards.mediaGridTileHeight
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvContextMenu
@@ -88,6 +93,7 @@ fun SharedMusicTrackListItem(
   trailingText: String? = null,
   isPlaying: Boolean = false,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   fallbackIcon: AppIcon = Icons.RoundedFilled.Audiotrack,
   isCircular: Boolean = false,
   coverArtSizeDp: Int = 48,
@@ -101,7 +107,11 @@ fun SharedMusicTrackListItem(
   isWatched: Boolean? = null,
   onSwipeAction: ((VideoSwipeAction) -> Unit)? = null,
   audioSong: MusicSong? = null,
+  shape: Shape? = null,
+  containerColor: Color? = null,
 ) {
+  val selectionShape = rememberMediaSelectionShape(isSelected, false, selectionNeighbors)
+  val cardShape = if (!isSelected && shape != null) shape else selectionShape
   val preferences = koinInject<BrowserPreferences>()
   val leftAction by preferences.videoSwipeLeft.collectAsState()
   val rightAction by preferences.videoSwipeRight.collectAsState()
@@ -114,23 +124,18 @@ fun SharedMusicTrackListItem(
     onAction = onSwipeAction,
     modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
-      .clip(AppShapeScale.large)
+      .tvFocusHighlight(cardShape, focusedScale = 1.03f)
+      .clip(cardShape)
       .tvContextMenu(onLongClick)
       .semantics { selected = isSelected }
-      .then(
-        if (onLongClick != null) {
-          Modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-        } else {
-          Modifier.clickable(onClick = onClick)
-        }
-      ),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = cardShape,
     colors = CardDefaults.cardColors(
       containerColor = animatedSelectionColor(
         selected = isSelected,
-        unselectedColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
+        unselectedColor =
+          if (isPlaying) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
+          else containerColor ?: MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0f),
       ),
       contentColor = MaterialTheme.colorScheme.onSurface,
     ),
@@ -139,7 +144,7 @@ fun SharedMusicTrackListItem(
       modifier = Modifier
         .fillMaxWidth()
         .heightIn(min = 64.dp)
-        .padding(horizontal = 12.dp, vertical = 8.dp),
+        .padding(horizontal = 12.dp, vertical = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
       val itemArtSize = if (isCircular) (coverArtSizeDp * 1.3f).toInt().coerceAtLeast(48).dp else coverArtSizeDp.dp
@@ -243,7 +248,7 @@ fun SharedMusicTrackListItem(
           onClick = onFavoriteClick,
           modifier = Modifier.size(48.dp),
         ) {
-          Icon(
+          AnimatedIcon(
             imageVector = if (isFavorite) Icons.RoundedFilled.Favorite else Icons.RoundedFilled.FavoriteBorder,
             contentDescription = stringResource(
               if (isFavorite) R.string.generic_remove_from_favorites else R.string.notification_add_to_favorites,
@@ -274,20 +279,23 @@ fun SharedMusicGridCard(
   isCircular: Boolean = false,
   cardWidth: Dp? = null,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   isPlaying: Boolean = false,
   onClick: () -> Unit,
   onLongClick: (() -> Unit)? = null,
   modifier: Modifier = Modifier,
 ) {
+  val cardShape = rememberMediaSelectionShape(isSelected, true, selectionNeighbors)
   Card(
     modifier = modifier
       .then(if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth())
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
-      .clip(AppShapeScale.large)
+      .mediaGridTileHeight(1f, 86.dp)
+      .tvFocusHighlight(cardShape, focusedScale = 1.03f)
+      .clip(cardShape)
       .semantics { selected = isSelected }
       .tvContextMenu(onLongClick)
-      .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = cardShape,
     colors = CardDefaults.cardColors(
       containerColor = animatedSelectionColor(
         selected = isSelected,
@@ -298,7 +306,7 @@ fun SharedMusicGridCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(if (isCircular) 14.dp else 8.dp),
+        .padding(if (isCircular) 8.dp else 5.dp),
       horizontalAlignment = if (isCircular) Alignment.CenterHorizontally else Alignment.Start,
     ) {
       Box(
@@ -474,7 +482,7 @@ fun <T> SharedCompactTrackGridSection(
           modifier = Modifier
             .width(itemWidth)
             .clip(MaterialTheme.shapes.medium)
-            .clickable { onTrackClick(track) },
+            .mediaCardClickable(onClick = { onTrackClick(track) }),
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Box(
@@ -568,6 +576,7 @@ fun <T> SharedMusicCarouselSection(
   }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SharedMusicDetailHeader(
   title: String,
@@ -579,8 +588,9 @@ fun SharedMusicDetailHeader(
   onPlayAll: (() -> Unit)? = null,
   onShuffle: (() -> Unit)? = null,
   trailingAction: (@Composable () -> Unit)? = null,
-  playButtonText: String = "Play",
+  playButtonText: String = stringResource(R.string.ui_play),
   modifier: Modifier = Modifier,
+  playbackEnabled: Boolean = true,
 ) {
   Column(
     modifier = modifier.fillMaxWidth(),
@@ -592,9 +602,9 @@ fun SharedMusicDetailHeader(
     ) {
       Box(
         modifier = Modifier
-          .size(64.dp)
-          .clip(if (isCircular) CircleShape else RoundedCornerShape(8.dp))
-          .background(MaterialTheme.colorScheme.surfaceVariant),
+          .size(88.dp)
+          .clip(if (isCircular) CircleShape else MaterialTheme.shapes.large)
+          .background(MaterialTheme.colorScheme.secondaryContainer),
         contentAlignment = Alignment.Center,
       ) {
         if (!artworkUrl.isNullOrBlank()) {
@@ -608,7 +618,7 @@ fun SharedMusicDetailHeader(
           Icon(
             imageVector = fallbackIcon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.size(32.dp),
           )
         }
@@ -616,11 +626,11 @@ fun SharedMusicDetailHeader(
 
       Spacer(modifier = Modifier.width(14.dp))
 
-      Column(modifier = Modifier.weight(1f)) {
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
           text = title,
-          style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-          maxLines = 1,
+          style = MaterialTheme.typography.headlineSmallEmphasized,
+          maxLines = 3,
           overflow = TextOverflow.Ellipsis,
         )
         if (!subtitle.isNullOrBlank()) {
@@ -628,14 +638,14 @@ fun SharedMusicDetailHeader(
             text = subtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
           )
         }
         if (!itemCountText.isNullOrBlank()) {
           Text(
             text = itemCountText,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
           )
         }
@@ -643,16 +653,10 @@ fun SharedMusicDetailHeader(
 
       if (trailingAction != null) {
         trailingAction()
-      } else if (onPlayAll != null && onShuffle == null) {
-        Button(onClick = onPlayAll) {
-          Icon(imageVector = Icons.RoundedFilled.PlayArrow, contentDescription = null)
-          Spacer(modifier = Modifier.width(4.dp))
-          Text(playButtonText)
-        }
       }
     }
 
-    if (onShuffle != null) {
+    if (onPlayAll != null || onShuffle != null) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -660,23 +664,27 @@ fun SharedMusicDetailHeader(
         if (onPlayAll != null) {
           Button(
             onClick = onPlayAll,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
+            enabled = playbackEnabled,
+            modifier = if (onShuffle != null) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+            shapes = ButtonDefaults.shapes(),
           ) {
             Icon(Icons.RoundedFilled.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(6.dp))
-            Text(playButtonText)
+            Text(playButtonText, maxLines = 2, overflow = TextOverflow.Ellipsis)
           }
         }
 
-        FilledTonalButton(
-          onClick = onShuffle,
-          modifier = if (onPlayAll != null) Modifier.weight(1f) else Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(12.dp),
-        ) {
-          Icon(Icons.RoundedFilled.Shuffle, contentDescription = null, modifier = Modifier.size(20.dp))
-          Spacer(Modifier.width(6.dp))
-          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.btn_label_shuffle))
+        if (onShuffle != null) {
+          FilledTonalButton(
+            onClick = onShuffle,
+            enabled = playbackEnabled,
+            modifier = if (onPlayAll != null) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+            shapes = ButtonDefaults.shapes(),
+          ) {
+            Icon(Icons.RoundedFilled.Shuffle, contentDescription = null, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.btn_label_shuffle), maxLines = 2, overflow = TextOverflow.Ellipsis)
+          }
         }
       }
     }

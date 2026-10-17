@@ -19,7 +19,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import app.gyrolet.mpvrx.ui.browser.cards.mediaCardClickable
+import app.gyrolet.mpvrx.ui.browser.components.mediaItemMotion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -46,14 +47,12 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import app.gyrolet.mpvrx.ui.utils.NavigationPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -69,7 +68,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.material3.ToggleFloatingActionButton
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
 import androidx.compose.material3.TooltipAnchorPosition
@@ -122,7 +121,6 @@ import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.MediaServerPreferences
-import app.gyrolet.mpvrx.preferences.MusicSourceProvider
 import app.gyrolet.mpvrx.preferences.VideoSwipeAction
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.preferences.PreferencesScreen
@@ -148,6 +146,12 @@ import app.gyrolet.mpvrx.ui.browser.playlist.PlaylistDetailScreen
 import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
 import app.gyrolet.mpvrx.ui.browser.cards.SelectionIndicator
 import app.gyrolet.mpvrx.ui.browser.cards.animatedSelectionColor
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionNeighbors
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionGridGap
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionListGap
+import app.gyrolet.mpvrx.ui.browser.cards.mediaSelectionNeighbors
+import app.gyrolet.mpvrx.ui.browser.cards.mediaGridTileHeight
+import app.gyrolet.mpvrx.ui.browser.cards.rememberMediaSelectionShape
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.components.InlineSearchBar
 import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
@@ -477,7 +481,7 @@ fun MusicLibraryContent(
                 }
               }
             },
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             tonalElevation = 6.dp,
           )
         } else {
@@ -1464,6 +1468,9 @@ private fun SongsTabContent(
       else -> recentlyPlayedFilePath != null && path == recentlyPlayedFilePath
     }
 
+  val gridColumns by remember(gridState) {
+    derivedStateOf { gridState.layoutInfo.maxSpan.coerceAtLeast(1) }
+  }
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   Box(modifier = Modifier.fillMaxSize()) {
     if (viewMode == MusicViewMode.GRID) {
@@ -1471,14 +1478,19 @@ private fun SongsTabContent(
         state = gridState,
         columns = GridCells.Adaptive(minSize = gridCoverArtSizeDp.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+        horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap)
       ) {
-        items(songs, key = { it.id }) { song ->
+        items(count = songs.size, key = { index -> songs[index].id }) { index ->
+          val song = songs[index]
           SongGridCard(
             song = song,
+            modifier = mediaItemMotion(),
             isSelected = selectionManager.isSelected(song),
+            selectionNeighbors = mediaSelectionNeighbors(index, songs.size, gridColumns) { neighbor ->
+              selectionManager.isSelected(songs[neighbor])
+            },
             isPlaying = song.isNowPlaying(),
             onClick = { onSongClick(song) },
             onLongClick = { onSongLongClick(song) }
@@ -1492,14 +1504,20 @@ private fun SongsTabContent(
       LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
+        contentPadding = PaddingValues(start = 8.dp, top = 4.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap)
       ) {
-        items(songs, key = { it.id }) { song ->
+        items(count = songs.size, key = { index -> songs[index].id }) { index ->
+          val song = songs[index]
           val video = remember(song) { song.toVideo() }
           val isWatched = swipePlaybackInfo[song.path]?.isWatched ?: false
           SongListItem(
             song = song,
+            modifier = mediaItemMotion(),
             isSelected = selectionManager.isSelected(song),
+            selectionNeighbors = mediaSelectionNeighbors(index, songs.size, 1) { neighbor ->
+              selectionManager.isSelected(songs[neighbor])
+            },
             isPlaying = song.isNowPlaying(),
             coverArtSizeDp = coverArtSizeDp,
             onClick = { onSongClick(song) },
@@ -1529,23 +1547,31 @@ private fun SongsTabContent(
 private fun SongGridCard(
   song: MusicSong,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   isPlaying: Boolean = false,
   onClick: () -> Unit,
-  onLongClick: () -> Unit
+  onLongClick: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
+  val selectedShape = rememberMediaSelectionShape(
+    selected = isSelected,
+    grid = true,
+    neighbors = selectionNeighbors,
+  )
   val selectionColor = animatedSelectionColor(
     selected = isSelected,
     unselectedColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (isPlaying) 0.35f else 0f),
   )
   Card(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
-      .clip(AppShapeScale.large)
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+      .mediaGridTileHeight(1f, 80.dp)
+      .clip(selectedShape)
+      .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
       .tvContextMenu(onLongClick)
       .semantics { selected = isSelected }
-      .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = selectedShape,
     colors = CardDefaults.cardColors(
       containerColor = selectionColor
     )
@@ -1553,7 +1579,7 @@ private fun SongGridCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(8.dp)
+        .padding(2.dp)
     ) {
       Box(
         modifier = Modifier
@@ -1589,7 +1615,7 @@ private fun SongGridCard(
         SelectionIndicator(isSelected, Modifier.align(Alignment.TopEnd).padding(6.dp))
       }
 
-      Spacer(modifier = Modifier.height(6.dp))
+      Spacer(modifier = Modifier.height(4.dp))
 
       Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1632,21 +1658,25 @@ private fun SongGridCard(
 private fun SongListItem(
   song: MusicSong,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   isPlaying: Boolean = false,
   coverArtSizeDp: Int = 48,
   onClick: () -> Unit,
   onLongClick: (() -> Unit)? = null,
   isWatched: Boolean? = null,
   onSwipeAction: ((VideoSwipeAction) -> Unit)? = null,
+  modifier: Modifier = Modifier,
 ) {
   SharedMusicTrackListItem(
     title = song.title,
+    modifier = modifier,
     subtitle = "${song.artist} • ${song.album}",
     albumArtUri = song.albumArtUri,
     audioSong = song,
     durationSeconds = song.durationMs / 1000,
     isPlaying = isPlaying,
     isSelected = isSelected,
+    selectionNeighbors = selectionNeighbors,
     coverArtSizeDp = coverArtSizeDp,
     onClick = onClick,
     onLongClick = onLongClick,
@@ -1673,6 +1703,9 @@ private fun AlbumsTabContent(
     return
   }
 
+  val gridColumns by remember(gridState) {
+    derivedStateOf { gridState.layoutInfo.maxSpan.coerceAtLeast(1) }
+  }
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   Box(modifier = Modifier.fillMaxSize()) {
     if (viewMode == MusicViewMode.GRID) {
@@ -1680,14 +1713,19 @@ private fun AlbumsTabContent(
         state = gridState,
         columns = GridCells.Adaptive(minSize = gridCoverArtSizeDp.dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+        horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap)
       ) {
-        items(albums, key = { it.id }) { album ->
+        items(count = albums.size, key = { index -> albums[index].id }) { index ->
+          val album = albums[index]
           AlbumGridCard(
             album = album,
+            modifier = mediaItemMotion(),
             isSelected = selectionManager.isSelected(album),
+            selectionNeighbors = mediaSelectionNeighbors(index, albums.size, gridColumns) { neighbor ->
+              selectionManager.isSelected(albums[neighbor])
+            },
             onClick = { onAlbumClick(album) },
             onLongClick = { onAlbumLongClick(album) }
           )
@@ -1697,12 +1735,18 @@ private fun AlbumsTabContent(
       LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
+        contentPadding = PaddingValues(start = 8.dp, top = 4.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap)
       ) {
-        items(albums, key = { it.id }) { album ->
+        items(count = albums.size, key = { index -> albums[index].id }) { index ->
+          val album = albums[index]
           AlbumListCard(
             album = album,
+            modifier = mediaItemMotion(),
             isSelected = selectionManager.isSelected(album),
+            selectionNeighbors = mediaSelectionNeighbors(index, albums.size, 1) { neighbor ->
+              selectionManager.isSelected(albums[neighbor])
+            },
             coverArtSizeDp = coverArtSizeDp,
             onClick = { onAlbumClick(album) },
             onLongClick = { onAlbumLongClick(album) }
@@ -1727,18 +1771,26 @@ private fun AlbumsTabContent(
 private fun AlbumGridCard(
   album: MusicAlbum,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   onClick: () -> Unit,
-  onLongClick: () -> Unit
+  onLongClick: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
+  val selectedShape = rememberMediaSelectionShape(
+    selected = isSelected,
+    grid = true,
+    neighbors = selectionNeighbors,
+  )
   Card(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
-      .clip(AppShapeScale.large)
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+      .mediaGridTileHeight(1f, 80.dp)
+      .clip(selectedShape)
+      .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
       .tvContextMenu(onLongClick)
       .semantics { selected = isSelected }
-      .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = selectedShape,
     colors = CardDefaults.cardColors(
       containerColor = animatedSelectionColor(isSelected)
     )
@@ -1746,7 +1798,7 @@ private fun AlbumGridCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(8.dp)
+        .padding(2.dp)
     ) {
       Box(
         modifier = Modifier
@@ -1765,7 +1817,7 @@ private fun AlbumGridCard(
         SelectionIndicator(isSelected, Modifier.align(Alignment.TopEnd).padding(6.dp))
       }
 
-      Spacer(modifier = Modifier.height(6.dp))
+      Spacer(modifier = Modifier.height(4.dp))
 
       Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1806,20 +1858,27 @@ private fun AlbumGridCard(
 private fun AlbumListCard(
   album: MusicAlbum,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   coverArtSizeDp: Int = 48,
   onClick: () -> Unit,
-  onLongClick: () -> Unit
+  onLongClick: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
+  val selectedShape = rememberMediaSelectionShape(
+    selected = isSelected,
+    grid = false,
+    neighbors = selectionNeighbors,
+  )
   Surface(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
-      .clip(AppShapeScale.large)
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+      .padding(horizontal = 0.dp)
+      .clip(selectedShape)
+      .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
       .tvContextMenu(onLongClick)
       .semantics { selected = isSelected }
-      .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = selectedShape,
     color = animatedSelectionColor(isSelected)
   ) {
     Row(
@@ -1889,6 +1948,9 @@ private fun ArtistsTabContent(
     return
   }
 
+  val gridColumns by remember(gridState) {
+    derivedStateOf { gridState.layoutInfo.maxSpan.coerceAtLeast(1) }
+  }
   val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
   Box(modifier = Modifier.fillMaxSize()) {
     if (viewMode == MusicViewMode.GRID) {
@@ -1896,14 +1958,19 @@ private fun ArtistsTabContent(
         state = gridState,
         columns = GridCells.Adaptive(minSize = (gridCoverArtSizeDp * 1.1f).toInt().dp),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+        contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+        horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap)
       ) {
-        items(artists, key = { it.id }) { artist ->
+        items(count = artists.size, key = { index -> artists[index].id }) { index ->
+          val artist = artists[index]
           ArtistGridCard(
             artist = artist,
+            modifier = mediaItemMotion(),
             isSelected = selectionManager.isSelected(artist),
+            selectionNeighbors = mediaSelectionNeighbors(index, artists.size, gridColumns) { neighbor ->
+              selectionManager.isSelected(artists[neighbor])
+            },
             onClick = { onArtistClick(artist) },
             onLongClick = { onArtistLongClick(artist) }
           )
@@ -1913,12 +1980,18 @@ private fun ArtistsTabContent(
       LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
+        contentPadding = PaddingValues(start = 8.dp, top = 4.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap)
       ) {
-        items(artists, key = { it.id }) { artist ->
+        items(count = artists.size, key = { index -> artists[index].id }) { index ->
+          val artist = artists[index]
           ArtistListCard(
             artist = artist,
+            modifier = mediaItemMotion(),
             isSelected = selectionManager.isSelected(artist),
+            selectionNeighbors = mediaSelectionNeighbors(index, artists.size, 1) { neighbor ->
+              selectionManager.isSelected(artists[neighbor])
+            },
             coverArtSizeDp = coverArtSizeDp,
             onClick = { onArtistClick(artist) },
             onLongClick = { onArtistLongClick(artist) }
@@ -1943,18 +2016,26 @@ private fun ArtistsTabContent(
 private fun ArtistGridCard(
   artist: MusicArtist,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   onClick: () -> Unit,
-  onLongClick: () -> Unit
+  onLongClick: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
+  val selectedShape = rememberMediaSelectionShape(
+    selected = isSelected,
+    grid = true,
+    neighbors = selectionNeighbors,
+  )
   Card(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
-      .clip(AppShapeScale.large)
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+      .mediaGridTileHeight(1f, 65.dp)
+      .clip(selectedShape)
+      .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
       .tvContextMenu(onLongClick)
       .semantics { selected = isSelected }
-      .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = selectedShape,
     colors = CardDefaults.cardColors(
       containerColor = animatedSelectionColor(isSelected)
     )
@@ -1962,7 +2043,7 @@ private fun ArtistGridCard(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(14.dp),
+        .padding(4.dp),
       horizontalAlignment = Alignment.CenterHorizontally
     ) {
       Box(
@@ -1977,7 +2058,7 @@ private fun ArtistGridCard(
         SelectionIndicator(isSelected, Modifier.align(Alignment.TopEnd).padding(6.dp))
       }
 
-      Spacer(modifier = Modifier.height(8.dp))
+      Spacer(modifier = Modifier.height(4.dp))
 
       Text(
         text = artist.name,
@@ -2004,20 +2085,27 @@ private fun ArtistGridCard(
 private fun ArtistListCard(
   artist: MusicArtist,
   isSelected: Boolean = false,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   coverArtSizeDp: Int = 48,
   onClick: () -> Unit,
-  onLongClick: () -> Unit
+  onLongClick: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
+  val selectedShape = rememberMediaSelectionShape(
+    selected = isSelected,
+    grid = false,
+    neighbors = selectionNeighbors,
+  )
   Surface(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
-      .padding(horizontal = 8.dp, vertical = 3.dp)
-      .clip(AppShapeScale.large)
-      .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+      .padding(horizontal = 0.dp)
+      .clip(selectedShape)
+      .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
       .tvContextMenu(onLongClick)
       .semantics { selected = isSelected }
-      .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-    shape = AppShapeScale.large,
+      .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+    shape = selectedShape,
     color = animatedSelectionColor(isSelected)
   ) {
     Row(
@@ -2246,22 +2334,30 @@ private fun MusicPlaylistCard(
   itemCount: Int,
   artworkSongs: List<MusicSong>,
   isSelected: Boolean,
+  selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
   isGridMode: Boolean,
   coverArtSizeDp: Dp = 52.dp,
   onClick: () -> Unit,
   onLongClick: () -> Unit,
+  modifier: Modifier = Modifier,
 ) {
+  val selectedShape = rememberMediaSelectionShape(
+    selected = isSelected,
+    grid = isGridMode,
+    neighbors = selectionNeighbors,
+  )
   val isFavorites = playlist.name.equals(PlaylistRepository.FAVORITES_PLAYLIST_NAME, ignoreCase = true)
   if (isGridMode) {
     Card(
-      modifier = Modifier
+      modifier = modifier
         .fillMaxWidth()
-        .clip(AppShapeScale.large)
-        .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+        .mediaGridTileHeight(1f, 60.dp)
+        .clip(selectedShape)
+        .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
         .tvContextMenu(onLongClick)
         .semantics { selected = isSelected }
-        .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-      shape = AppShapeScale.large,
+        .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+      shape = selectedShape,
       colors = CardDefaults.cardColors(
         containerColor = animatedSelectionColor(isSelected)
       )
@@ -2269,7 +2365,7 @@ private fun MusicPlaylistCard(
       Column(
         modifier = Modifier
           .fillMaxWidth()
-          .padding(8.dp)
+          .padding(2.dp)
       ) {
         Box(modifier = Modifier.fillMaxWidth()) {
           PlaylistArtCollage(
@@ -2280,7 +2376,7 @@ private fun MusicPlaylistCard(
           SelectionIndicator(isSelected, Modifier.align(Alignment.TopEnd).padding(6.dp))
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(4.dp))
 
         Column(modifier = Modifier.fillMaxWidth()) {
           Text(
@@ -2300,13 +2396,15 @@ private fun MusicPlaylistCard(
     }
   } else {
     Surface(
-      modifier = Modifier
+      modifier = modifier
         .fillMaxWidth()
-        .clip(AppShapeScale.large)
-        .tvFocusHighlight(AppShapeScale.large, focusedScale = 1.03f)
+        .padding(horizontal = 0.dp)
+        .clip(selectedShape)
+        .tvFocusHighlight(selectedShape, focusedScale = 1.03f)
         .tvContextMenu(onLongClick)
         .semantics { selected = isSelected }
-        .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        .mediaCardClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = selectedShape,
         color = animatedSelectionColor(isSelected)
     ) {
       Row(
@@ -2393,6 +2491,9 @@ private fun PlaylistsTabContent(
     if (playlists.isEmpty()) {
       EmptyMusicState(text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_no_playlists_found_create_one))
     } else {
+      val gridColumns by remember(gridState) {
+        derivedStateOf { gridState.layoutInfo.maxSpan.coerceAtLeast(1) }
+      }
       val navBarHeight = LocalNavigationBarHeight.current.takeIf { it > 0.dp } ?: 88.dp
       Box(modifier = Modifier.fillMaxSize()) {
         if (viewMode == MusicViewMode.GRID) {
@@ -2400,19 +2501,24 @@ private fun PlaylistsTabContent(
             state = gridState,
             columns = GridCells.Adaptive(minSize = gridCoverArtSizeDp.dp),
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = navBarHeight + 16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+            verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+            horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap)
           ) {
-            items(playlists, key = { it.id }) { playlist ->
+            items(count = playlists.size, key = { index -> playlists[index].id }) { index ->
+              val playlist = playlists[index]
               val details = playlistDetails[playlist.id]
               val itemCount = details?.first ?: 0
               val artworkSongs = details?.second ?: emptyList()
               MusicPlaylistCard(
                 playlist = playlist,
+                modifier = mediaItemMotion(),
                 itemCount = itemCount,
                 artworkSongs = artworkSongs,
                 isSelected = selectionManager.isSelected(playlist),
+                selectionNeighbors = mediaSelectionNeighbors(index, playlists.size, gridColumns) { neighbor ->
+              selectionManager.isSelected(playlists[neighbor])
+            },
                 isGridMode = true,
                 onClick = { onPlaylistClick(playlist) },
                 onLongClick = { onPlaylistLongClick(playlist) }
@@ -2423,17 +2529,23 @@ private fun PlaylistsTabContent(
           LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 0.dp, top = 8.dp, end = 0.dp, bottom = navBarHeight + 16.dp)
+            contentPadding = PaddingValues(start = 8.dp, top = 4.dp, end = 8.dp, bottom = navBarHeight + 8.dp),
+        verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap)
           ) {
-            items(playlists, key = { it.id }) { playlist ->
+            items(count = playlists.size, key = { index -> playlists[index].id }) { index ->
+              val playlist = playlists[index]
               val details = playlistDetails[playlist.id]
               val itemCount = details?.first ?: 0
               val artworkSongs = details?.second ?: emptyList()
               MusicPlaylistCard(
                 playlist = playlist,
+                modifier = mediaItemMotion(),
                 itemCount = itemCount,
                 artworkSongs = artworkSongs,
                 isSelected = selectionManager.isSelected(playlist),
+                selectionNeighbors = mediaSelectionNeighbors(index, playlists.size, 1) { neighbor ->
+              selectionManager.isSelected(playlists[neighbor])
+            },
                 isGridMode = false,
                 coverArtSizeDp = coverArtSizeDp,
                 onClick = { onPlaylistClick(playlist) },
@@ -2645,7 +2757,7 @@ private fun CreatePlaylistDialog(
 ) {
   var playlistName by remember { mutableStateOf("") }
 
-  androidx.compose.material3.AlertDialog(
+  app.gyrolet.mpvrx.presentation.components.AppAlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_create_playlist)) },
     text = {

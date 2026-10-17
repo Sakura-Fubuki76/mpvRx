@@ -208,7 +208,9 @@ internal fun ConnectionEditorSheet(
               .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
         )
         ExposedDropdownMenu(
-          expanded = protocolMenuExpanded,
+      shape = androidx.compose.material3.MaterialTheme.shapes.extraLargeIncreased,
+      containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
+      expanded = protocolMenuExpanded,
           onDismissRequest = { protocolMenuExpanded = false },
         ) {
           allowedProtocols.forEach { selectedProtocol ->

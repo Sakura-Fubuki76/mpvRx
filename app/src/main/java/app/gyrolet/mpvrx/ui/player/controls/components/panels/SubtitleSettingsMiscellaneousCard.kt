@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.stringResource
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.R
@@ -47,12 +48,16 @@ import app.gyrolet.mpvrx.ui.player.controls.components.sheets.toFixed
 import app.gyrolet.mpvrx.ui.player.controls.panelCardsColors
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.theme.spacing
+import app.gyrolet.mpvrx.ui.theme.AppConnectedShapeTokens
 import app.gyrolet.mpvrx.ui.utils.currentMpvConfigOverrideOptions
 import me.zhanghai.compose.preference.ProvidePreferenceLocals
 import org.koin.compose.koinInject
 
 @Composable
-fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
+fun SubtitlesMiscellaneousCard(
+  modifier: Modifier = Modifier,
+  shape: Shape = MaterialTheme.shapes.large,
+) {
   val preferences = koinInject<SubtitlesPreferences>()
   val playerPreferences = koinInject<PlayerPreferences>()
   val configOwnedOptions = currentMpvConfigOverrideOptions()
@@ -77,9 +82,10 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
     onExpand = { isExpanded = !isExpanded },
     modifier.widthIn(max = CARDS_MAX_WIDTH),
     colors = panelCardsColors(),
+    shape = shape,
   ) {
     ProvidePreferenceLocals {
-      Column {
+      Column(verticalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing)) {
         var overrideAssSubs by remember {
           mutableStateOf(preferences.overrideAssSubs.get())
         }
@@ -88,6 +94,8 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         }
         SwitchPreference(
           overrideAssSubs,
+          groupIndex = 0,
+          groupSize = 5,
           enabled = layoutOptions.none(configOwnedOptions::contains),
           onValueChange = {
             overrideAssSubs = it
@@ -101,6 +109,8 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         }
         SwitchPreference(
           scaleByWindow,
+          groupIndex = 1,
+          groupSize = 5,
           enabled = scaleByWindowOptions.none(configOwnedOptions::contains),
           onValueChange = {
             scaleByWindow = it
@@ -120,6 +130,8 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         }
         SwitchPreference(
           secondaryPinchZoom,
+          groupIndex = 2,
+          groupSize = 5,
           enabled = scaleOptions.none(configOwnedOptions::contains),
           onValueChange = {
             secondaryPinchZoom = it
@@ -133,6 +145,8 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         }
         SwitchPreference(
           blendSubtitlesWithVideo,
+          groupIndex = 3,
+          groupSize = 5,
           enabled = blendOptions.none(configOwnedOptions::contains),
           onValueChange = {
             blendSubtitlesWithVideo = it
@@ -148,6 +162,8 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         }
         SwitchPreference(
           forceRtlSubtitles,
+          groupIndex = 4,
+          groupSize = 5,
           enabled = bidiOptions.none(configOwnedOptions::contains),
           onValueChange = {
             forceRtlSubtitles = it
@@ -164,73 +180,81 @@ fun SubtitlesMiscellaneousCard(modifier: Modifier = Modifier) {
         val isSecondaryActive = (secondarySid ?: PlaybackSession.getPropertyString("secondary-sid")?.toIntOrNull() ?: 0) > 0
         val secondarySubScale by preferences.secondarySubScale.collectAsState()
         val secondarySubPos by PlaybackSession.propInt["secondary-sub-pos"].collectAsState()
-        SliderItem(
-          label = stringResource(
-            if (isSecondaryActive) R.string.player_sheets_sub_primary_scale else R.string.player_sheets_sub_scale,
-          ),
-          value = subScale,
-          valueText = subScale.toFixed(2).toString(),
-          onChange = {
-            preferences.subScale.set(it)
-            applySubtitleScales()
-          },
-          max = 5f,
-          enabled = scaleOptions.none(configOwnedOptions::contains),
-          icon = {
-            Icon(
-              Icons.RoundedFilled.FormatSize,
-              null,
-            )
-          },
-        )
-        SliderItem(
-          label = stringResource(
-            if (isSecondaryActive) R.string.player_sheets_sub_primary_position else R.string.player_sheets_sub_position,
-          ),
-          value = subPos ?: preferences.subPos.get(),
-          valueText = (subPos ?: preferences.subPos.get()).toString(),
-          onChange = {
-            preferences.subPos.set(it)
-            applySubtitleLayout(it, preferences.overrideAssSubs.get())
-          },
-          max = 150,
-          enabled = layoutOptions.none(configOwnedOptions::contains),
-          icon = {
-            Icon(
-              Icons.RoundedFilled.AlignVerticalCenter,
-              null,
-            )
-          },
-        )
-        if (isSecondaryActive) {
+        PanelConnectedTile(index = 0, itemCount = if (isSecondaryActive) 4 else 2) {
           SliderItem(
-            label = stringResource(R.string.player_sheets_secondary_sub_scale),
-            value = secondarySubScale,
-            valueText = secondarySubScale.toFixed(2).toString(),
+            label = stringResource(
+              if (isSecondaryActive) R.string.player_sheets_sub_primary_scale else R.string.player_sheets_sub_scale,
+            ),
+            value = subScale,
+            valueText = subScale.toFixed(2).toString(),
             onChange = {
-              preferences.secondarySubScale.set(it)
+              preferences.subScale.set(it)
               applySubtitleScales()
             },
             max = 5f,
             enabled = scaleOptions.none(configOwnedOptions::contains),
             icon = {
-              Icon(Icons.RoundedFilled.FormatSize, null)
+              Icon(
+                Icons.RoundedFilled.FormatSize,
+                null,
+              )
             },
           )
+        }
+        PanelConnectedTile(index = 1, itemCount = if (isSecondaryActive) 4 else 2) {
           SliderItem(
-            label = stringResource(R.string.player_sheets_secondary_sub_position),
-            value = secondarySubPos ?: preferences.secondarySubPos.get(),
-            valueText = (secondarySubPos ?: preferences.secondarySubPos.get()).toString(),
+            label = stringResource(
+              if (isSecondaryActive) R.string.player_sheets_sub_primary_position else R.string.player_sheets_sub_position,
+            ),
+            value = subPos ?: preferences.subPos.get(),
+            valueText = (subPos ?: preferences.subPos.get()).toString(),
             onChange = {
-              preferences.secondarySubPos.set(it)
-              PlaybackSession.setPropertyInt("secondary-sub-pos", it)
+              preferences.subPos.set(it)
+              applySubtitleLayout(it, preferences.overrideAssSubs.get())
             },
             max = 150,
             enabled = layoutOptions.none(configOwnedOptions::contains),
             icon = {
-              Icon(Icons.RoundedFilled.AlignVerticalCenter, null)
+              Icon(
+                Icons.RoundedFilled.AlignVerticalCenter,
+                null,
+              )
             },
           )
+        }
+        if (isSecondaryActive) {
+          PanelConnectedTile(index = 2, itemCount = if (isSecondaryActive) 4 else 2) {
+            SliderItem(
+              label = stringResource(R.string.player_sheets_secondary_sub_scale),
+              value = secondarySubScale,
+              valueText = secondarySubScale.toFixed(2).toString(),
+              onChange = {
+                preferences.secondarySubScale.set(it)
+                applySubtitleScales()
+              },
+              max = 5f,
+              enabled = scaleOptions.none(configOwnedOptions::contains),
+              icon = {
+                Icon(Icons.RoundedFilled.FormatSize, null)
+              },
+            )
+          }
+          PanelConnectedTile(index = 3, itemCount = if (isSecondaryActive) 4 else 2) {
+            SliderItem(
+              label = stringResource(R.string.player_sheets_secondary_sub_position),
+              value = secondarySubPos ?: preferences.secondarySubPos.get(),
+              valueText = (secondarySubPos ?: preferences.secondarySubPos.get()).toString(),
+              onChange = {
+                preferences.secondarySubPos.set(it)
+                PlaybackSession.setPropertyInt("secondary-sub-pos", it)
+              },
+              max = 150,
+              enabled = layoutOptions.none(configOwnedOptions::contains),
+              icon = {
+                Icon(Icons.RoundedFilled.AlignVerticalCenter, null)
+              },
+            )
+          }
         }
         Row(
           modifier =
