@@ -83,6 +83,8 @@ fun NetworkVideoCard(
   mediaType: NetworkMediaType? = null,
   titleOverride: String? = null,
   episodeLabel: String? = null,
+  /** See [VideoCard]: content-sized episode strip tile. */
+  episodeTile: Boolean = false,
 ) {
   val appearancePreferences = koinInject<AppearancePreferences>()
   val browserPreferences = koinInject<BrowserPreferences>()
@@ -221,7 +223,7 @@ fun NetworkVideoCard(
       video, playback, System.currentTimeMillis(), newLabelDays, watchedThreshold)
     VideoCard(video = video, onClick = onClick, modifier = modifier, onLongClick = onLongClick,
       isSelected = isSelected, onThumbClick = onThumbnailClick, isGridMode = isGridMode,
-      selectionNeighbors = selectionNeighbors,
+      selectionNeighbors = selectionNeighbors, episodeTile = episodeTile,
       progressPercentage = progress, isWatched = playbackInfo.isWatched, isOldAndUnplayed = playbackInfo.isOldAndUnplayed, playbackIdentity = playbackKey,
       allowThumbnailGeneration = false, allowThumbnailLoading = false,
       externalThumbnail = thumbnail, uiConfig = rememberVideoCardUiConfig(fields).copy(showThumbnails = displayThumb),

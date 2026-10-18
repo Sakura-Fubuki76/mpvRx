@@ -241,6 +241,12 @@ fun VideoCard(
   playbackIdentity: String? = null,
   titleLeading: (@Composable () -> Unit)? = null,
   selectionNeighbors: MediaSelectionNeighbors = MediaSelectionNeighbors(),
+  /**
+   * Episode-strip tile: keeps the grid layout but sizes itself to the enabled fields and reads
+   * like the list case — list-size title, the resolution as a normal chip instead of an artwork
+   * overlay, and [titleLeading] (the episode number) on its own line above the title.
+   */
+  episodeTile: Boolean = false,
 ) {
   // Screens hoist this once and pass it down; collecting per card would register a dozen
   // preference observers for every visible item in a grid.
@@ -257,6 +263,9 @@ fun VideoCard(
     "${android.text.format.DateUtils.formatElapsedTime(storedPositionMs.coerceAtMost(playbackDurationMs) / 1000)} / ${android.text.format.DateUtils.formatElapsedTime(playbackDurationMs / 1000)}"
     else video.durationFormatted
   val resolvedUiConfig = uiConfig ?: rememberVideoCardUiConfig()
+  // Uniform grid tiles share one reserved footprint; episode tiles keep the grid layout but
+  // follow their content, so they keep the list case's typography and chip semantics.
+  val gridTile = isGridMode && !episodeTile
   val maxLines = if (resolvedUiConfig.unlimitedNameLines) Int.MAX_VALUE else 2
 
   val showThumbnails = resolvedUiConfig.showThumbnails
@@ -281,8 +290,8 @@ fun VideoCard(
   val hasCodecChip = showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()
   val hasSubtitleChips = showSubtitleIndicator && !video.isAudio && video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()
   val hasDateMetadataChip = showDateChip && video.dateModified > 0
-  val hasResolutionMetadataChip = !isGridMode && showResolutionChip && hasResolution
-  val hasFramerateMetadataChip = showFramerateInResolution && hasFps && (isGridMode || !showResolutionChip)
+  val hasResolutionMetadataChip = !gridTile && showResolutionChip && hasResolution
+  val hasFramerateMetadataChip = showFramerateInResolution && hasFps && (gridTile || !showResolutionChip)
   val hasMetadataChips =
     sourceLabel != null ||
       hasCodecChip ||
@@ -329,7 +338,7 @@ fun VideoCard(
     modifier =
       modifier
         .fillMaxWidth()
-        .then(if (isGridMode) Modifier.mediaGridTileHeight(if (video.isAudio) 1f else 16f / 10f, gridFooterHeight) else Modifier)
+        .then(if (gridTile) Modifier.mediaGridTileHeight(if (video.isAudio) 1f else 16f / 10f, gridFooterHeight) else Modifier)
         .tvFocusHighlight(cardShape, focusedScale = 1.03f)
         .clip(cardShape)
                 .semantics { selected = isSelected }
@@ -546,7 +555,7 @@ fun VideoCard(
               }
             }
 
-            if (isGridMode && showResolutionChip && hasResolution) {
+            if (gridTile && showResolutionChip && hasResolution) {
               val displayResolution =
                 if (showFramerateInResolution) video.resolution else video.resolution.substringBefore("@")
               Box(
@@ -588,18 +597,29 @@ fun VideoCard(
 
           Spacer(modifier = Modifier.height(4.dp))
 
+          // An episode tile gives the number its own line: the title then keeps the full tile
+          // width instead of wrapping around the badge.
+          if (episodeTile && titleLeading != null) {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+              horizontalArrangement = if (centerGridTitles) Arrangement.Center else Arrangement.Start,
+            ) {
+              titleLeading.invoke()
+            }
+          }
+
           // Title below thumbnail
           Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = if (centerGridTitles) Arrangement.Center else Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
           ) {
-          titleLeading?.invoke()
+          if (!episodeTile) titleLeading?.invoke()
           Text(
             text = displayName,
             modifier = if (titleAction != null || titleLeading != null) Modifier.weight(1f) else Modifier,
             style =
-              MaterialTheme.typography.titleMedium.let { baseStyle ->
+              (if (gridTile) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall).let { baseStyle ->
                 if (isRecentlyPlayed) baseStyle.copy(fontStyle = FontStyle.Italic) else baseStyle
               },
             color =
@@ -670,7 +690,7 @@ fun VideoCard(
                 )
               }
 
-              if (!isGridMode && showResolutionChip && !video.isAudio) {
+              if (!gridTile && showResolutionChip && !video.isAudio) {
                 if (hasResolution) {
                   val displayResolution =
                     if (showFramerateInResolution) {

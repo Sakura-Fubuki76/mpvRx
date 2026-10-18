@@ -67,16 +67,18 @@ internal fun AnimeCreditsContent(subject: AnimeSubject) {
 private fun CreditCard(name: String, role: String, image: String, portrait: Boolean = false, onClick: () -> Unit) {
   Surface(onClick = onClick, modifier = Modifier.width(152.dp), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
     Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      Box(Modifier.size(96.dp, 128.dp), contentAlignment = Alignment.Center) {
-        Box((if (portrait) Modifier.fillMaxSize() else Modifier.size(88.dp)).clip(if (portrait) RoundedCornerShape(16.dp) else CircleShape)
-          .background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
-          if (image.isNotBlank()) RemoteImage(image, name, Modifier.fillMaxSize(), if (portrait) ContentScale.Fit else ContentScale.Crop)
-          else Text(name.take(1), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
-        }
+      // The artwork slot follows its avatar: a circle no longer reserves the portrait height.
+      Box((if (portrait) Modifier.size(96.dp, 128.dp) else Modifier.size(88.dp))
+        .clip(if (portrait) RoundedCornerShape(16.dp) else CircleShape)
+        .background(MaterialTheme.colorScheme.secondaryContainer), contentAlignment = Alignment.Center) {
+        if (image.isNotBlank()) RemoteImage(image, name, Modifier.fillMaxSize(), if (portrait) ContentScale.Fit else ContentScale.Crop)
+        else Text(name.take(1), style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
       }
-      Text(name, style = MaterialTheme.typography.titleSmall, minLines = 2, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+      // Text blocks size to their content; the caps only stop an unusually long credit from
+      // stretching the whole row.
+      Text(name, style = MaterialTheme.typography.titleSmall, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
       Text(role, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        minLines = 3, maxLines = 3, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+        maxLines = 3, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
     }
   }
 }

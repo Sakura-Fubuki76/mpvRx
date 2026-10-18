@@ -3,6 +3,7 @@ package app.gyrolet.mpvrx.ui.browser.networkstreaming
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -336,16 +337,24 @@ internal fun AnimeLibraryContent(
             Text(if (section.isEmpty()) stringResource(R.string.anime_regular_episodes) else section.replace("/", " / "),
               Modifier.padding(24.dp, 12.dp), style = MaterialTheme.typography.titleMedium)
           }
-          items(sectionFiles, key = { it.path }) { file ->
-            val parsed = remember(file.name) { parseAnimeFilename(file.name) }
-            val offset = libraryGroups[path]?.episodeOffsets?.get(file.path) ?: binding?.episodeOffset ?: 0
-            val episode = subject?.let { animeMappedEpisode(it, file.name, offset, section.isEmpty() || file.path in libraryGroups[path]?.regularPaths.orEmpty()) }
-            val number = episode?.number ?: parsed.episode?.minus(offset)
-            val episodeTitle = episode?.title?.takeIf { it.isNotBlank() } ?: subject?.takeIf { episode != null && it.episodes.count { row -> row.type == episode.type } == 1 }?.title
-            val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
-            NetworkVideoCard(file, connection, modifier = Modifier.padding(horizontal = 16.dp),
-              titleOverride = episodeTitle, episodeLabel = episodeLabel.takeIf { episode != null || section.isEmpty() },
-              onClick = { onPlay(file, sectionFiles) })
+          // Episodes scroll sideways: a long series is swiped through in one strip instead of
+          // pushing everything below it down the page.
+          item(key = "section-row:$section") {
+            LazyRow(Modifier.fillMaxWidth(), contentPadding = PaddingValues(horizontal = 16.dp),
+              horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+              items(sectionFiles, key = { it.path }) { file ->
+                val parsed = remember(file.name) { parseAnimeFilename(file.name) }
+                val offset = libraryGroups[path]?.episodeOffsets?.get(file.path) ?: binding?.episodeOffset ?: 0
+                val episode = subject?.let { animeMappedEpisode(it, file.name, offset, section.isEmpty() || file.path in libraryGroups[path]?.regularPaths.orEmpty()) }
+                val number = episode?.number ?: parsed.episode?.minus(offset)
+                val episodeTitle = episode?.title?.takeIf { it.isNotBlank() } ?: subject?.takeIf { episode != null && it.episodes.count { row -> row.type == episode.type } == 1 }?.title
+                val episodeLabel = number?.let { if (it % 1.0 == 0.0) it.toInt().toString().padStart(2, '0') else it.toString() }
+                NetworkVideoCard(file, connection, modifier = Modifier.width(160.dp), isGridMode = true,
+                  episodeTile = true, titleOverride = episodeTitle,
+                  episodeLabel = episodeLabel.takeIf { episode != null || section.isEmpty() },
+                  onClick = { onPlay(file, sectionFiles) })
+              }
+            }
           }
         }
         if (subject != null && (subject.cast.isNotEmpty() || subject.staff.isNotEmpty())) {
