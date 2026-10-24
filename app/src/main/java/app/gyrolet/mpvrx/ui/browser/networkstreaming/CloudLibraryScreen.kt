@@ -42,12 +42,21 @@ object CloudLibraryScreen : Screen {
     var deleting by remember { mutableStateOf<app.gyrolet.mpvrx.domain.network.NetworkConnection?>(null) }
     val storages = connections.filter { it.protocol in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST) && (selected.isEmpty() || it.id in selected) }
     val stack = LocalBackStack.current
-    Scaffold(topBar = {
-      TopAppBar(title = { Text("WebDAV", style = MaterialTheme.typography.headlineMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary.onWallpaper()) }, actions = {
+    Scaffold(
+      containerColor = app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor(),
+      topBar = {
+      TopAppBar(
+        colors = if (app.gyrolet.mpvrx.ui.theme.LocalAppWallpaperActive.current) {
+          androidx.compose.material3.TopAppBarDefaults.topAppBarColors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
+        } else {
+          androidx.compose.material3.TopAppBarDefaults.topAppBarColors()
+        },
+        title = { Text("WebDAV", style = MaterialTheme.typography.headlineMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.ExtraBold, color = MaterialTheme.colorScheme.primary.onWallpaper()) }, actions = {
         IconButton(onClick = { stack.navigateTo(MediaServersPreferencesScreen) }) {
           Icon(Icons.RoundedFilled.Settings, contentDescription = stringResource(R.string.pref_media_servers_title))
         }
-      })
+      },
+      )
     }) { padding ->
       LazyColumn(modifier = Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 104.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
