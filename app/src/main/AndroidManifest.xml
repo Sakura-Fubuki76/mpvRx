@@ -219,6 +219,27 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity-alias>
+
+        <!-- Fork default: the Sage character icon is the only launcher entry enabled in the manifest;
+             LauncherIconManager migrates every other icon off at runtime. -->
+        <activity-alias
+            android:name=".IconSageCharacter"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="true"
+            android:icon="@mipmap/ic_launcher_sage_character"
+            android:label="@string/app_name"
+            android:banner="@drawable/tv_banner">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity-alias
             android:name=".IconBlackGradient"
             android:targetActivity=".MainActivity"
