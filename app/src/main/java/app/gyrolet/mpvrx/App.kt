@@ -574,7 +574,7 @@ class App :
               val appearance = getKoin().get<app.gyrolet.mpvrx.preferences.AppearancePreferences>()
               val browser = getKoin().get<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
               getKoin().get<app.gyrolet.mpvrx.repository.CloudMetadataRepository>().scanStorage(connection, repository,
-                appearance.showNetworkThumbnails.get() && browser.showVideoThumbnails.get(),
+                appearance.networkThumbnailsEnabled() && browser.showVideoThumbnails.get(),
                 "true|true")
             }
             .onFailure { error ->

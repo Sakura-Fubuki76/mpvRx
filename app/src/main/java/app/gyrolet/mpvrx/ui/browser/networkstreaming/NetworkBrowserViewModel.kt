@@ -126,7 +126,11 @@ class NetworkBrowserViewModel(
   private fun scheduleThumbnails(connection: NetworkConnection, files: List<NetworkFile>, forceStorageScan: Boolean = false) {
     thumbnailBatch?.cancel()
     thumbnailBatch = viewModelScope.launch {
-      kotlinx.coroutines.flow.combine(appearance.showNetworkThumbnails.changes(), browserPreferences.showVideoThumbnails.changes()) { network, video -> network && video }
+      kotlinx.coroutines.flow.combine(
+        appearance.showCloudThumbnails.changes(),
+        appearance.showNetworkThumbnails.changes(),
+        browserPreferences.showVideoThumbnails.changes(),
+      ) { cloud, network, video -> (cloud || network) && video }
         .collectLatest { enabled ->
           Log.d("CloudBatch", "directory connection=${connection.id} files=${files.size} enabled=$enabled")
           cloudMetadata.scanStorage(connection, repository, enabled,

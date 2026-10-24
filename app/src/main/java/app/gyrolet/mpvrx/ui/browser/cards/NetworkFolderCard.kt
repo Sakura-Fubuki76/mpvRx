@@ -71,10 +71,11 @@ fun NetworkFolderCard(
     val appearance = koinInject<AppearancePreferences>()
     val showFolderImages by browser.showFolderThumbnails.collectAsState()
     val showNetworkImages by appearance.showNetworkThumbnails.collectAsState()
+    val showCloudImages by appearance.showCloudThumbnails.collectAsState()
     var preview by remember(connectionId, file.path) { androidx.compose.runtime.mutableStateOf<android.graphics.Bitmap?>(null) }
-    androidx.compose.runtime.LaunchedEffect(connectionId, file.path, showFolderImages, showNetworkImages, isGridMode) {
+    androidx.compose.runtime.LaunchedEffect(connectionId, file.path, showFolderImages, showNetworkImages, showCloudImages, isGridMode) {
       preview = null
-      if (isGridMode && showFolderImages && showNetworkImages) {
+      if (isGridMode && showFolderImages && (showNetworkImages || showCloudImages)) {
         preview = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
           val dao = org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.database.dao.CloudMetadataDao>(app.gyrolet.mpvrx.database.dao.CloudMetadataDao::class.java)
           val video = dao.getDirectory(connectionId, file.path).firstOrNull { !it.isDirectory && it.mimeType?.startsWith("video/") == true }

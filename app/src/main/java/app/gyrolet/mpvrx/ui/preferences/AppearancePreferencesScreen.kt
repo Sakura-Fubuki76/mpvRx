@@ -825,6 +825,23 @@ object AppearancePreferencesScreen : Screen {
                   )
                 },
                 enabled = showVideoThumbnails,
+                groupIndex = itemCount - 2,
+                groupSize = itemCount,
+              )
+
+              val showCloudThumbnails by preferences.showCloudThumbnails.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_appearance_show_cloud_thumbnails_title),
+                value = showCloudThumbnails,
+                onValueChange = { preferences.showCloudThumbnails.set(it) },
+                title = { Text(stringResource(R.string.pref_appearance_show_cloud_thumbnails_title)) },
+                summary = {
+                  Text(
+                    text = stringResource(R.string.pref_appearance_show_cloud_thumbnails_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+                enabled = showVideoThumbnails,
                 groupIndex = itemCount - 1,
                 groupSize = itemCount,
               )

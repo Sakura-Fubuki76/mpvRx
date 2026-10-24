@@ -96,7 +96,13 @@ class AppearancePreferences(
   val forceDarkPlayerButtonsBackground = preferenceStore.getBoolean("force_dark_player_buttons_background", false)
   val showUnplayedOldVideoLabel = preferenceStore.getBoolean("show_unplayed_old_video_label", true)
   val unplayedOldVideoDays = preferenceStore.getInt("unplayed_old_video_days", 7)
+  /** Upstream fast-path network thumbnails; kept off by default because it rarely works. */
   val showNetworkThumbnails = preferenceStore.getBoolean("show_network_thumbnails", false)
+
+  /** First-party network thumbnails, enabled by default. Either switch enables network thumbnails. */
+  val showCloudThumbnails = preferenceStore.getBoolean("show_cloud_thumbnails", true)
+
+  fun networkThumbnailsEnabled(): Boolean = showCloudThumbnails.get() || showNetworkThumbnails.get()
   val seekbarStyle = preferenceStore.getEnum("seekbar_style", SeekbarStyle.Thick)
   val portraitPlaybackControlsPosition =
     preferenceStore.getEnum("portrait_playback_controls_position", PortraitPlaybackControlsPosition.Center)

@@ -329,7 +329,7 @@ class ThumbnailRepository(
     val videoSequence = videos.asSequence()
     val filteredVideos =
       (
-        if (appearancePreferences.showNetworkThumbnails.get()) {
+        if (appearancePreferences.networkThumbnailsEnabled()) {
           videoSequence
         } else {
           videoSequence.filterNot { isNetworkUrl(it.path) }
@@ -940,7 +940,7 @@ class ThumbnailRepository(
       }
     }
 
-    if (!appearancePreferences.showNetworkThumbnails.get()) {
+    if (!appearancePreferences.networkThumbnailsEnabled()) {
       return null
     }
 
@@ -961,7 +961,7 @@ class ThumbnailRepository(
   }
 
   private fun isNetworkThumbnailAllowed(path: String): Boolean =
-    extractJellyfinImageUrls(path).isNotEmpty() || appearancePreferences.showNetworkThumbnails.get()
+    extractJellyfinImageUrls(path).isNotEmpty() || appearancePreferences.networkThumbnailsEnabled()
 
   private fun extractJellyfinImageUrls(url: String, maxWidth: Int = 400): List<String> =
     runCatching {
@@ -1194,7 +1194,7 @@ class ThumbnailRepository(
     ignoreDisplayPreference: Boolean = false,
   ): Bitmap? =
     withContext(Dispatchers.IO) {
-      if (!ignoreDisplayPreference && !appearancePreferences.showNetworkThumbnails.get()) return@withContext null
+      if (!ignoreDisplayPreference && !appearancePreferences.networkThumbnailsEnabled()) return@withContext null
 
       val identity = networkThumbnailIdentity(path, connection, fileSize, lastModified)
       val memKey = networkThumbnailMemoryKey(identity, widthPx, heightPx)
@@ -1290,7 +1290,7 @@ class ThumbnailRepository(
     val entry = KoinJavaComponent.get<app.gyrolet.mpvrx.database.dao.CloudMetadataDao>(app.gyrolet.mpvrx.database.dao.CloudMetadataDao::class.java)
       .getItem(connectionId, app.gyrolet.mpvrx.domain.network.NetworkPath.from(path).value)
     if (!generate) {
-      if (respectDisplayPreference && !appearancePreferences.showNetworkThumbnails.get()) return null
+      if (respectDisplayPreference && !appearancePreferences.networkThumbnailsEnabled()) return null
       val identity = networkThumbnailIdentity(path, connection, entry?.size ?: -1L, entry?.lastModified ?: 0L)
       val key = networkThumbnailMemoryKey(identity, widthPx, heightPx)
       synchronized(memoryCache) { memoryCache.get(key) }?.let { return it }

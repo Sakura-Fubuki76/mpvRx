@@ -105,6 +105,8 @@
   <string name="pref_appearance_thumbnail_position_summary">Capture the frame at %1$d%% of the video</string>
   <string name="pref_appearance_show_network_thumbnails_title">Show network thumbnails (Experimental)</string>
   <string name="pref_appearance_show_network_thumbnails_summary">Generate thumbnails for network streams (May increase data usage on mobile networks)</string>
+  <string name="pref_appearance_show_cloud_thumbnails_title">Show network thumbnails</string>
+  <string name="pref_appearance_show_cloud_thumbnails_summary">Extract frames from network videos with the built-in pipeline</string>
   <string name="pref_nav_music_title">Show Music tab</string>
   <string name="pref_nav_music_summary">Show or hide Music in the bottom navigation bar</string>
   <string name="pref_nav_network_title">Show Network tab</string>

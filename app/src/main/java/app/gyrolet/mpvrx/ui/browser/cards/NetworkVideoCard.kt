@@ -101,6 +101,7 @@ fun NetworkVideoCard(
   val showSubtitleIndicator by (fields?.showSubtitleIndicator ?: browserPreferences.showSubtitleIndicator).collectAsState()
   val showVideoThumbnails by (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).collectAsState()
   val showNetworkThumbs by appearancePreferences.showNetworkThumbnails.collectAsState()
+  val showCloudThumbs by appearancePreferences.showCloudThumbnails.collectAsState()
   val showPath by (fields?.showFolderPath ?: browserPreferences.showFolderPath).collectAsState()
   val centerGridTitles by (fields?.centerGridTitles ?: browserPreferences.centerGridTitles).collectAsState()
 
@@ -108,7 +109,7 @@ fun NetworkVideoCard(
   val tapThumbnailToSelect by gestures.tapThumbnailToSelect.collectAsState()
   val onThumbnailClick = if (tapThumbnailToSelect && onLongClick != null) onLongClick else onClick
 
-  val displayThumb = showVideoThumbnails && (connection.isAnime || showNetworkThumbs)
+  val displayThumb = showVideoThumbnails && (connection.isAnime || showNetworkThumbs || showCloudThumbs)
   val maxLines = if (unlimitedNameLines) Int.MAX_VALUE else 2
 
   val thumbSizeDp = 160.dp

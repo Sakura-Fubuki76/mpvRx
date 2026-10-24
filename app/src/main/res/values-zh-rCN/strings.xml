@@ -79,6 +79,8 @@
   <string name="pref_appearance_thumbnail_position_summary">截取视频 %1$d%% 位置的画面</string>
   <string name="pref_appearance_show_network_thumbnails_title">显示网络缩略图（实验性）</string>
   <string name="pref_appearance_show_network_thumbnails_summary">为网络流生成缩略图（可能会增加移动网络的数据用量）</string>
+  <string name="pref_appearance_show_cloud_thumbnails_title">显示网络缩略图</string>
+  <string name="pref_appearance_show_cloud_thumbnails_summary">使用内置管线从网络视频中提取缩略图（默认启用）</string>
   <string name="pref_nav_network_title">显示“网络”标签页</string>
   <string name="pref_nav_network_summary">在底部导航栏中显示或隐藏“网络”</string>
   <string name="pref_quick_play_fab_title">快速播放悬浮按钮</string>

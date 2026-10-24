@@ -1293,12 +1293,13 @@ internal fun treeBrowserFields(layoutMode: MediaLayoutMode, cloud: Boolean = fal
   val showFolderThumbnails by posterPreference.collectAsState()
   val centerGridTitles by (fields?.centerGridTitles ?: browserPreferences.centerGridTitles).collectAsState()
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
+  val showCloudThumbnails by appearancePreferences.showCloudThumbnails.collectAsState()
   return buildList {
         add(
           VisibilityToggle(
             label = "Video Thumbnails",
-            checked = showVideoThumbnails && (!cloud || anime || showNetworkThumbnails),
-            onCheckedChange = { (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).set(it); if (cloud && !anime) appearancePreferences.showNetworkThumbnails.set(it) },
+            checked = showVideoThumbnails && (!cloud || anime || showNetworkThumbnails || showCloudThumbnails),
+            onCheckedChange = { (fields?.showVideoThumbnails ?: browserPreferences.showVideoThumbnails).set(it); if (cloud && !anime) appearancePreferences.showCloudThumbnails.set(it) },
           ),
         )
         add(

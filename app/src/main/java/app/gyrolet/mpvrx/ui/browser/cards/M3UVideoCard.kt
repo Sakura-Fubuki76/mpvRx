@@ -125,6 +125,7 @@ fun M3UVideoCard(
   val thumbnailRepository = koinInject<ThumbnailRepository>()
   val appearancePreferences = koinInject<AppearancePreferences>()
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
+  val showCloudThumbnails by appearancePreferences.showCloudThumbnails.collectAsState()
   var thumbnail by remember(url, logoUrl) { mutableStateOf<android.graphics.Bitmap?>(null) }
   var thumbnailSize by remember(url, isGridMode) { mutableStateOf(IntSize.Zero) }
   val networkReference = remember(url) { NetworkPlaybackUri.parse(url) }
@@ -147,7 +148,7 @@ fun M3UVideoCard(
     }
 
   if (displayConfig.showThumbnails && logoUrl.isNullOrBlank() && !hasDrm &&
-    thumbnailSize.width > 0 && thumbnailSize.height > 0 && (!isNetwork || showNetworkThumbnails)
+    thumbnailSize.width > 0 && thumbnailSize.height > 0 && (!isNetwork || showNetworkThumbnails || showCloudThumbnails)
   ) {
     val thumbWidthPx = thumbnailSize.width
     val thumbHeightPx = thumbnailSize.height

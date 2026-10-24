@@ -118,6 +118,7 @@ fun PlaylistCard(
       )
     }
   val showNetworkThumbnails by appearancePreferences.showNetworkThumbnails.collectAsState()
+  val showCloudThumbnails by appearancePreferences.showCloudThumbnails.collectAsState()
   val previewItems by
     remember(repository, playlist.id) {
       repository.observePlaylistPreviewItems(playlist.id, 2)
@@ -154,7 +155,7 @@ fun PlaylistCard(
       thumbnailQuality,
       thumbnailMode,
       thumbnailFramePosition,
-      showNetworkThumbnails,
+      showNetworkThumbnails || showCloudThumbnails,
     ) {
       value = thumbnail
       if (thumbnail != null) return@produceState
@@ -183,7 +184,7 @@ fun PlaylistCard(
       thumbnailQuality,
       thumbnailMode,
       thumbnailFramePosition,
-      showNetworkThumbnails,
+      showNetworkThumbnails || showCloudThumbnails,
     ) {
       val item = secondItem
       if (item == null) {
