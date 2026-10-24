@@ -25,6 +25,9 @@ class CloudSpriteRepository(
   private val dao: CloudMetadataDao,
   private val keyframes: CloudKeyframeExtractor,
 ) {
+  private companion object {
+    const val TAG = "CloudSprites"
+  }
   private val directory = File(context.filesDir, "cloud_sprites").apply { mkdirs() }
   private val thumbnailPixels = (160 * context.resources.displayMetrics.density).toInt().coerceIn(160, 480)
   private val generator = YumeSpriteSheetGenerator(SharedHttpClient.derive {}, thumbnailPixels)
@@ -38,7 +41,10 @@ class CloudSpriteRepository(
     wantedId = item.stableId
     val source = item.networkSource
     val connection = source?.let { network.getConnectionById(it.connectionId) }
-    if (source != null && connection == null) return@withContext
+    if (source != null && connection == null) {
+      android.util.Log.i(TAG, "sprite.prepare skip=no-connection id=${item.stableId}")
+      return@withContext
+    }
     val entry = source?.let { dao.getItem(it.connectionId, it.relativePath) }
     val path = source?.relativePath ?: item.originalUri
     val local = if (source == null && !path.contains("://")) File(path)
@@ -53,15 +59,44 @@ class CloudSpriteRepository(
     // The original generator owns its background task. A cancelled waiter must keep the proxy
     // alive until generation finishes; tie cleanup to the generator's in-flight task instead.
     CloudTrace.diagnostic("sprite.prepare", key, "connection=${source?.connectionId ?: 0} durationMs=$durationMs")
-    val result = generator.generate(url, if (registered) null else item.headers, source?.let { dao.getVideo(it.connectionId, it.relativePath)?.durationMs }?.takeIf { it > 0 } ?: durationMs, directory, key, context,
-      onGenerationFinished = { if (registered) proxy.unregisterStream(streamId) }, sourceExtension = cloudMediaExtension(path)) ?: return@withContext
+    android.util.Log.i(
+      TAG,
+      "sprite.prepare id=${item.stableId} scheme=${url.substringBefore("://")} ext=${cloudMediaExtension(path)} " +
+        "local=${local?.exists() == true} pathExt=${path.substringAfterLast('.', "").take(6)} durationMs=$durationMs",
+    )
+    val result = try {
+      generator.generate(url, if (registered) null else item.headers, source?.let { dao.getVideo(it.connectionId, it.relativePath)?.durationMs }?.takeIf { it > 0 } ?: durationMs, directory, key, context,
+        onGenerationFinished = { if (registered) proxy.unregisterStream(streamId) }, sourceExtension = cloudMediaExtension(path),
+        // MediaCodec has no decoder for profiles like H.264 High 10; mpv decodes them in software.
+        // It streams the file and hands back one frame at a time, so this stays cheap in memory.
+        softwareFrameBatchGrabber = { framePath, positions, sizePx ->
+          `is`.xyz.mpv.FastThumbnails.generateMultipleAsync(framePath, positions, sizePx, useHwDec = false)
+        })
+    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+      throw cancelled
+    } catch (error: Exception) {
+      android.util.Log.w(TAG, "sprite.prepare failed id=${item.stableId} scheme=${url.substringBefore("://")}", error)
+      null
+    }
+    if (result == null) {
+      android.util.Log.i(TAG, "sprite.prepare result=null id=${item.stableId} key=${key.take(8)}")
+      return@withContext
+    }
     if (wantedId != item.stableId) { CloudTrace.diagnostic("sprite.detached", key); return@withContext }
-    val bitmap = BitmapFactory.decodeFile(result.file.path) ?: return@withContext
+    val bitmap = BitmapFactory.decodeFile(result.file.path) ?: run {
+      android.util.Log.i(TAG, "sprite.prepare decode-failed id=${item.stableId} bytes=${result.file.length()}")
+      return@withContext
+    }
     val meta = result.metadata
     _current.value = CloudSpriteSheet(item.stableId, bitmap, SpriteSheetMetadata(
       columns = meta.cols, rows = meta.rows, cellWidth = meta.thumbWidth, cellHeight = meta.thumbHeight,
       timesMs = List(meta.frameCount) { (it * meta.intervalMs).toLong() }, durationMs = meta.durationMs,
       intervalMs = meta.intervalMs, validCells = meta.validCells))
+    android.util.Log.i(
+      TAG,
+      "sprite.prepare ready id=${item.stableId} cell=${meta.thumbWidth}x${meta.thumbHeight} frames=${meta.frameCount} " +
+        "valid=${meta.validCells?.size ?: -1}",
+    )
     CloudTrace.event("sprite.ready", source?.connectionId ?: 0, detail = "frames=${meta.frameCount} size=${meta.thumbWidth}x${meta.thumbHeight}")
     CloudTrace.diagnostic("sprite.ready", key, "valid=${meta.validCells?.size ?: 0} frames=${meta.frameCount}")
   }

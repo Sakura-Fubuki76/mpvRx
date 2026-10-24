@@ -1322,20 +1322,37 @@ class Mp4KeyframeExtractor(
     configureCodecSpecificData(format, moovInfo)
 
     val codec = MediaCodec.createByCodecName(codecName)
-    codec.configure(format, null, null, 0)
-    codec.start()
-
+    var started = false
     try {
+      codec.configure(format, null, null, 0)
+      codec.start()
+      started = true
+
       keyframeDataList.forEachIndexed { index, data ->
         val inputData = prepareDecoderInput(moovInfo, data) ?: return@forEachIndexed
-        codec.flush()
-        decodeOneFrameToImage(codec, inputData) { image, fmt ->
-          onFrame(image, fmt, codecName, index)
+        // Decoders reject streams whose profile they do not implement (10-bit AVC has no
+        // hardware decoder on any Android device). The codec then enters its error state and
+        // every further call throws, so stop at the first rejected frame instead of grinding
+        // through the whole sheet.
+        val decoded =
+          runCatching {
+            codec.flush()
+            decodeOneFrameToImage(codec, inputData) { image, fmt ->
+              onFrame(image, fmt, codecName, index)
+            }
+          }
+        val failure = decoded.exceptionOrNull()
+        if (failure != null) {
+          log { "DECODE_IMAGE: aborting after frame $index (${failure.javaClass.simpleName}: ${failure.message})" }
+          return
         }
       }
     } finally {
-      codec.stop()
-      codec.release()
+      // stop() and release() throw IllegalStateException once the codec is in the error state,
+      // which is exactly the state a rejected stream leaves it in. Letting that escape would
+      // replace the real decode failure with a meaningless "stop failed" and abort the sheet.
+      if (started) runCatching { codec.stop() }
+      runCatching { codec.release() }
     }
   }
 

@@ -55,6 +55,9 @@ class YumeSpriteSheetGenerator(
         private const val FRAME_CANDIDATE_RADIUS = 2
 
         private const val MAX_DECODER_NAME_CACHE_ENTRIES = 16
+
+        /** Frames requested per mpv open when decoding in software. */
+        private const val SOFTWARE_BATCH_SIZE = 10
     }
 
     private val decoderNameCache = Collections.synchronizedMap(
@@ -69,6 +72,9 @@ class YumeSpriteSheetGenerator(
 
     private val inFlightGenerations = ConcurrentHashMap<String, Deferred<YumeSpriteResult?>>()
 
+    /** Files whose decoder rejected the stream outright; only those may use the software backend. */
+    private val decoderRejections = ConcurrentHashMap<String, Boolean>()
+
     suspend fun generate(
         source: String,
         httpHeaders: Map<String, String>? = null,
@@ -78,6 +84,7 @@ class YumeSpriteSheetGenerator(
         context: Context? = null,
         onGenerationFinished: () -> Unit = {},
         sourceExtension: String? = null,
+        softwareFrameBatchGrabber: (suspend (path: String, positionsSeconds: List<Double>, sizePx: Int) -> List<Bitmap?>)? = null,
     ): YumeSpriteResult? {
         CloudTrace.diagnostic("sprite.request", cacheKey, "durationMs=$durationMs")
         val inFlightKey = "${cacheDir.absolutePath}|$cacheKey"
@@ -92,6 +99,7 @@ class YumeSpriteSheetGenerator(
                     cacheKey = cacheKey,
                     context = context?.applicationContext,
                     sourceExtension = sourceExtension,
+                    softwareFrameBatchGrabber = softwareFrameBatchGrabber,
                 )
             }.also {
                 inFlightGenerations[inFlightKey] = it
@@ -122,6 +130,7 @@ class YumeSpriteSheetGenerator(
         cacheKey: String,
         context: Context? = null,
         sourceExtension: String? = null,
+        softwareFrameBatchGrabber: (suspend (path: String, positionsSeconds: List<Double>, sizePx: Int) -> List<Bitmap?>)? = null,
     ): YumeSpriteResult? = withContext(Dispatchers.IO) {
         val started = System.nanoTime()
         CloudTrace.diagnostic("sprite.begin", cacheKey)
@@ -158,18 +167,40 @@ class YumeSpriteSheetGenerator(
             val isMkv = sourcePath.endsWith(".mkv", ignoreCase = true) ||
                 sourcePath.endsWith(".webm", ignoreCase = true)
 
-            val result = if (isMp4 && (isRemote || !isContentUri)) {
+            var result = if (isMp4 && (isRemote || !isContentUri)) {
                 generateFromMoov(source, httpHeaders, durationMs, cacheDir, cacheKey)
             } else if (isRemote && isMkv) {
                 generateFromMkv(source, httpHeaders, durationMs, cacheDir, cacheKey, context)
             } else {
                 generateFromMediaExtractor(source, durationMs, spriteFile, metaFile, cacheDir, cacheKey, context)
             }
+            // Profiles such as H.264 High 10 have no hardware decoder, so MediaCodec cannot produce
+            // a single frame. mpv decodes them in software; grabbing frame by frame keeps memory flat
+            // (one frame plus the sheet at a time) and yields the same 100-frame grid as the fast path.
+            val decoderRejected = decoderRejections.remove(cacheKey) == true
+            if (result == null && softwareFrameBatchGrabber != null && decoderRejected) {
+                CloudTrace.diagnostic("sprite.fallback", cacheKey, "reason=software_backend backend=mpv")
+                android.util.Log.i("CloudSprites", "sprite.generate fallback=software scheme=${source.substringBefore("://")}")
+                result = generateFromSoftwareFrames(
+                    source = source,
+                    durationMs = durationMs,
+                    spriteFile = spriteFile,
+                    metaFile = metaFile,
+                    cacheKey = cacheKey,
+                    grabFrames = softwareFrameBatchGrabber,
+                )
+            }
+            android.util.Log.i(
+                "CloudSprites",
+                "sprite.generate scheme=${source.substringBefore("://")} ext=$extension sourceExt=$sourceExtension " +
+                    "remote=$isRemote content=$isContentUri mp4=$isMp4 mkv=$isMkv durationMs=$durationMs ok=${result != null}",
+            )
             CloudTrace.diagnostic("sprite.end", cacheKey, "success=${result != null} valid=${result?.metadata?.validCells?.size ?: 0} elapsedMs=${(System.nanoTime() - started) / 1000000}")
             result
         } catch (e: Exception) {
             CloudTrace.diagnostic("sprite.failed", cacheKey, "error=${e.javaClass.simpleName} elapsedMs=${(System.nanoTime() - started) / 1000000}")
             if (e is CancellationException) throw e
+            android.util.Log.w("CloudSprites", "sprite.generate failed scheme=${source.substringBefore("://")} ext=$sourceExtension", e)
             Logger.e(TAG, "Sprite sheet generation failed", e)
             null
         }
@@ -314,18 +345,36 @@ class YumeSpriteSheetGenerator(
                 CloudTrace.diagnostic("sprite.batch.download", cacheKey, "round=$round requested=${batch.size} received=${successEntries.size} bytes=${pairedData.sumOf { it.second?.size?.toLong() ?: 0 }} elapsedMs=${(System.nanoTime() - downloadStarted) / 1000000}")
                 val decodeStarted = System.nanoTime()
                 decodedFrames += successEntries.size
-                val batchResult = decodeAndCompositeCandidates(
-                    mp4Extractor = mp4Extractor,
-                    moovInfo = moovInfo,
-                    successEntries = successEntries,
-                    spriteSheet = spriteSheet,
-                    scaleW = scaleW,
-                    scaleH = scaleH,
-                    thumbW = thumbW,
-                    thumbH = thumbH,
-                    gridCols = gridCols,
-                    needsRotation = needsRotation,
-                )
+                val batchResult =
+                    runCatching {
+                        decodeAndCompositeCandidates(
+                            mp4Extractor = mp4Extractor,
+                            moovInfo = moovInfo,
+                            successEntries = successEntries,
+                            spriteSheet = spriteSheet,
+                            scaleW = scaleW,
+                            scaleH = scaleH,
+                            thumbW = thumbW,
+                            thumbH = thumbH,
+                            gridCols = gridCols,
+                            needsRotation = needsRotation,
+                        )
+                    }.onFailure { error ->
+                        android.util.Log.w(
+                            "CloudSprites",
+                            "sprite.decode.batch failed codec=${moovInfo.codecType} batch=${batch.size}",
+                            error,
+                        )
+                    }.getOrNull()
+                    if (batchResult == null) {
+                        // A decoder that rejects one batch rejects them all (H.264 High 10 has no
+                        // hardware decoder at all). Grinding through every remaining batch cost
+                        // minutes before the software fallback could start.
+                        spriteSheet.recycle()
+                        decoderRejections[cacheKey] = true
+                        CloudTrace.diagnostic("sprite.batch.abort", cacheKey, "reason=decoder_rejected codec=${moovInfo.codecType}")
+                        return null
+                    }
                 framesComposited += batchResult.compositedGridIndices.size
                 pendingGridIndices.removeAll(batchResult.compositedGridIndices)
                 roundNativeSolidSkipped += batchResult.nativeSolidSkippedCells
@@ -506,18 +555,36 @@ class YumeSpriteSheetGenerator(
                     data?.let { target to it }
                 }
                 decodedFrames += successEntries.size
-                val batchResult = decodeAndCompositeCandidates(
-                    mp4Extractor = mp4Extractor,
-                    moovInfo = moovInfo,
-                    successEntries = successEntries,
-                    spriteSheet = spriteSheet,
-                    scaleW = scaleW,
-                    scaleH = scaleH,
-                    thumbW = thumbW,
-                    thumbH = thumbH,
-                    gridCols = gridCols,
-                    needsRotation = needsRotation,
-                )
+                val batchResult =
+                    runCatching {
+                        decodeAndCompositeCandidates(
+                            mp4Extractor = mp4Extractor,
+                            moovInfo = moovInfo,
+                            successEntries = successEntries,
+                            spriteSheet = spriteSheet,
+                            scaleW = scaleW,
+                            scaleH = scaleH,
+                            thumbW = thumbW,
+                            thumbH = thumbH,
+                            gridCols = gridCols,
+                            needsRotation = needsRotation,
+                        )
+                    }.onFailure { error ->
+                        android.util.Log.w(
+                            "CloudSprites",
+                            "sprite.decode.batch failed codec=${moovInfo.codecType} batch=${batch.size}",
+                            error,
+                        )
+                    }.getOrNull()
+                    if (batchResult == null) {
+                        // A decoder that rejects one batch rejects them all (H.264 High 10 has no
+                        // hardware decoder at all). Grinding through every remaining batch cost
+                        // minutes before the software fallback could start.
+                        spriteSheet.recycle()
+                        decoderRejections[cacheKey] = true
+                        CloudTrace.diagnostic("sprite.batch.abort", cacheKey, "reason=decoder_rejected codec=${moovInfo.codecType}")
+                        return null
+                    }
                 framesComposited += batchResult.compositedGridIndices.size
                 pendingGridIndices.removeAll(batchResult.compositedGridIndices)
                 roundNativeSolidSkipped += batchResult.nativeSolidSkippedCells
@@ -827,16 +894,23 @@ class YumeSpriteSheetGenerator(
         val gridRows = findBestGrid(actualFrameCount).second
         val intervalMs = durationMs.toDouble() / actualFrameCount
         val extractor = MediaExtractor()
-        if (source.startsWith("content://") && context != null) {
-            extractor.setDataSource(context, Uri.parse(source), null)
-            Logger.d(TAG, "MediaExtractor setDataSource with content:// URI: $source")
-        } else {
-            extractor.setDataSource(source)
+        try {
+            if (source.startsWith("content://") && context != null) {
+                extractor.setDataSource(context, Uri.parse(source), null)
+                Logger.d(TAG, "MediaExtractor setDataSource with content:// URI: $source")
+            } else {
+                extractor.setDataSource(source)
+            }
+        } catch (error: Exception) {
+            android.util.Log.w("CloudSprites", "sprite.extractor dataSource-failed scheme=${source.substringBefore("://")}", error)
+            extractor.release()
+            return null
         }
 
         val videoTrackIndex = findVideoTrack(extractor)
         if (videoTrackIndex < 0) {
             extractor.release()
+            android.util.Log.w("CloudSprites", "sprite.extractor no-video-track scheme=${source.substringBefore("://")} tracks=${extractor.trackCount}")
             Logger.w(TAG, "No video track found in $source")
             return null
         }
@@ -846,11 +920,13 @@ class YumeSpriteSheetGenerator(
         val mime = trackFormat.getString(MediaFormat.KEY_MIME)
             ?: run {
                 extractor.release()
+                android.util.Log.w("CloudSprites", "sprite.extractor no-mime")
                 return null
             }
         val codecName = findBestDecoderForMime(mime)
             ?: run {
                 extractor.release()
+                android.util.Log.w("CloudSprites", "sprite.extractor no-decoder mime=$mime")
                 Logger.w(TAG, "No decoder for $mime")
                 return null
             }
@@ -884,9 +960,26 @@ class YumeSpriteSheetGenerator(
             Bitmap.Config.ARGB_8888,
         )
 
-        val codec = MediaCodec.createByCodecName(codecName)
-        codec.configure(trackFormat, null, null, 0)
-        codec.start()
+        val codec = try {
+            MediaCodec.createByCodecName(codecName).also {
+                it.configure(trackFormat, null, null, 0)
+                it.start()
+            }
+        } catch (error: Exception) {
+            android.util.Log.w(
+                "CloudSprites",
+                "sprite.extractor codec-start-failed mime=$mime codec=$codecName ${encodedW}x$encodedH rotation=$rotation",
+                error,
+            )
+            decoderRejections[cacheKey] = true
+            extractor.release()
+            return null
+        }
+        android.util.Log.i(
+            "CloudSprites",
+            "sprite.extractor decode mime=$mime codec=$codecName ${encodedW}x$encodedH rotation=$rotation " +
+                "thumb=${thumbW}x$thumbH frames=$actualFrameCount",
+        )
 
         try {
             val processedPts = HashMap<Long, Int>()
@@ -979,6 +1072,7 @@ class YumeSpriteSheetGenerator(
             }
 
             if (validCells.isEmpty()) {
+                android.util.Log.w("CloudSprites", "sprite.extractor no-valid-cells codec=$codecName mime=$mime frames=$actualFrameCount")
                 spriteSheet.recycle()
                 return null
             }
@@ -998,6 +1092,207 @@ class YumeSpriteSheetGenerator(
             codec.release()
             extractor.release()
         }
+    }
+
+    /**
+     * Builds the sheet from frames decoded by mpv in software.
+     *
+     * Used when MediaCodec cannot decode the stream at all (H.264 High 10 and friends). Frames are
+     * requested in small batches so mpv opens the file once per batch instead of once per frame,
+     * and each batch is composited and recycled before the next one is requested, which keeps peak
+     * memory at one batch plus the sheet regardless of how large the source is.
+     */
+    private suspend fun generateFromSoftwareFrames(
+        source: String,
+        durationMs: Long,
+        spriteFile: File,
+        metaFile: File,
+        cacheKey: String,
+        grabFrames: suspend (path: String, positionsSeconds: List<Double>, sizePx: Int) -> List<Bitmap?>,
+    ): YumeSpriteResult? {
+        val frameCount = if (durationMs < 10000) {
+            ((durationMs / 100).toInt()).coerceIn(10, FRAME_COUNT)
+        } else {
+            FRAME_COUNT
+        }
+        val (cols, rows) = findBestGrid(frameCount)
+        val intervalMs = durationMs.toDouble() / frameCount
+        val startedAt = System.currentTimeMillis()
+
+        var sheet: Bitmap? = null
+        var cellWidth = 0
+        var cellHeight = 0
+        val validCells = ArrayList<Int>(frameCount)
+        var grabbed = 0
+
+        try {
+            for (chunkStart in 0 until frameCount step SOFTWARE_BATCH_SIZE) {
+                val indices = chunkStart until minOf(chunkStart + SOFTWARE_BATCH_SIZE, frameCount)
+                val positions = indices.map { (it * intervalMs) / 1000.0 }
+                val frames =
+                    runCatching { grabFrames(source, positions, thumbnailMaxDimension) }
+                        .onFailure { error ->
+                            android.util.Log.w("CloudSprites", "sprite.software chunk failed from=$chunkStart", error)
+                        }
+                        .getOrDefault(emptyList())
+                grabbed += frames.size
+
+                frames.forEachIndexed { offset, frame ->
+                    val index = chunkStart + offset
+                    if (frame == null) return@forEachIndexed
+                    if (index >= frameCount) {
+                        frame.recycle()
+                        return@forEachIndexed
+                    }
+                    if (sheet == null) {
+                        val longest = thumbnailMaxDimension.coerceIn(160, 480)
+                        val (width, height) = if (frame.width >= frame.height) {
+                            longest to (longest * frame.height / frame.width).coerceAtLeast(1)
+                        } else {
+                            (longest * frame.width / frame.height).coerceAtLeast(1) to longest
+                        }
+                        cellWidth = width
+                        cellHeight = height
+                        sheet = Bitmap.createBitmap(cols * cellWidth, rows * cellHeight, Bitmap.Config.ARGB_8888)
+                    }
+                    if (!frame.isMostlySolidColor()) {
+                        compositeSoftwareFrame(frame, sheet, index, cols, cellWidth, cellHeight)
+                        validCells.add(index)
+                    }
+                    frame.recycle()
+                }
+
+                val elapsed = System.currentTimeMillis() - startedAt
+                android.util.Log.i(
+                    "CloudSprites",
+                    "sprite.software progress ${minOf(chunkStart + SOFTWARE_BATCH_SIZE, frameCount)}/$frameCount " +
+                        "grabbed=$grabbed valid=${validCells.size} elapsedMs=$elapsed",
+                )
+            }
+
+            val target = sheet
+            if (target != null && cellWidth > 0 && cellHeight > 0) {
+                fillEmptySoftwareCells(target, validCells, frameCount, cols, cellWidth, cellHeight)
+            }
+            if (target == null || validCells.isEmpty()) {
+                target?.recycle()
+                android.util.Log.i("CloudSprites", "sprite.software no-frames grabbed=$grabbed key=${cacheKey.take(8)}")
+                return null
+            }
+
+            FileOutputStream(spriteFile).use { out ->
+                target.compress(
+                    if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP,
+                    WEBP_QUALITY,
+                    out,
+                )
+            }
+            target.recycle()
+
+            val metadata =
+                YumeSpriteMetadata(
+                    cols = cols,
+                    rows = rows,
+                    frameCount = frameCount,
+                    thumbWidth = cellWidth,
+                    thumbHeight = cellHeight,
+                    intervalMs = intervalMs,
+                    durationMs = durationMs,
+                    validCells = validCells.toList(),
+                )
+            metadata.saveTo(metaFile)
+            android.util.Log.i(
+                "CloudSprites",
+                "sprite.software saved grabbed=$grabbed valid=${validCells.size} cell=${cellWidth}x$cellHeight " +
+                    "elapsedMs=${System.currentTimeMillis() - startedAt}",
+            )
+            return YumeSpriteResult(spriteFile, metadata)
+        } finally {
+            sheet?.let { if (!it.isRecycled) it.recycle() }
+        }
+    }
+
+    /**
+     * Copies the nearest composited cell into every cell no frame reached.
+     *
+     * The sheet starts fully transparent, so skipped positions used to compress to solid black
+     * blocks; repeating a neighbour keeps the sheet continuous and matches what the cell would show
+     * if that position had fallen back to the closest frame anyway.
+     */
+    private fun fillEmptySoftwareCells(
+        sheet: Bitmap,
+        validCells: List<Int>,
+        frameCount: Int,
+        cols: Int,
+        cellWidth: Int,
+        cellHeight: Int,
+    ) {
+        if (validCells.isEmpty()) return
+        val filled = validCells.toHashSet()
+        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+        var lastValid = validCells.first()
+        for (index in 0 until frameCount) {
+            if (index in filled) {
+                lastValid = index
+                continue
+            }
+            val sourceCol = lastValid % cols
+            val sourceRow = lastValid / cols
+            val targetCol = index % cols
+            val targetRow = index / cols
+            android.graphics.Canvas(sheet).drawBitmap(
+                sheet,
+                android.graphics.Rect(
+                    sourceCol * cellWidth,
+                    sourceRow * cellHeight,
+                    (sourceCol + 1) * cellWidth,
+                    (sourceRow + 1) * cellHeight,
+                ),
+                android.graphics.Rect(
+                    targetCol * cellWidth,
+                    targetRow * cellHeight,
+                    (targetCol + 1) * cellWidth,
+                    (targetRow + 1) * cellHeight,
+                ),
+                paint,
+            )
+        }
+    }
+
+    /** Centre-crops [frame] into its grid cell so differing frame sizes never distort the sheet. */
+    private fun compositeSoftwareFrame(
+        frame: Bitmap,
+        sheet: Bitmap,
+        index: Int,
+        cols: Int,
+        cellWidth: Int,
+        cellHeight: Int,
+    ) {
+        val col = index % cols
+        val row = index / cols
+        val destination =
+            android.graphics.Rect(
+                col * cellWidth,
+                row * cellHeight,
+                (col + 1) * cellWidth,
+                (row + 1) * cellHeight,
+            )
+        val scale = maxOf(cellWidth.toFloat() / frame.width, cellHeight.toFloat() / frame.height)
+        val sourceWidth = (cellWidth / scale).toInt().coerceIn(1, frame.width)
+        val sourceHeight = (cellHeight / scale).toInt().coerceIn(1, frame.height)
+        val sourceRect =
+            android.graphics.Rect(
+                (frame.width - sourceWidth) / 2,
+                (frame.height - sourceHeight) / 2,
+                (frame.width + sourceWidth) / 2,
+                (frame.height + sourceHeight) / 2,
+            )
+        android.graphics.Canvas(sheet).drawBitmap(
+            frame,
+            sourceRect,
+            destination,
+            android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG),
+        )
     }
 
     private fun computeThumbDimensions(videoWidth: Int, videoHeight: Int): Pair<Int, Int> {
