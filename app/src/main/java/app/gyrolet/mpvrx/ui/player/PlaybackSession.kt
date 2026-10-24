@@ -16,7 +16,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
-import app.gyrolet.mpvrx.data.network.proxy.HlsStreamingProxy
 import app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy
 import app.gyrolet.mpvrx.data.network.proxy.XtreamStreamingProxy
 import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
@@ -26,6 +25,7 @@ import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
 import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
+import app.gyrolet.mpvrx.utils.media.HttpUtils
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.CoroutineScope
@@ -59,7 +59,21 @@ data class PlaybackSessionState(
   val paused: Boolean = true,
   val currentItem: PlaybackItem? = null,
   val error: String? = null,
-)
+  /** Why the current network media is waiting for data, or null while it plays (or is local). */
+  val bufferingReason: BufferingReason? = null,
+) {
+  val isBuffering: Boolean
+    get() = bufferingReason != null
+}
+
+/** What a playing network stream is waiting for. File opening is reported by the player screen. */
+enum class BufferingReason {
+  /** mpv paused playback until enough media is cached. */
+  CACHE,
+
+  /** A seek is waiting for the stream to deliver data at the new position. */
+  SEEKING,
+}
 
 data class PlaybackPositionRestoreOverride(
   val positionSeconds: Double?,
@@ -142,6 +156,7 @@ object PlaybackSession : MPVLib.EventObserver {
     MPVLib.removeObserver(observer)
   }
 
+  private val BUFFERING_STATUS_PROPERTIES = setOf("pause", "paused-for-cache", "seeking", "demuxer-via-network", "eof-reached")
   private const val SEEK_AUDIO_RESTORE_DELAY_MS = 60L
   private const val SEEK_AUDIO_FALLBACK_RESTORE_MS = 750L
   private const val PLAYBACK_TRANSITION_AUDIO_RESTORE_DELAY_MS = 180L
@@ -157,6 +172,21 @@ object PlaybackSession : MPVLib.EventObserver {
       "percent-pos",
     )
   private val AUDIO_SUBTITLE_TRACK_PROPERTIES = setOf("aid", "sid", "secondary-sid")
+
+  /**
+   * Stronger libavformat probing only for local audio/video items whose library duration is
+   * missing. This check never reads files or metadata and is therefore safe on the load path.
+   * Network streams, archive entries, torrents and audiobooks keep their normal startup settings.
+   */
+  private fun shouldProbeMissingDuration(item: PlaybackItem, playableUri: String): Boolean {
+    if ((item.durationSeconds ?: 0) > 0 || item.audiobook != null || item.torrentFileIndex != null) return false
+    if (item.networkSource != null || item.declaredMediaKind() == DeclaredPlaybackMediaKind.UNKNOWN) return false
+    if (app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia.isPlaybackUri(item.originalUri)) return false
+    return playableUri.startsWith("/") ||
+      playableUri.startsWith("file://", ignoreCase = true) ||
+      playableUri.startsWith("content://", ignoreCase = true) ||
+      playableUri.startsWith("fd://", ignoreCase = true)
+  }
 
   /** URI schemes whose playback goes through a network protocol in libmpv. */
   private val STREAMING_OPTION_SCHEMES =
@@ -176,7 +206,6 @@ object PlaybackSession : MPVLib.EventObserver {
 
   private data class NetworkStreamRegistration(
     val proxy: NetworkStreamingProxy? = null,
-    val hlsProxy: HlsStreamingProxy? = null,
     val xtreamProxy: XtreamStreamingProxy? = null,
     val streamId: String,
     val archiveDescriptor: android.os.ParcelFileDescriptor? = null,
@@ -292,6 +321,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var appliedUserAgent: String? = null
   private var defaultHttpHeaderFields: String? = null
   private var appliedHttpHeaderFields: String? = null
+  private var defaultRequestHeaders: Map<String, String> = emptyMap()
 
   val isInitialized: Boolean
     get() = initialized
@@ -342,12 +372,51 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       activeCoreConfigurationKey = null
       if (!initialized) return@withLock false
       runCatching {
+        // A live core may still carry the previous item's credentials. Clear the header/referrer
+        // options before reloading, so removed config values and per-item credentials cannot linger.
+        MPVLib.setPropertyString("user-agent", defaultUserAgent.orEmpty())
+        MPVLib.setPropertyString("http-header-fields", "")
+        MPVLib.setPropertyString("referrer", "")
         MPVLib.command("load-config-file", configPath)
+        captureHttpDefaultsLocked()
         true
       }.onFailure { error ->
         Log.e(TAG, "Failed to reload mpv.conf", error)
       }.getOrDefault(false)
     }
+
+  /** Config defaults first, explicit per-media headers next, generated fallbacks last. */
+  internal fun resolveHttpHeaders(
+    playableUri: String,
+    vararg sources: Map<String, String>,
+  ): Map<String, String> =
+    nativeLock.withLock {
+      val headers =
+        PlaybackHttpHeaders.withDefault(
+          PlaybackHttpHeaders.merge(defaultRequestHeaders, *sources),
+          "User-Agent",
+          defaultUserAgent,
+        )
+      if (playableUri.startsWith("http://", ignoreCase = true) || playableUri.startsWith("https://", ignoreCase = true)) {
+        PlaybackHttpHeaders.withDefault(headers, "Referer", HttpUtils.extractRefererDomain(Uri.parse(playableUri)))
+      } else {
+        headers
+      }
+    }
+
+  private fun captureHttpDefaultsLocked() {
+    defaultUserAgent = MPVLib.getPropertyString("user-agent")
+    appliedUserAgent = defaultUserAgent
+    defaultHttpHeaderFields = MPVLib.getPropertyString("http-header-fields").orEmpty()
+    appliedHttpHeaderFields = defaultHttpHeaderFields
+    // Read the native list rather than splitting its string representation: header values may
+    // contain commas, and mpv has already handled config quoting, includes and list operations.
+    val headers =
+      PlaybackHttpHeaders.fromHeaderFields(
+        MPVLib.getPropertyNode("http-header-fields")?.toObject<List<String>>(Json).orEmpty(),
+      )
+    defaultRequestHeaders = PlaybackHttpHeaders.withDefault(headers, "Referer", MPVLib.getPropertyString("referrer"))
+  }
 
   val propInt = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_INT64, ::getPropertyInt)
   val propLong = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_INT64, ::getPropertyLong)
@@ -390,6 +459,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
         desiredPaused = true
         loadedGeneration = 0L
         defaultUserAgent = null
+        defaultRequestHeaders = emptyMap()
         appliedUserAgent = null
         defaultHttpHeaderFields = null
         appliedHttpHeaderFields = null
@@ -416,10 +486,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           nativeCoreReady = true
           // Preserve the effective default after mpv.conf has been parsed. Per-media request
           // headers may temporarily override it, but must not leak into the next item.
-          defaultUserAgent = MPVLib.getPropertyString("user-agent")
-          appliedUserAgent = defaultUserAgent
-          defaultHttpHeaderFields = MPVLib.getPropertyString("http-header-fields").orEmpty()
-          appliedHttpHeaderFields = defaultHttpHeaderFields
+          captureHttpDefaultsLocked()
           postInitOptions()
           MPVLib.getPropertyString("vo")
             ?.takeIf { it.isNotBlank() && it != "null" }
@@ -452,6 +519,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           desiredPaused = true
           loadedGeneration = 0L
           defaultUserAgent = null
+          defaultRequestHeaders = emptyMap()
           appliedUserAgent = null
           pendingPositionRestoreGeneration = 0L
           pendingPositionRestoreOverride = null
@@ -832,6 +900,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     desiredPaused = true
     loadedGeneration = 0L
     defaultUserAgent = null
+    defaultRequestHeaders = emptyMap()
     appliedUserAgent = null
     pendingPositionRestoreGeneration = 0L
     pendingPositionRestoreOverride = null
@@ -1159,7 +1228,12 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       // media UA, then restore the post-mpv.conf default for a headerless item. Both writes are
       // skipped when the value already matches what is applied, so a local file after another
       // local file costs nothing while a headerless item still gets the default back.
-      val userAgent = app.gyrolet.mpvrx.network.CloudStreamingHeaders.userAgent(resolvedItem.originalUri) ?: PlaybackHttpHeaders.userAgent(resolvedItem.headers) ?: defaultUserAgent.orEmpty()
+      val requestHeaders = resolveHttpHeaders(resolvedItem.playableUri, resolvedItem.headers)
+      // Cloud streams carry their own UA requirements (WebDAV/OpenList servers reject the default).
+      val userAgent =
+        app.gyrolet.mpvrx.network.CloudStreamingHeaders.userAgent(resolvedItem.originalUri)
+          ?: PlaybackHttpHeaders.userAgent(requestHeaders)
+          ?: defaultUserAgent.orEmpty()
       if (userAgent != appliedUserAgent) {
         MPVLib.setPropertyString("user-agent", userAgent)
         appliedUserAgent = userAgent
@@ -1168,10 +1242,10 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       // when the incoming item has no headers; otherwise a previous stream's Referer,
       // Authorization, or Cookie can leak into an unrelated media request.
       val nextHttpHeaders =
-        if (resolvedItem.headers.isEmpty()) {
+        if (resolvedItem.headers.isEmpty() && !HttpUtils.isNetworkStream(Uri.parse(resolvedItem.playableUri))) {
           defaultHttpHeaderFields.orEmpty()
         } else {
-          PlaybackHttpHeaders.toMpvHeaderFields(resolvedItem.headers)
+          PlaybackHttpHeaders.toMpvHeaderFields(requestHeaders)
         }
       if (nextHttpHeaders != appliedHttpHeaderFields) {
         MPVLib.setPropertyString("http-header-fields", nextHttpHeaders)
@@ -1202,6 +1276,13 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           }
           add(if (selectVideoForNewFile && (!deferVideoSelectionUntilSurface || ytdlVideoRequiresSelection)) "vid=auto" else "vid=no")
           initialPosition?.let { add("start=$it") }
+          // Keep ordinary files on mpv's fast path. Only files with no indexed duration need
+          // bounded stream probing; loadfile scopes these options to the current file.
+          if (shouldProbeMissingDuration(resolvedItem, playableUri)) {
+            add("demuxer-lavf-probe-info=yes")
+            add("demuxer-lavf-probesize=4MiB")
+            add("demuxer-lavf-analyzeduration=5")
+          }
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")
           }
@@ -1278,6 +1359,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       }
       publishTimelinePropertiesLocked()
       propBoolean.emit("pause", desiredPaused)
+      refreshBufferingState()
     }
   }
 
@@ -1522,6 +1604,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
         }
         updateState { it.copy(paused = value) }
         propBoolean.emit(property, value)
+        refreshBufferingState()
       } else if (
         property == "mute" &&
         (playbackTransitionAudioGuardPreviousMute != null || seekAudioGuardPreviousMute != null)
@@ -1611,6 +1694,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       }
       updateState { it.copy(paused = nextPaused) }
       propBoolean.emit("pause", nextPaused)
+      refreshBufferingState()
       nextPaused
     }
 
@@ -1638,6 +1722,43 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   }
 
   fun getPropertyNode(property: String): MPVNode? = withReadyCore(null) { MPVLib.getPropertyNode(property) }
+
+  /** Generation whose file mpv has finished opening, or 0 while a load is still in flight. */
+  fun loadedMediaGeneration(): Long = withReadyCore(0L) {
+    loadedGeneration.takeIf { it > 0L && it == _state.value.generation } ?: 0L
+  }
+
+  /**
+   * Runs [block] atomically against [generation]'s loaded file.
+   *
+   * The native lock serializes this with load/stop, so a geometry read can never combine the
+   * previous file's properties with the next request. Returns null once [generation] is superseded.
+   */
+  internal fun <T> readLoadedMedia(
+    generation: Long,
+    block: (PropertyReader) -> T?,
+  ): T? = withReadyCore(null) {
+    if (generation <= 0L || loadedGeneration != generation || _state.value.generation != generation) {
+      return@withReadyCore null
+    }
+    runCatching { block(LockedPropertyReader) }.getOrNull()
+  }
+
+  internal interface PropertyReader {
+    fun int(property: String): Int?
+
+    fun double(property: String): Double?
+
+    fun string(property: String): String?
+  }
+
+  private object LockedPropertyReader : PropertyReader {
+    override fun int(property: String): Int? = runCatching { MPVLib.getPropertyInt(property) }.getOrNull()
+
+    override fun double(property: String): Double? = runCatching { MPVLib.getPropertyDouble(property) }.getOrNull()
+
+    override fun string(property: String): String? = runCatching { MPVLib.getPropertyString(property) }.getOrNull()
+  }
 
   fun setPropertyString(
     property: String,
@@ -1670,6 +1791,10 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       // A preference update can race with a shader install. Enforce the composition boundary
       // under the same native lock, rather than trusting a blend value calculated before it.
       MPVLib.setPropertyString(property, if (property == "blend-subtitles" && isAmbientShaderActive) "no" else value)
+      when (property) {
+        "user-agent" -> appliedUserAgent = value
+        "http-header-fields" -> appliedHttpHeaderFields = value
+      }
     }
   }
 
@@ -1735,6 +1860,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     propLong.emit(property, null)
     propInt.emit(property, null)
     propNode.emit(property, null)
+    if (property in BUFFERING_STATUS_PROPERTIES) refreshBufferingState()
     observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property) } }
   }
 
@@ -1763,6 +1889,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       if (property == "pause" && _state.value.phase == PlaybackPhase.LOADING) _state.value.paused else value
     if (property == "pause") updateState { it.copy(paused = effectiveValue) }
     propBoolean.emit(property, effectiveValue)
+    if (property in BUFFERING_STATUS_PROPERTIES) refreshBufferingState()
     observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, effectiveValue) } }
   }
 
@@ -1869,6 +1996,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
             propBoolean.emit("pause", appliedPaused)
             restoreSuspendedVideoTrackLocked()
             applyDeferredVideoSelectionLocked()
+            refreshBufferingState()
             true
           }
           MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
@@ -1885,6 +2013,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
             if (_state.value.phase != PlaybackPhase.STOPPING) {
               schedulePlaybackTransitionAudioGuardRestoreLocked(PLAYBACK_TRANSITION_AUDIO_RESTORE_DELAY_MS)
             }
+            refreshBufferingState()
             true
           }
           MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
@@ -1963,6 +2092,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
             loadedGeneration = 0L
             pendingEofSeekGeneration = null
             defaultUserAgent = null
+            defaultRequestHeaders = emptyMap()
             appliedUserAgent = null
             pendingPositionRestoreGeneration = 0L
             pendingPositionRestoreOverride = null
@@ -1985,6 +2115,53 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     if (shouldForward) {
       observerSnapshot().forEach { observer -> runCatching { observer.event(eventId, data) } }
     }
+  }
+
+  /**
+   * Sample the active native file under the session lock instead of combining cached properties
+   * from different loads in Compose. core-idle/seeking also cover decoder and renderer restarts;
+   * only paused-for-cache establishes that playback is actually waiting for buffered media.
+   */
+  private fun refreshBufferingState() {
+    nativeLock.withLock {
+      val current = _state.value
+      val loadedItem = loadedPlaybackItem
+      val canBuffer =
+        initialized &&
+          current.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) &&
+          current.activeGeneration == current.generation &&
+          loadedGeneration == current.generation &&
+          loadedItem != null &&
+          loadedItem.stableId == current.currentItem?.stableId &&
+          loadedItem.playableUri == current.currentItem?.playableUri &&
+          !current.paused
+      // Cheap flag reads first; the network check only runs while something is actually waiting.
+      val waiting =
+        when {
+          !canBuffer -> null
+          MPVLib.getPropertyBoolean("paused-for-cache") == true -> BufferingReason.CACHE
+          MPVLib.getPropertyBoolean("seeking") == true -> BufferingReason.SEEKING
+          else -> null
+        }
+      val reason =
+        waiting?.takeIf { MPVLib.getPropertyBoolean("eof-reached") != true && activeFileUsesNetworkLocked() }
+      if (reason == BufferingReason.CACHE) {
+        // Never label a new stall with a previous file's cached fill values.
+        propInt.emit("cache-buffering-state", MPVLib.getPropertyInt("cache-buffering-state"))
+        propDouble.emit("demuxer-cache-duration", MPVLib.getPropertyDouble("demuxer-cache-duration"))
+      }
+      updateState { it.copy(bufferingReason = reason) }
+    }
+  }
+
+  private fun activeFileUsesNetworkLocked(): Boolean {
+    // Inspect the source mpv is actually playing: a downloaded URL is local, while SMB, HLS and
+    // torrent streams can arrive through an HTTP loopback proxy. Do not infer this from the
+    // original URL, the torrent engine's global state, or an external network subtitle/audio track.
+    val path = MPVLib.getPropertyString("path") ?: return false
+    val scheme = path.substringBefore("://", missingDelimiterValue = "").lowercase()
+    if (scheme.isEmpty() || scheme in setOf("file", "content", "fd", "archive", "memory", "hex")) return false
+    return path.requiresStreamingOptions() || MPVLib.getPropertyBoolean("demuxer-via-network") == true
   }
 
   private fun shouldSuppressTimelineUpdate(property: String): Boolean =
@@ -2343,11 +2520,14 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     )
     // demuxer-lavf-o only reaches demuxer-internal opens (HLS/DASH segments). The primary http(s)
     // URL is opened by stream_lavf, which reads stream-lavf-o; without it a dropped connection or
-    // one failed seek-reopen permanently stalls network playback (endless buffering).
+    // one failed seek-reopen permanently stalls network playback (endless buffering). Persistent
+    // connections are pointless against the loopback proxies, which close every response.
+    val viaLoopbackProxy = playableUri.startsWith("http://127.0.0.1:")
     setPropertyString(
       "stream-lavf-o",
-      "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx,reconnect_streamed=1," +
-        "reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
+      (if (viaLoopbackProxy) "http_persistent=0," else "") +
+        "reconnect=1,reconnect_on_network_error=1,reconnect_on_http_error=5xx," +
+        "reconnect_streamed=1,reconnect_delay_max=5,reconnect_max_retries=5,reconnect_delay_total_max=20",
     )
     Log.d(TAG, "Applied streaming options for the first network item of this core")
   }
@@ -2401,21 +2581,6 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       return ResolvedPlayable(uri, NetworkStreamRegistration(proxy = proxy, streamId = streamId))
     }
 
-    if (M3uPlaybackPolicy.shouldProxyHls(item.playableUri, item.mimeType)) {
-      val hlsProxy = HlsStreamingProxy.getInstance()
-      val streamId = "hls-${streamSequence.incrementAndGet()}"
-      val userAgent = PlaybackHttpHeaders.userAgent(item.headers)
-      val uri =
-        hlsProxy.registerStream(
-          streamId = streamId,
-          sourceUrl = item.playableUri,
-          headers = item.headers,
-          userAgent = userAgent,
-        )
-      Log.d(TAG, "Routing HLS stream through HlsStreamingProxy: $uri")
-      return ResolvedPlayable(uri, NetworkStreamRegistration(hlsProxy = hlsProxy, streamId = streamId))
-    }
-
     // fd:// descriptors are single-use: mpv consumes and closes them on their first load. Replays
     // of queue items or persisted sessions must re-open a fresh descriptor from the content URI.
     if (item.playableUri.startsWith("fd://") && item.originalUri.startsWith("content://")) {
@@ -2460,7 +2625,6 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     runCatching {
       registration.archiveDescriptor?.close()
       registration.proxy?.unregisterStream(registration.streamId)
-      registration.hlsProxy?.unregisterStream(registration.streamId)
       registration.xtreamProxy?.unregisterStream(registration.streamId)
     }.onFailure { error -> Log.w(TAG, "Failed to release network stream", error) }
   }
@@ -2500,6 +2664,20 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     }
 
   private inline fun updateState(transform: (PlaybackSessionState) -> PlaybackSessionState) {
-    _state.update(transform)
+    _state.update { previous ->
+      val next = transform(previous)
+      // Every pause, stop, error, shutdown and source/generation change invalidates the old stall
+      // synchronously, including transitions that do not produce another cache-property event.
+      if (next.isBuffering &&
+        (next.paused || next.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+          next.activeGeneration != next.generation || next.generation != previous.generation ||
+          next.currentItem?.stableId != previous.currentItem?.stableId ||
+          next.currentItem?.playableUri != previous.currentItem?.playableUri)
+      ) {
+        next.copy(bufferingReason = null)
+      } else {
+        next
+      }
+    }
   }
 }

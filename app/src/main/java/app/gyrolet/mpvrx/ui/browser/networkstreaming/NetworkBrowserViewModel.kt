@@ -40,6 +40,7 @@ import app.gyrolet.mpvrx.utils.media.M3UPlaylistItem
 import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -218,6 +219,7 @@ class NetworkBrowserViewModel(
             }
           }.onFailure { e ->
             if (e is CancellationException) throw e
+            coroutineContext.ensureActive()
             // Do not keep presenting old folder contents after a failed refresh.
             _files.value = emptyList()
             _error.value = e.message ?: "Unknown error"
@@ -225,12 +227,15 @@ class NetworkBrowserViewModel(
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (e: Exception) {
+        coroutineContext.ensureActive()
         _files.value = emptyList()
         _error.value = e.message ?: "Unknown error"
       } finally {
         if (generation == loadGeneration) _isLoading.value = false
       }
     }
+    pendingListing = request
+    request.start()
   }
 
   private var searchJob: Job? = null

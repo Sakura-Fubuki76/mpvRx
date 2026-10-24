@@ -20,6 +20,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import app.gyrolet.mpvrx.ui.browser.fab.FabPlacement
 import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import androidx.compose.foundation.layout.Arrangement
@@ -69,6 +70,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -80,6 +82,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -123,6 +126,7 @@ import app.gyrolet.mpvrx.ui.browser.dialogs.FolderSortDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.BrowserSortDialogScope
 import app.gyrolet.mpvrx.ui.browser.dialogs.rememberBrowserSortDialogOpen
 import app.gyrolet.mpvrx.ui.browser.dialogs.RenameDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.rememberSelectionInfoAction
 import app.gyrolet.mpvrx.ui.browser.filesystem.FileSystemBrowserRootScreen
 import app.gyrolet.mpvrx.ui.browser.medialibrary.MediaLibraryContent
 import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
@@ -484,6 +488,19 @@ object FolderListScreen : Screen {
         onOperationComplete = { viewModel.refresh() },
       )
 
+    val showSelectionInfo = rememberSelectionInfoAction(
+      videos = { emptyList() },
+      onSingleOpened = {},
+      folders = { selectionManager.getSelectedItems() },
+      loadFolderVideos = { folder ->
+        app.gyrolet.mpvrx.repository.MediaFileRepository.getVideosInFolder(
+          context,
+          folder.bucketId,
+          includeAudioOverride = if (audioOnly) true else null,
+        )
+      },
+    )
+
     fun moveSelectedFoldersToSecureFolder() {
       val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
       if (selectedIds.isEmpty()) return
@@ -709,7 +726,7 @@ object FolderListScreen : Screen {
               showBetaBadge = BuildConfig.IS_PREVIEW_BUILD,
               onRenameClick = null,
               isSingleSelection = selectionManager.isSingleSelection,
-              onInfoClick = null,
+              onInfoClick = showSelectionInfo,
               onShareClick = {
                 coroutineScope.launch {
                   val selectedIds = selectionManager.getSelectedItems().map { it.bucketId }.toSet()
@@ -779,7 +796,7 @@ object FolderListScreen : Screen {
               !(isDualPaneActive && selectedFolderBucketId != null)
 
           FloatingActionButtonMenu(
-            modifier = Modifier.padding(bottom = (navigationBarHeight - 16.dp).coerceAtLeast(0.dp)),
+            modifier = Modifier.padding(bottom = FabPlacement.scaffoldBottomPadding()),
             expanded = isFabExpanded.value && !quickPlayFabDirect,
             button = {
               TooltipBox(
@@ -1108,7 +1125,12 @@ object FolderListScreen : Screen {
         Box(modifier = Modifier.weight(0.6f)) {
           key(selectedFolderBucketId) {
             CompositionLocalProvider(
-              app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight provides 0.dp,
+              LocalNavigationBarHeight provides
+                if (app.gyrolet.mpvrx.ui.browser.NavigationBarState.isDualPaneLayout) {
+                  app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance
+                } else {
+                  LocalNavigationBarHeight.current
+                },
             ) {
               VideoListScreen(
                 bucketId = selectedFolderBucketId!!,
@@ -1323,6 +1345,7 @@ object FolderListScreen : Screen {
         itemType = "folder",
         itemCount = pendingDeleteFolders.size,
         itemNames = pendingDeleteFolders.map { it.name },
+        itemPaths = pendingDeleteFolders.map { it.path },
       )
     }
   }
@@ -1475,7 +1498,12 @@ private fun GridContent(
 
     val spansInfo = calculateResponsiveGridSpans(maxWidth = maxWidth, isDualPane = isDualPane)
     val computedColumns = spansInfo.spans / spansInfo.folderSpan
-
+    val density = LocalDensity.current
+    // Row height follows the tallest natural card in the row, and is recalculated
+    // when folders, the column count, or display preferences change.
+    val measuredRowHeights = remember(folders, computedColumns, folderCardUiConfig) {
+      mutableStateMapOf<Int, Int>()
+    }
     LazyVerticalGrid(
       columns = GridCells.Fixed(computedColumns),
       state = gridState,
@@ -1490,13 +1518,19 @@ private fun GridContent(
       horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
       verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
     ) {
-      items(count = folders.size, key = { index -> folders[index].bucketId }) { index ->
+      items(
+        count = folders.size,
+        key = { index -> folders[index].bucketId },
+        contentType = { "folder_item" },
+      ) { index ->
         val folder = folders[index]
         val archiveFolder = ZipArchiveMedia.isBrowserPath(folder.path)
         val isRecentlyPlayed = recentlyPlayedParent == folder.path
         val newCount = newCountByBucketId[folder.bucketId] ?: 0
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
+        val rowIndex = index / computedColumns
+        val tallestContentInRow = measuredRowHeights[rowIndex] ?: 0
 
         FolderCard(
           folder = folder,
@@ -1517,6 +1551,13 @@ private fun GridContent(
           newVideoCount = newCount,
           customIcon = if (archiveFolder) Icons.RoundedFilled.FolderZip else null,
           isGridMode = true,
+          gridRowMinHeight = with(density) { tallestContentInRow.toDp() },
+          onGridContentHeightChanged = { contentHeight ->
+            // Keep each row height stable; other cards cannot shrink or remeasure it per fling.
+            if (contentHeight > (measuredRowHeights[rowIndex] ?: 0)) {
+              measuredRowHeights[rowIndex] = contentHeight
+            }
+          },
           uiConfig = folderCardUiConfig,
           allowThumbnailGeneration = folderCardUiConfig.showFolderThumbnails,
           isPinned = folder.path in pinnedFolderPaths,
@@ -1594,7 +1635,11 @@ private fun ListContent(
           bottom = navigationBarHeight,
         ),
     ) {
-      items(count = folders.size, key = { index -> folders[index].bucketId }) { index ->
+      items(
+        count = folders.size,
+        key = { index -> folders[index].bucketId },
+        contentType = { "folder_item" },
+      ) { index ->
         val folder = folders[index]
         val archiveFolder = ZipArchiveMedia.isBrowserPath(folder.path)
         val isRecentlyPlayed = recentlyPlayedParent == folder.path
@@ -1704,6 +1749,8 @@ private fun SearchResultsContent(
   val swipePlaybackInfo = rememberSwipePlaybackInfo(videos)
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
+  val musicCoverArtSize by browserPreferences.musicCoverArtSize.collectAsState()
+  val audioCoverArtSizePx = with(LocalDensity.current) { musicCoverArtSize.dp.roundToPx() }
   val showVideoThumbnails by browserPreferences.showVideoThumbnails.collectAsState()
   val showSizeChip by browserPreferences.showSizeChip.collectAsState()
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
@@ -1719,6 +1766,7 @@ private fun SearchResultsContent(
   val showDurationField by browserPreferences.showDurationField.collectAsState()
   val centerGridTitles by browserPreferences.centerGridTitles.collectAsState()
   val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
+  val thumbnailGenerator by browserPreferences.thumbnailGenerator.collectAsState()
   val swipeLeft by browserPreferences.videoSwipeLeft.collectAsState()
   val swipeRight by browserPreferences.videoSwipeRight.collectAsState()
   val videoCardUiConfig =
@@ -1737,6 +1785,7 @@ private fun SearchResultsContent(
       showDurationField,
       centerGridTitles,
       thumbnailQuality,
+      thumbnailGenerator,
       swipeLeft,
       swipeRight,
     ) {
@@ -1755,6 +1804,7 @@ private fun SearchResultsContent(
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
         thumbnailQuality = thumbnailQuality,
+        thumbnailGenerator = thumbnailGenerator,
         swipeLeft = swipeLeft,
         swipeRight = swipeRight,
       )
@@ -1887,6 +1937,8 @@ private fun SearchResultsContent(
             allowThumbnailGeneration = !archiveEntry,
             allowThumbnailLoading = !archiveEntry,
             uiConfig = videoCardUiConfig,
+            thumbnailWidthPx = if (video.isAudio) audioCoverArtSizePx else null,
+            thumbnailHeightPx = if (video.isAudio) audioCoverArtSizePx else null,
           )
         }
       }

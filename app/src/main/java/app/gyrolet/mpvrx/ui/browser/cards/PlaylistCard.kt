@@ -61,6 +61,7 @@ import app.gyrolet.mpvrx.domain.media.model.VideoFolder
 import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
 import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.domain.thumbnail.getArtwork
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
@@ -109,6 +110,8 @@ fun PlaylistCard(
   val viewPreferences = preferences.playlistView
   val thumbnailQuality by preferences.thumbnailQuality.collectAsState()
   val thumbnailMode by preferences.thumbnailMode.collectAsState()
+  val thumbnailGenerator by preferences.thumbnailGenerator.collectAsState()
+  val thumbnailCacheRevision by thumbnailRepository.cacheRevision.collectAsState()
   val thumbnailFramePosition by preferences.thumbnailFramePosition.collectAsState()
   val showLocation by viewPreferences.showLocation.collectAsState()
   val sourceLocation =
@@ -154,6 +157,8 @@ fun PlaylistCard(
       thumbnailHeightPx,
       thumbnailQuality,
       thumbnailMode,
+      thumbnailGenerator,
+      thumbnailCacheRevision,
       thumbnailFramePosition,
       showNetworkThumbnails || showCloudThumbnails,
     ) {
@@ -183,6 +188,8 @@ fun PlaylistCard(
       thumbnailHeightPx,
       thumbnailQuality,
       thumbnailMode,
+      thumbnailGenerator,
+      thumbnailCacheRevision,
       thumbnailFramePosition,
       showNetworkThumbnails || showCloudThumbnails,
     ) {
@@ -368,6 +375,9 @@ private suspend fun resolvePlaylistItemArtwork(
         Uri.parse(path).let {
           if (it.scheme.isNullOrBlank()) Uri.fromFile(File(path)) else it
         }
+      if (app.gyrolet.mpvrx.domain.thumbnail.isLocalArtworkSource(path)) {
+        return@withContext thumbnailRepository.getArtwork(path, isAudio = isAudio, widthPx = thumbnailWidthPx, heightPx = thumbnailHeightPx)
+      }
       val suppliedArtwork = EmbeddedArtworkResolver.decodeArtworkUri(context, item.tvgLogo)
       val media =
         Video(
@@ -442,7 +452,6 @@ private fun YouTubePlaylistGridCard(
     modifier =
       modifier
         .fillMaxWidth()
-        .mediaGridTileHeight(16f / 9f, 130.dp)
         .clip(cardShape)
         .background(selectionColor)
         .semantics { selected = isSelected }

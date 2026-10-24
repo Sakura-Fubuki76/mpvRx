@@ -1,4 +1,8 @@
 <resources>
+
+  <string name="app_icon_create_custom_shortcut">Add exact custom icon to home screen</string>
+  <string name="pref_experimental_badge">Experimental</string>
+  <string name="pref_liquid_glass_experimental_note">Liquid glass effects are experimental and may vary by device.</string>
   <string name="pref_liquid_glass_material">Glass material</string>
   <string name="pref_liquid_glass_frost">Frost</string>
   <string name="generic_increase">Increase</string>
@@ -95,6 +99,14 @@
   <string name="pref_appearance_unplayed_old_video_days_summary">Videos added within the last %d days without playback history will be marked as new</string>
   <string name="pref_appearance_show_video_thumbnails_title">Show video thumbnails</string>
   <string name="pref_appearance_show_video_thumbnails_summary">Display generated thumbnails in video lists and folders</string>
+  <string name="pref_appearance_thumbnail_generator_title">Thumbnail generator</string>
+  <string name="pref_appearance_thumbnail_generator_summary">Choose Auto, Native or MediaStore for local thumbnails and song covers</string>
+  <string name="pref_thumbnail_generator_auto">Auto (Default)</string>
+  <string name="pref_thumbnail_generator_auto_summary">Try MediaStore first; use Native if a thumbnail or song cover is unavailable, including in hidden folders. Switching clears cached thumbnails.</string>
+  <string name="pref_thumbnail_generator_native">Native</string>
+  <string name="pref_thumbnail_generator_mediastore">MediaStore</string>
+  <string name="pref_thumbnail_generator_native_summary">Extract local video thumbnails and song covers from the media file. Switching clears cached thumbnails.</string>
+  <string name="pref_thumbnail_generator_mediastore_summary">Use Android thumbnails and album art for local videos and songs. Switching clears cached thumbnails; unavailable artwork shows a placeholder. Network previews use Native.</string>
   <string name="pref_appearance_thumbnail_generation_title">Thumbnail generation strategy</string>
   <string name="pref_appearance_thumbnail_generation_summary">Choose how thumbnails are generated, including embedded artwork or a specific frame position</string>
   <string name="pref_appearance_thumbnail_generation_change_title">Change thumbnail strategy?</string>
@@ -103,6 +115,11 @@
   <string name="pref_appearance_thumbnail_quality_summary">Local video thumbnail maximum resolution: %1$d px. Higher quality uses more storage and may generate more slowly. WebDAV is unaffected.</string>
   <string name="pref_appearance_thumbnail_position_title">Thumbnail frame position</string>
   <string name="pref_appearance_thumbnail_position_summary">Capture the frame at %1$d%% of the video</string>
+  <string name="pref_appearance_thumbnail_parallelism_title">Thumbnail processing cores</string>
+  <string name="pref_appearance_thumbnail_parallelism_auto">Auto (%1$d of %2$d)</string>
+  <string name="pref_appearance_thumbnail_parallelism_value">%1$d of %2$d</string>
+  <string name="pref_appearance_thumbnail_parallelism_dialog_summary">How many thumbnails are created at the same time. More is faster but uses more memory and battery and can make scrolling stutter. Auto picks a safe value for this device.</string>
+  <string name="pref_appearance_thumbnail_parallelism_warning">Higher than the %1$d recommended for this device. Lower it if lists lag or the app is closed in the background.</string>
   <string name="pref_appearance_show_network_thumbnails_title">Show network thumbnails (Experimental)</string>
   <string name="pref_appearance_show_network_thumbnails_summary">Generate thumbnails for network streams (May increase data usage on mobile networks)</string>
   <string name="pref_appearance_show_cloud_thumbnails_title">Show network thumbnails</string>
@@ -216,8 +233,6 @@
   <string name="pref_enable_lua_scripts_summary">Load scripts from your MPV configuration directory</string>
   <string name="pref_enable_p2p_streaming_title">Enable P2P torrent streaming</string>
   <string name="pref_enable_p2p_streaming_summary">Stream playable media from magnet links and torrent files</string>
-  <string name="pref_enable_hls_proxy_title">Enable HLS streaming proxy</string>
-  <string name="pref_enable_hls_proxy_summary">Normalize adaptive HLS manifests and handle split audio/video streams</string>
   <string name="pref_manage_lua_scripts_title">Manage scripts</string>
   <string name="pref_manage_lua_scripts_summary">Manage enabled scripts</string>
   <string name="pref_clear_config_cache_title">Clear config cache</string>
@@ -268,6 +283,8 @@
   <string name="pref_player_gestures_volume">Volume gestures</string>
   <string name="pref_player_gestures_pinch_to_zoom">Pinch to zoom</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">Pinch to zoom subtitles</string>
+  <string name="pref_player_gestures_two_finger_speed_swipe">Two-finger swipe for speed</string>
+  <string name="pref_player_gestures_two_finger_speed_swipe_summary">Swipe up or down with two fingers to change playback speed by 0.25x, from 0.5x to 4x</string>
   <string name="pref_subtitles_secondary_pinch_zoom">Pinch zooms secondary subtitle</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">When pinching the primary subtitle, also scale the secondary subtitle</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">Swipe subtitles to seek dialog</string>
@@ -618,6 +635,49 @@
   <string name="sort">Sort</string>
   <string name="rename">Rename</string>
   <string name="info">Info</string>
+  <!-- Selection details sheet (Info on multi-selections) -->
+  <string name="selection_info_title">Selection details</string>
+  <string name="selection_info_folders">Folders</string>
+  <string name="selection_info_total_size">Total size</string>
+  <string name="selection_info_total_duration">Total duration</string>
+  <string name="selection_info_average_duration">Average length</string>
+  <string name="selection_info_average_size">Average size</string>
+  <string name="selection_info_resolutions">Resolutions</string>
+  <string name="selection_info_codecs">Video codecs</string>
+  <string name="selection_info_formats">Formats</string>
+  <string name="selection_info_frame_rates">Frame rates</string>
+  <string name="selection_info_subtitles">Embedded subtitles</string>
+  <string name="selection_info_subtitles_value">%1$d / %2$d</string>
+  <string name="selection_info_longest">Longest</string>
+  <string name="selection_info_largest">Largest</string>
+  <string name="selection_info_modified">Date modified</string>
+  <string name="selection_info_items">Selected items</string>
+  <string name="selection_info_scanning">Scanning folders (%1$d/%2$d)…</string>
+  <string name="selection_info_scan_failed">Could not load selection details. Check folder access and try again.</string>
+  <string name="selection_info_folder_unreadable">Could not read media in %1$s</string>
+  <string name="selection_info_fps_value">%1$.2f FPS</string>
+  <string name="selection_info_metadata_note">Summary uses available library metadata. Tap a file for full metadata.</string>
+  <string name="selection_info_missing_metadata">Unavailable metadata</string>
+  <string name="selection_info_missing_metadata_value">Files with unknown size: %1$d; unknown duration: %2$d. Totals and averages use known values only.</string>
+  <string name="selection_info_no_media">No playable media found in the selected folders</string>
+  <string name="selection_info_copy_summary">Copy summary</string>
+  <string name="selection_info_open_media_info">Open full media info</string>
+  <plurals name="selection_info_video_count">
+    <item quantity="one">%1$d video</item>
+    <item quantity="other">%1$d videos</item>
+  </plurals>
+  <plurals name="selection_info_audio_count">
+    <item quantity="one">%1$d audio file</item>
+    <item quantity="other">%1$d audio files</item>
+  </plurals>
+  <plurals name="selection_info_file_count">
+    <item quantity="one">%1$d file</item>
+    <item quantity="other">%1$d files</item>
+  </plurals>
+  <plurals name="selection_info_folder_count">
+    <item quantity="one">%1$d folder</item>
+    <item quantity="other">%1$d folders</item>
+  </plurals>
   <string name="delete">Delete</string>
   <string name="got_it">Got it</string>
   <string name="general">General</string>
@@ -757,7 +817,7 @@
   <string name="pref_section_general">General</string>
   <string name="pref_playlist_mode_title">Enable next/previous navigation</string>
   <string name="pref_playlist_mode_summary">Show next/previous buttons for all videos in folder</string>
-  <string name="pref_playlist_mode_summary_disabled">Play videos individually (select multiple for playlist)</string>
+  <string name="pref_playlist_mode_summary_disabled">Hide next/previous buttons; autoplay is controlled separately</string>
 
   <!-- Player - Seeking Section (additional)                      -->
   <string name="pref_online_skip_markers_title">Use online skip markers</string>
@@ -890,6 +950,9 @@
   <string name="ui_sort_descending">Sort Descending</string>
   <string name="ui_no_matching_episodes">No matching episodes</string>
   <string name="ui_buffering">Buffering…</string>
+  <string name="player_opening_stream">Opening stream…</string>
+  <string name="player_buffering_percent">Buffering %1$d%%</string>
+  <string name="player_buffering_seconds">Buffering · %1$s s ready</string>
   <string name="torrent_picker_choose_title">Choose what to play</string>
   <plurals name="torrent_picker_playable_count">
     <item quantity="one">%1$d playable file</item>
@@ -1003,6 +1066,10 @@
   <string name="pref_config_cache_size">Size: %1$s</string>
   <string name="pref_thumbnail_cache_summary">Delete all cached video thumbnails (will regenerate as you browse folders)</string>
   <string name="pref_thumbnail_cache_size">Size: %1$s</string>
+  <string name="pref_clear_animated_artwork_cache_title">Clear animated artwork cache</string>
+  <string name="pref_clear_animated_artwork_cache_summary">Delete downloaded animated album covers (downloaded again when shown)</string>
+  <string name="pref_animated_artwork_cache_size">Size: %1$s</string>
+  <string name="pref_animated_artwork_cache_cleared">Animated artwork cache cleared</string>
   <string name="pref_fonts_cache_size">Size: %1$s · %2$d font(s)</string>
   <string name="pref_failed_to_clear">Failed to clear: %1$s</string>
   <string name="pref_export_failed">Export failed: %1$s</string>
@@ -1668,6 +1735,11 @@
   <string name="ui_check_on_startup">Check on startup</string>
   <string name="ui_check_for_updates_now">Check for Updates Now</string>
   <string name="ui_update_channel">Update Channel</string>
+  <string name="ui_update_channel_stable_short" translatable="false">Stable</string>
+  <string name="ui_update_channel_preview_short" translatable="false">Nightly</string>
+  <string name="ui_update_channel_experimental_short" translatable="false">Exp.</string>
+  <string name="ui_update_channels_summary">Stable releases, nightly previews, or experimental CI builds.</string>
+  <string name="update_experimental_build_format">Exp. r%1$d</string>
   <string name="ui_stable_releases">Stable</string>
   <string name="ui_preview_builds">Preview (Nightly)</string>
   <string name="ui_preview_builds_summary">Preview builds are signed test versions published from the latest mpvRx changes and may be unstable.</string>
@@ -1678,6 +1750,7 @@
   <string name="update_version_format">Version %1$s</string>
   <string name="update_release_date">Release Date</string>
   <string name="update_size">Size</string>
+  <string name="update_package">Package</string>
   <string name="update_unknown_size">Unknown size</string>
   <string name="update_beta_build_format">Beta r%1$d</string>
   <string name="ui_beta_badge_suffix">\u0020(Beta)</string>
@@ -1736,6 +1809,10 @@
   <string name="ui_script_file_not_found">Script file not found</string>
   <string name="ui_search_models">Search models...</string>
   <string name="ui_portrait_playback_buttons">Portrait playback buttons</string>
+  <string name="ui_landscape_playback_buttons">Landscape playback buttons</string>
+  <string name="ui_portrait_seekbar_position">Portrait seekbar position</string>
+  <string name="ui_landscape_seekbar_position">Landscape seekbar position</string>
+  <string name="pref_player_buttons_opacity">Player button background opacity</string>
   <string name="ui_time_network_clock">Time + Network clock</string>
   <string name="ui_show_media_info_in_chooser">Show Media Info in chooser</string>
   <string name="ui_show_media_info_in_system">Show Media Info in system \"Open with\" / sharing menus to analyze files from other apps.</string>
@@ -2528,6 +2605,11 @@
   <string name="onboarding_configuration_restoring">Checking for settings backups…</string>
   <string name="onboarding_configuration_no_backup">Folder configured. Downloads will use Configuration/Downloads.</string>
   <string name="onboarding_configuration_restored">Restored settings from %1$s. Downloads will use Configuration/Downloads.</string>
+  <plurals name="onboarding_configuration_restored_partial">
+    <item quantity="one">Restored settings from %1$s. Skipped %2$d damaged entry. Downloads will use Configuration/Downloads.</item>
+    <item quantity="other">Restored settings from %1$s. Skipped %2$d damaged entries. Downloads will use Configuration/Downloads.</item>
+  </plurals>
+  <string name="settings_restore_reverted">Settings restored from %1$s caused a crash, so they were reverted.</string>
   <string name="onboarding_configuration_restore_failed">Folder setup could not be completed: %1$s</string>
     <string name="cloud_add_server">Add WebDAV server</string>
     <string name="cloud_add_server_summary">Connect cloud video libraries with your server account</string>
@@ -2766,6 +2848,10 @@
     <string name="anime_artwork_movie">Movie</string>
   <string name="navbar_glow_title">Glass Glow</string>
   <string name="navbar_glow_summary">Show navbar rim lighting and touch glow</string>
+  <string name="legacy_navigation_bar_title">Legacy navigation bar</string>
+  <string name="legacy_navigation_bar_summary">Use a classic full-width navigation bar instead of the floating pill.</string>
+  <string name="progressive_navigation_blur_title">Progressive navigation blur</string>
+  <string name="progressive_navigation_blur_summary">Use Haze progressive blur behind the floating navigation bar. Automatically disabled with legacy navigation.</string>
   <string name="pref_seekbar_preview_skip_markers">Skip markers</string>
   <string name="debug_logs_save_to_config">Save logs to config folder</string>
   <string name="debug_logs_config_required">Select a configuration folder in Advanced Settings first.</string>
@@ -2854,6 +2940,19 @@
   <string name="app_icon_bg_lilac">Lilac</string>
   <string name="app_icon_bg_mint">Mint</string>
   <string name="app_icon_bg_ember">Ember</string>
+  <string name="app_icon_bg_crimson">Crimson</string>
+  <string name="app_icon_bg_rose">Rose</string>
+  <string name="app_icon_bg_peach">Peach</string>
+  <string name="app_icon_bg_amber">Amber</string>
+  <string name="app_icon_bg_lemon">Lemon</string>
+  <string name="app_icon_bg_lime">Lime</string>
+  <string name="app_icon_bg_forest">Forest</string>
+  <string name="app_icon_bg_teal">Teal</string>
+  <string name="app_icon_bg_sky">Sky</string>
+  <string name="app_icon_bg_cobalt">Cobalt</string>
+  <string name="app_icon_bg_plum">Plum</string>
+  <string name="app_icon_bg_cocoa">Cocoa</string>
+  <string name="app_icon_bg_wallpaper">Wallpaper colors</string>
 
   <string name="app_icon_logo_solid">Solid purple</string>
   <string name="app_icon_logo_gradient">Gradient purple</string>
@@ -2883,4 +2982,154 @@
   <string name="pref_nav_home_summary">Browse local folders and files (always available)</string>
   <string name="pref_nav_actions_section">Navigation actions</string>
   <string name="pref_about_playback_libraries">Playback libraries</string>
+    <string name="color_picker_field">Picker</string>
+    <string name="color_picker_sliders">Sliders</string>
+    <string name="color_picker_field_description">Saturation and brightness. Use Sliders for precise adjustment.</string>
+    <string name="color_picker_hue">Hue. Use Sliders for precise adjustment.</string>
+    <string name="color_picker_selected">Selected color</string>
+    <string name="color_picker_quick_colors">Quick colors</string>
+    <string name="app_icon_custom_background">Custom background</string>
+    <string name="app_icon_custom_background_hint">Choose a color. Android uses the closest built-in icon in your app drawer. Your exact color can be saved as a home-screen icon and used in Recents.</string>
+    <string name="app_icon_custom_logo_hint">Choose any logo to overlay on your custom background.</string>
+    <string name="app_icon_shortcut_preview">Home-screen shortcut preview</string>
+    <string name="app_icon_custom_requested">Your design</string>
+    <string name="app_icon_custom_native_match">Actual launcher icon</string>
+    <string name="app_icon_use_wallpaper_colors">Use wallpaper colors instead</string>
+    <string name="app_icon_shortcut_apply">Add or update shortcut</string>
+    <string name="app_icon_shortcut_requested">Request sent. Confirm in your launcher to add the shortcut.</string>
+    <string name="app_icon_shortcut_updated">Home-screen shortcut updated</string>
+    <string name="app_icon_shortcut_unsupported">This launcher does not support adding home-screen shortcuts</string>
+    <string name="app_icon_shortcut_failed">Could not save the shortcut. Please try again.</string>
+  <string name="color_picker_wheel">Wheel</string>
+  <string name="color_picker_brightness">Brightness</string>
+    <string name="only_for_video_list">Only for video list</string>
+    <string name="only_for_folder_list">Only for folder list</string>
+
+  <!-- Audio format indicators -->
+  <string name="audio_quality_hi_res">Hi-Res lossless</string>
+  <string name="audio_quality_lossless">Lossless</string>
+  <string name="audio_quality_lossy">Lossy</string>
+  <string name="audio_quality_dsd">Direct Stream Digital</string>
+  <string name="audio_quality_audio">Audio</string>
+
+  <!-- Delete action size -->
+  <string name="delete_size_loading">Calculating…</string>
+  <string name="delete_size_unknown">Size unknown</string>
+  <string name="delete_size_description">Total size: %1$s</string>
+
+  <!-- Thumbnail information -->
+  <string name="media_info_tab_thumbnail">Thumbnail</string>
+  <string name="thumbnail_preview_description">Cached thumbnail for %1$s</string>
+  <string name="thumbnail_status_disk">Cached on disk</string>
+  <string name="thumbnail_status_memory">Cached in memory</string>
+  <string name="thumbnail_status_unreadable">Cached image could not be decoded</string>
+  <string name="thumbnail_status_missing">No cached thumbnail</string>
+  <string name="thumbnail_info_status">Cache status</string>
+  <string name="thumbnail_info_generator">Generator policy</string>
+  <string name="thumbnail_info_strategy">Frame or artwork selection</string>
+  <string name="thumbnail_strategy_artwork">Album artwork</string>
+  <string name="thumbnail_strategy_auto">MediaStore first, then Native fallback</string>
+  <string name="thumbnail_strategy_android">Android-selected frame</string>
+  <string name="thumbnail_info_quality">Configured quality</string>
+  <string name="thumbnail_info_maximum">Configured size limit</string>
+  <string name="thumbnail_maximum_value">Up to %1$d px on the longest side</string>
+  <string name="thumbnail_info_dimensions">Actual image dimensions</string>
+  <string name="thumbnail_dimensions_value">%1$d × %2$d px</string>
+  <string name="thumbnail_info_format">Cached image format</string>
+  <string name="thumbnail_info_size">Cached file size</string>
+  <string name="thumbnail_info_memory">Present in browser memory cache</string>
+  <string name="thumbnail_info_preview_memory">Preview memory</string>
+  <string name="thumbnail_info_frame">Configured frame position</string>
+  <string name="thumbnail_percent_value">%1$.1f%%</string>
+  <string name="thumbnail_info_jpeg_setting">App JPEG encoder setting</string>
+  <string name="thumbnail_jpeg_value">%1$d%%</string>
+  <string name="thumbnail_info_modified">Cache file updated</string>
+  <string name="thumbnail_info_cache_path">Cache file path</string>
+  <string name="thumbnail_info_source">Source URI</string>
+  <string name="thumbnail_yes">Yes</string>
+  <string name="thumbnail_no">No</string>
+  <string name="thumbnail_refresh">Refresh info</string>
+  <string name="thumbnail_generate">Generate thumbnail</string>
+  <string name="thumbnail_quality_note">The preview is the actual cached image for the current settings. Browser tiles may cache a smaller image than the configured size limit. Opening this tab does not generate a new frame.</string>
+  <string name="thumbnail_inspection_failed">Thumbnail information could not be read. Try refreshing.</string>
+  <string name="thumbnail_generation_unavailable">The selected generator did not return a thumbnail for this file.</string>
+
+  <string name="update_download_failed">Download failed. Tap Retry to resume.</string>
+  <string name="update_install_failed">Could not open the installer. You can try again.</string>
+  <string name="update_install_permission">Allow this app to install updates in Android settings, then tap Install again.</string>
+  <string name="update_checking_download">Checking downloaded APK…</string>
+  <string name="update_check_failed">Could not check for updates. Check your connection or try again later.</string>
+  <string name="update_auto_install">Automatically download and install</string>
+  <string name="update_auto_install_summary">Download over unmetered networks and install when mpvRx is idle. Android may ask for approval.</string>
+  <string name="update_download_and_install">Download and install</string>
+  <string name="update_background_downloading">Downloading app update…</string>
+  <string name="update_installing">Installing update…</string>
+  <string name="update_approval_required">Android needs your approval to finish installing. Tap Confirm installation.</string>
+  <string name="update_confirm_install">Confirm installation</string>
+  <string name="update_install_complete">Update installed. Tap to open mpvRx.</string>
+  <string name="update_download_waiting">Waiting for the network or retrying the download…</string>
+  <string name="tv_nav_settings">Settings</string>
+  <string name="tv_player_play_pause">Play or pause</string>
+  <string name="tv_player_subtitles">Subtitles</string>
+  <string name="tv_player_audio">Audio tracks</string>
+  <string name="tv_player_chapters">Chapters</string>
+  <string name="tv_player_speed">Playback speed</string>
+  <string name="tv_player_aspect_ratio">Aspect ratio</string>
+  <string name="tv_player_quality">Video quality</string>
+  <string name="tv_player_seek_bar">Seek bar</string>
+  <string name="pref_audio_animated_artwork_title">Animated album artwork</string>
+  <string name="pref_audio_animated_artwork_summary">Fetch matching animated covers from Apple Music in the full-screen music player. Sends song title, artist and album to Apple and uses mobile data. Off by default; keeps the existing cover when unavailable. Switch from the visualizer to the cover to see it.</string>
+  <string name="jellyfin_featured">Featured</string>
+  <string name="jellyfin_series">Series</string>
+  <string name="jellyfin_movie">Movie</string>
+  <string name="jellyfin_browse_series">Browse series</string>
+  <string name="jellyfin_details">Details</string>
+  <string name="jellyfin_trailer">Trailer</string>
+  <string name="jellyfin_open_trailer_error">No app is available to open trailers.</string>
+  <string name="jellyfin_libraries">Libraries</string>
+  <string name="jellyfin_continue_watching">Continue watching</string>
+  <string name="jellyfin_latest_movies">Latest movies</string>
+  <string name="jellyfin_latest_series">Latest series</string>
+  <string name="jellyfin_top_picks">Top picks for you</string>
+  <string name="jellyfin_top_picks_subtitle">Popular and trending on your server</string>
+  <string name="jellyfin_music_subtitle">Albums and tracks</string>
+  <string name="jellyfin_connect_message">Stream your library with mpvRx hardware decoding, no transcoding needed.</string>
+  <string name="jellyfin_empty_folder_message">There\'s no media in this folder yet.</string>
+  <string name="jellyfin_no_results_message">Nothing matched “%1$s”. Try another title or category.</string>
+  <string name="jellyfin_filter_all">All</string>
+  <string name="jellyfin_play_random">Play random</string>
+  <string name="jellyfin_switch_server">Switch server</string>
+  <string name="jellyfin_error_title">Couldn\'t reach this server</string>
+  <string name="jellyfin_auth_error_message">Your session expired or this account isn\'t authorized. Sign in again to continue.</string>
+  <string name="jellyfin_reauthenticate">Sign in again</string>
+  <string name="jellyfin_cast">Cast</string>
+  <string name="jellyfin_more_like_this">More like this</string>
+  <string name="jellyfin_watched">Watched</string>
+  <string name="jellyfin_search_hint">Search movies, shows, and episodes…</string>
+  <!-- The in-video persistent status HUD is separate from Android's status bar. -->
+  <string name="pref_persistent_status_title">Persistent status bar</string>
+  <string name="pref_persistent_status_summary">Always-visible video HUD with time, battery and playback progress</string>
+  <string name="pref_persistent_status_enable">Enable persistent status bar</string>
+  <string name="pref_persistent_status_enable_summary">Configure HUD placement and slot contents</string>
+  <string name="pref_persistent_status_preview">Live preview</string>
+  <string name="pref_persistent_status_controls">Controls</string>
+  <string name="pref_persistent_status_position_section">Position</string>
+  <string name="pref_persistent_status_display">Display</string>
+  <string name="pref_persistent_status_position">Position</string>
+  <string name="pref_persistent_status_top">Top</string>
+  <string name="pref_persistent_status_bottom">Bottom</string>
+  <string name="pref_persistent_status_left">Left slot</string>
+  <string name="pref_persistent_status_center">Center slot</string>
+  <string name="pref_persistent_status_right">Right slot</string>
+  <string name="pref_persistent_status_none">None (Hidden)</string>
+  <string name="pref_persistent_status_progress">Playback progress</string>
+  <string name="pref_persistent_status_clock">Current time</string>
+  <string name="pref_persistent_status_battery">Battery status</string>
+  <string name="pref_persistent_status_extras">Zoom &amp; extra gestures</string>
+  <string name="pref_persistent_status_finish_time">Prefer estimated finish time</string>
+  <string name="pref_persistent_status_finish_summary">Calculate remaining playback duration based on playback speed</string>
+  <string name="pref_persistent_status_speed">Show speed tag when not 1.0x</string>
+  <string name="pref_persistent_status_micro_battery">Show micro battery icon</string>
+  <string name="pref_persistent_status_est_prefix">Est.</string>
+  <string name="pref_persistent_status_time_unknown">—</string>
 </resources>

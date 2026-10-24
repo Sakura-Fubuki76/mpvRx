@@ -68,6 +68,7 @@ class CastPlaybackController(
   private var remoteWasPlaying = false
   private var capturedRemoteEndState = false
   private var transferredByThisController = false
+  private var transferredContentId: String? = null
   private var positionPollingJob: Job? = null
   private var volumeDebounceJob: Job? = null
 
@@ -89,8 +90,12 @@ class CastPlaybackController(
         val remote = session.remoteMediaClient
         if (remote?.mediaInfo != null) {
           transferredByThisController = true
+          transferredContentId = remote.mediaInfo?.contentId
           localWasPlaying = currentMedia()?.isPlaying == true
+          remoteWasPlaying = localWasPlaying
+          captureRemotePlayback(remote)
           pauseLocal()
+          updatePositionFromRemote()
           startPositionPolling()
         } else {
           loadCurrentMedia(session)
@@ -98,11 +103,7 @@ class CastPlaybackController(
       }
 
       override fun onSessionEnding(session: CastSession) {
-        session.remoteMediaClient?.let { remote ->
-          lastRemotePositionMs = remote.approximateStreamPosition
-          remoteWasPlaying = remote.isPlaying
-          capturedRemoteEndState = true
-        }
+        session.remoteMediaClient?.let { captureRemotePlayback(it) }
       }
 
       override fun onSessionEnded(
@@ -119,6 +120,7 @@ class CastPlaybackController(
         }
         capturedRemoteEndState = false
         transferredByThisController = false
+        transferredContentId = null
         remoteMediaClient = null
         castSession = null
         _castState.value = CastSessionState()
@@ -323,6 +325,8 @@ class CastPlaybackController(
           remoteWasPlaying = snapshot.isPlaying
           capturedRemoteEndState = false
           transferredByThisController = true
+          transferredContentId = contentUrl
+          captureRemotePlayback(remote)
           _castState.update {
             it.copy(
               title = snapshot.title,
@@ -360,6 +364,7 @@ class CastPlaybackController(
   private fun updatePositionFromRemote() {
     try {
       val client = remoteMediaClient ?: return
+      captureRemotePlayback(client)
       val position = client.approximateStreamPosition
       if (position >= 0) {
         _castState.update { it.copy(currentPosition = position) }
@@ -391,6 +396,26 @@ class CastPlaybackController(
     } catch (e: Exception) {
       Log.w(TAG, "Error polling cast position", e)
     }
+  }
+
+  /** Keeps the local resume snapshot current, so an unexpected disconnect resumes near the receiver position. */
+  private fun captureRemotePlayback(client: RemoteMediaClient) {
+    if (!transferredByThisController || client !== remoteMediaClient ||
+      transferredContentId == null || client.mediaInfo?.contentId != transferredContentId
+    ) {
+      return
+    }
+    val state = client.mediaStatus?.playerState ?: return
+    if (state != MediaStatus.PLAYER_STATE_PLAYING && state != MediaStatus.PLAYER_STATE_PAUSED &&
+      state != MediaStatus.PLAYER_STATE_BUFFERING
+    ) {
+      return
+    }
+    val position = client.approximateStreamPosition
+    if (position < 0L) return
+    lastRemotePositionMs = position
+    if (state != MediaStatus.PLAYER_STATE_BUFFERING) remoteWasPlaying = state == MediaStatus.PLAYER_STATE_PLAYING
+    capturedRemoteEndState = true
   }
 
   private fun resolveContentUrl(snapshot: CastMediaSnapshot): String? {

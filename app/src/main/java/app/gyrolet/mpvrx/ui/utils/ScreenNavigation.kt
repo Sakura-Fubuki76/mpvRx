@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -39,12 +41,14 @@ import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.player.NavigationAnimStyle
 import app.gyrolet.mpvrx.ui.theme.AppMotion
+import app.gyrolet.mpvrx.ui.theme.LocalAppWallpaperActive
 import app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor
 import kotlin.math.roundToInt
 import org.koin.compose.koinInject
 
 private val NavigationEnterEasing = CubicBezierEasing(0.05f, 0.70f, 0.10f, 1.00f)
 private val NavigationExitEasing = CubicBezierEasing(0.30f, 0.00f, 0.80f, 0.15f)
+internal val LocalCurrentScreen = staticCompositionLocalOf<Screen?> { null }
 
 /** The Appearance slider is a duration multiplier: smaller values finish sooner. */
 internal fun navigationDurationMillis(speed: Float, baseMillis: Int = 260): Int =
@@ -106,6 +110,10 @@ internal fun ScreenNavDisplay(
   val reduceMotion = AppMotion.shouldReduceMotion()
   val layoutDirection = LocalLayoutDirection.current
   val direction = if (layoutDirection == LayoutDirection.Ltr) 1 else -1
+  // With a wallpaper / animated background the entries are transparent, so a normal slide or
+  // cross-fade shows the outgoing and incoming screens on top of each other (ghosted titles,
+  // doubled lists, jumpy predictive back). Use a sequential fade-through there instead.
+  val seeThrough = LocalAppWallpaperActive.current && !opaqueBackground
   val backgroundColor by rememberUpdatedState(
     if (opaqueBackground) MaterialTheme.colorScheme.background else wallpaperAwareBackgroundColor(),
   )
@@ -115,8 +123,8 @@ internal fun ScreenNavDisplay(
     modifier = modifier.clipToBounds().background(backgroundColor),
     onBack = onBack,
     sizeTransform = null,
-    transitionSpec = { screenNavTransition(true, style, speed, direction, reduceMotion) },
-    popTransitionSpec = { screenNavTransition(false, style, speed, direction, reduceMotion) },
+    transitionSpec = { screenNavTransition(true, style, speed, direction, reduceMotion, seeThrough) },
+    popTransitionSpec = { screenNavTransition(false, style, speed, direction, reduceMotion, seeThrough) },
     predictivePopTransitionSpec = { edge: Int ->
       screenNavTransition(
         forward = false,
@@ -124,6 +132,7 @@ internal fun ScreenNavDisplay(
         speed = speed,
         direction = if (edge == BackEventCompat.EDGE_RIGHT) -1 else 1,
         reduceMotion = reduceMotion,
+        seeThrough = seeThrough,
       )
     },
     entryProvider = { route ->
@@ -135,8 +144,10 @@ internal fun ScreenNavDisplay(
           }
         val entryColor =
           if (entryOpaque) MaterialTheme.colorScheme.background else wallpaperAwareBackgroundColor()
-        Surface(Modifier.fillMaxSize(), color = entryColor) {
-          content(route)
+        CompositionLocalProvider(LocalCurrentScreen provides route) {
+          Surface(Modifier.fillMaxSize(), color = entryColor) {
+            content(route)
+          }
         }
       }
     },
@@ -149,11 +160,43 @@ private fun screenNavTransition(
   speed: Float,
   direction: Int,
   reduceMotion: Boolean,
+  seeThrough: Boolean = false,
 ): ContentTransform {
   val effectiveStyle =
     if (reduceMotion && style != NavigationAnimStyle.None) NavigationAnimStyle.Minimal else style
   val duration = navigationDurationMillis(speed)
   val alphaDuration = (duration * 0.72f).roundToInt().coerceAtLeast(1)
+
+  if (seeThrough && effectiveStyle != NavigationAnimStyle.None) {
+    // Outgoing screen is gone before the incoming one appears, so they never overlap.
+    val exitDuration = (duration * 0.30f).roundToInt().coerceAtLeast(1)
+    val enterDuration = (duration - exitDuration).coerceAtLeast(1)
+    val enter =
+      fadeIn(
+        tween(
+          durationMillis = enterDuration,
+          delayMillis = exitDuration,
+          easing = NavigationEnterEasing,
+        ),
+      )
+    val exit = fadeOut(tween(durationMillis = exitDuration, easing = NavigationExitEasing))
+    return if (effectiveStyle == NavigationAnimStyle.Minimal) {
+      enter togetherWith exit
+    } else {
+      val sign = if (forward) direction else -direction
+      (
+        enter +
+          slideInHorizontally(
+            animationSpec =
+              tween(
+                durationMillis = enterDuration,
+                delayMillis = exitDuration,
+                easing = NavigationEnterEasing,
+              ),
+          ) { fullWidth -> fullWidth * sign / 16 }
+        ) togetherWith exit
+    }
+  }
 
   return when (effectiveStyle) {
     NavigationAnimStyle.None -> EnterTransition.None togetherWith ExitTransition.None

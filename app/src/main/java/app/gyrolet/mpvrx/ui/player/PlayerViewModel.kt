@@ -170,8 +170,15 @@ enum class AutoCropState {
   ERROR,
 }
 
+/**
+ * @param hostedInBrowser the in-app music sheet adopts a core owned by [MediaPlaybackService]. It
+ * never claims process-wide bindings (Syncplay, ambient/post-processing shaders, subtitle styling)
+ * and only reads the core between [attachToDetachedPlayback] and [detachFromDetachedPlayback].
+ */
 @Suppress("TooManyFunctions")
-class PlayerViewModel : ViewModel(),
+class PlayerViewModel(
+  private val hostedInBrowser: Boolean = false,
+) : ViewModel(),
   KoinComponent {
   private var hostReference = WeakReference<PlayerHost>(null)
   private val host: PlayerHost?
@@ -1179,6 +1186,8 @@ class PlayerViewModel : ViewModel(),
    * and when the screen resumes, and does nothing if the lyrics already belong to this file.
    */
   fun syncLyricsWithPlayback() {
+    // A collapsed in-app sheet must not fetch lyrics for playback it is not showing.
+    if (hostedInBrowser && !_isMpvCoreReady.value) return
     if (!isAudioOnly.value) return
     val path = currentLyricsPath() ?: return
     if (path == lyricsStatePath) return
@@ -1254,29 +1263,38 @@ class PlayerViewModel : ViewModel(),
   private fun currentLyricsPath(): String? = PlaybackSession.state.value.currentItem?.originalUri?.takeIf(String::isNotBlank)
     ?: PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename")
 
+  /** Queue song metadata is stable across track changes; native/display tags can lag behind. */
+  private fun currentLyricsTitle(): String =
+    PlaybackSession.state.value.currentItem?.title?.takeIf { it.isNotBlank() }
+      ?: PlaybackSession.getPropertyString("metadata/by-key/Title")?.takeIf { it.isNotBlank() }
+      ?: currentMediaTitle.takeIf { it.isNotBlank() }
+      ?: PlaybackSession.getPropertyString("media-title").orEmpty()
+
+  private fun currentLyricsArtist(): String =
+    PlaybackSession.state.value.currentItem?.artist?.takeIf { it.isNotBlank() }
+      ?: PlaybackSession.getPropertyString("metadata/by-key/Artist")
+      ?: PlaybackSession.getPropertyString("metadata/by-key/ARTIST")
+      ?: PlaybackSession.getPropertyString("metadata/by-key/album_artist")
+      ?: ""
+
   fun loadLyricsForCurrentTrack(
     forceRefresh: Boolean = false,
     titleOverride: String? = null,
     forceOnline: Boolean = false,
   ) {
-    val allowOnline = PlaybackSession.state.value.currentItem?.audiobook == null
+    val session = PlaybackSession.state.value
+    // Do not send the previous song's native tags to online providers during file loading.
+    if (session.phase != PlaybackPhase.READY && session.phase != PlaybackPhase.BACKGROUND) return
+    val allowOnline = session.currentItem?.audiobook == null
     val path = currentLyricsPath() ?: return
     if (path.isBlank()) return
     if (forceRefresh) lyricsRepository.invalidate(path, allowOnline)
-    val generation = PlaybackSession.state.value.generation
+    val generation = session.generation
 
-    val title = titleOverride
-      ?: currentMediaTitle.takeIf { it.isNotBlank() }
-      ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
-      ?: PlaybackSession.getPropertyString("media-title")
-      ?: ""
-
-    val artist = PlaybackSession.getPropertyString("metadata/by-key/Artist")
-      ?: PlaybackSession.getPropertyString("metadata/by-key/ARTIST")
-      ?: PlaybackSession.getPropertyString("metadata/by-key/album_artist")
-      ?: ""
-
-    val duration = PlaybackSession.getPropertyDouble("duration")?.toInt() ?: 0
+    val title = titleOverride ?: currentLyricsTitle()
+    val artist = currentLyricsArtist()
+    val duration = session.currentItem?.durationSeconds?.takeIf { it > 0 }
+      ?: PlaybackSession.getPropertyDouble("duration")?.toInt() ?: 0
     val album = PlaybackSession.getPropertyString("metadata/by-key/Album")
       ?: PlaybackSession.getPropertyString("metadata/by-key/album")
     val isrc = PlaybackSession.getPropertyString("metadata/by-key/isrc")
@@ -1285,14 +1303,19 @@ class PlayerViewModel : ViewModel(),
     )
     if (!forceRefresh && !forceOnline && request == lastLyricsLoadRequest) return
     lastLyricsLoadRequest = request
+    val isNewTrack = lyricsStatePath != path
     lyricsStatePath = path
 
-    lyricsUiState.value = lyricsUiState.value.copy(
-      isLoading = true,
-      errorMessage = null,
-      syncOffsetMs = 0,
-      onlineEnabled = allowOnline,
-    )
+    lyricsUiState.value = if (isNewTrack) {
+      LyricsUiState(isLoading = true, onlineEnabled = allowOnline)
+    } else {
+      lyricsUiState.value.copy(
+        isLoading = true,
+        errorMessage = null,
+        syncOffsetMs = 0,
+        onlineEnabled = allowOnline,
+      )
+    }
 
     // Cancel any in-flight lyrics load/translate for the previous track, otherwise a slow
     // fetch for the old song can resolve after the new song's fetch and overwrite it with
@@ -1370,10 +1393,7 @@ class PlayerViewModel : ViewModel(),
 
   /** What to search for when mpv has not published a title for [mediaPath] yet. */
   private fun trackSearchTitle(mediaPath: String): String {
-    val fromMetadata =
-      currentMediaTitle.takeIf { it.isNotBlank() }
-        ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
-        ?: PlaybackSession.getPropertyString("media-title")
+    val fromMetadata = currentLyricsTitle().takeIf { it.isNotBlank() }
     if (!fromMetadata.isNullOrBlank()) return fromMetadata
     return mediaPath
       .substringAfterLast('/')
@@ -1389,6 +1409,7 @@ class PlayerViewModel : ViewModel(),
     val path = currentLyricsPath() ?: return
     if (path.isBlank()) return
 
+    if (lyricsStatePath != path) return
     val current = lyricsUiState.value
     val autoTranslate = allowOnline && audioPreferences.lyricsAutoTranslate.get()
     val defaultTargetLang = audioPreferences.lyricsTargetLanguage.get().ifBlank { "en" }
@@ -1397,16 +1418,12 @@ class PlayerViewModel : ViewModel(),
       lyricsUiState.value = current.copy(isLoading = true)
       lyricsLoadJob?.cancel()
       lyricsTranslateJob?.cancel()
+      val generation = PlaybackSession.state.value.generation
       lyricsLoadJob = viewModelScope.launch(Dispatchers.IO) {
-        val title = currentMediaTitle.takeIf { it.isNotBlank() }
-          ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
-          ?: PlaybackSession.getPropertyString("media-title")
-          ?: ""
-        val artist = PlaybackSession.getPropertyString("metadata/by-key/Artist")
-          ?: PlaybackSession.getPropertyString("metadata/by-key/ARTIST")
-          ?: PlaybackSession.getPropertyString("metadata/by-key/album_artist")
-          ?: ""
-        val duration = PlaybackSession.getPropertyDouble("duration")?.toInt() ?: 0
+        val title = currentLyricsTitle()
+        val artist = currentLyricsArtist()
+        val duration = PlaybackSession.state.value.currentItem?.durationSeconds?.takeIf { it > 0 }
+          ?: PlaybackSession.getPropertyDouble("duration")?.toInt() ?: 0
         val album = PlaybackSession.getPropertyString("metadata/by-key/Album")
           ?: PlaybackSession.getPropertyString("metadata/by-key/album")
 
@@ -1420,8 +1437,8 @@ class PlayerViewModel : ViewModel(),
         )
 
         ensureActive()
-        val stillCurrentPath = currentLyricsPath()
-        if (stillCurrentPath != path) return@launch
+        if (!PlaybackSession.isCurrentGeneration(generation) || currentLyricsPath() != path ||
+          lyricsStatePath != path) return@launch
 
         val updated = lyricsRepository.mergeOnline(path, fetched, allowOnline)
         val online = updated?.onlineLyrics ?: fetched.lyrics
@@ -1500,7 +1517,7 @@ class PlayerViewModel : ViewModel(),
     val allowOnline = PlaybackSession.state.value.currentItem?.audiobook == null
     if (!allowOnline) return
     val path = currentLyricsPath() ?: return
-    if (path.isBlank()) return
+    if (path.isBlank() || lyricsStatePath != path) return
     val generation = PlaybackSession.state.value.generation
 
     val current = lyricsUiState.value
@@ -1535,15 +1552,10 @@ class PlayerViewModel : ViewModel(),
 
     lyricsUiState.value = current.copy(isLoading = true, errorMessage = null, preferredProvider = provider)
     lyricsLoadJob = viewModelScope.launch(Dispatchers.IO) {
-      val title = currentMediaTitle.takeIf { it.isNotBlank() }
-        ?: PlaybackSession.getPropertyString("metadata/by-key/Title")
-        ?: PlaybackSession.getPropertyString("media-title")
-        ?: ""
-      val artist = PlaybackSession.getPropertyString("metadata/by-key/Artist")
-        ?: PlaybackSession.getPropertyString("metadata/by-key/ARTIST")
-        ?: PlaybackSession.getPropertyString("metadata/by-key/album_artist")
-        ?: ""
-      val duration = PlaybackSession.getPropertyDouble("duration")?.toInt() ?: 0
+      val title = currentLyricsTitle()
+      val artist = currentLyricsArtist()
+      val duration = PlaybackSession.state.value.currentItem?.durationSeconds?.takeIf { it > 0 }
+        ?: PlaybackSession.getPropertyDouble("duration")?.toInt() ?: 0
       val album = PlaybackSession.getPropertyString("metadata/by-key/Album")
         ?: PlaybackSession.getPropertyString("metadata/by-key/album")
 
@@ -1636,7 +1648,9 @@ class PlayerViewModel : ViewModel(),
     val current = lyricsUiState.value
     val baseLyrics = current.originalLyrics ?: current.lyrics ?: return
     val lang = targetLang ?: audioPreferences.lyricsTargetLanguage.get().ifBlank { "en" }
-    val path = PlaybackSession.getPropertyString("path") ?: PlaybackSession.getPropertyString("stream-open-filename") ?: ""
+    val path = currentLyricsPath() ?: return
+    if (lyricsStatePath != path) return
+    val generation = PlaybackSession.state.value.generation
 
     audioPreferences.lyricsAutoTranslate.set(true)
     audioPreferences.lyricsTargetLanguage.set(lang)
@@ -1658,9 +1672,9 @@ class PlayerViewModel : ViewModel(),
 
       // Bail out if the track changed while translation was in-flight, so a slow
       // translation for the previous song can't overwrite the new song's lyrics.
-      val stillCurrentPath = PlaybackSession.getPropertyString("path")
-        ?: PlaybackSession.getPropertyString("stream-open-filename")
-      if (stillCurrentPath != path) return@launch
+      ensureActive()
+      if (!PlaybackSession.isCurrentGeneration(generation) || currentLyricsPath() != path ||
+        lyricsStatePath != path) return@launch
 
       if (!outcome.isSuccessful) {
         lyricsUiState.value = lyricsUiState.value.copy(
@@ -2327,15 +2341,19 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     // Clean up any stale ambient shader files left in cacheDir from previous abnormal exits
     appContext.cacheDir.listFiles { _, name -> name.startsWith("ambient_") && name.endsWith(".glsl") }
       ?.forEach { runCatching { it.delete() } }
-    // A track change while nobody is looking at the player (app backgrounded, screen off)
-    // never reaches onVideoLoadCompleted; follow the session directly instead. The short
-    // wait lets mpv publish the new file's tags before they are used as the search query.
+    // Immediately clear old lyrics when a track changes, even without a foreground Activity.
+    // Allow mpv to finish publishing the next song's tags before the fallback lookup.
     viewModelScope.launch {
       PlaybackSession.state
-        .map { it.currentItem?.originalUri }
+        .map { it.currentItem?.stableId to it.generation }
         .distinctUntilChanged()
         .drop(1)
         .collectLatest {
+          lyricsLoadJob?.cancel()
+          lyricsTranslateJob?.cancel()
+          lastLyricsLoadRequest = null
+          lyricsStatePath = null
+          lyricsUiState.value = LyricsUiState()
           delay(1_000)
           syncLyricsWithPlayback()
         }
@@ -2366,28 +2384,31 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         reconcileHdrModeWithRenderer()
       }
     }
-    syncplayManager.playbackStateProvider = { currentSyncplayPlaybackState() }
-    syncplayManager.fileInfoProvider = { currentSyncplayFileInfo() }
-    syncplayManager.onRemotePause = { shouldPause ->
-      viewModelScope.launch(playbackStateDispatcher) {
-        val currentlyPaused = PlaybackSession.getPropertyBoolean("pause") ?: false
-        if (currentlyPaused != shouldPause) {
-          if (!shouldPause) {
-            val focusGranted = withContext(Dispatchers.Main) { host?.requestAudioFocus() ?: false }
-            if (!focusGranted) return@launch
-          }
-          PlaybackSession.setPropertyBoolean("pause", shouldPause)
-          if (shouldPause) {
-            withContext(Dispatchers.Main) { host?.abandonAudioFocus() }
+    // Syncplay keeps one set of player bindings; the in-app sheet must not steal the player's.
+    if (!hostedInBrowser) {
+      syncplayManager.playbackStateProvider = { currentSyncplayPlaybackState() }
+      syncplayManager.fileInfoProvider = { currentSyncplayFileInfo() }
+      syncplayManager.onRemotePause = { shouldPause ->
+        viewModelScope.launch(playbackStateDispatcher) {
+          val currentlyPaused = PlaybackSession.getPropertyBoolean("pause") ?: false
+          if (currentlyPaused != shouldPause) {
+            if (!shouldPause) {
+              val focusGranted = withContext(Dispatchers.Main) { host?.requestAudioFocus() ?: false }
+              if (!focusGranted) return@launch
+            }
+            PlaybackSession.setPropertyBoolean("pause", shouldPause)
+            if (shouldPause) {
+              withContext(Dispatchers.Main) { host?.abandonAudioFocus() }
+            }
           }
         }
       }
-    }
-    syncplayManager.onRemoteSeek = { pos ->
-      viewModelScope.launch(Dispatchers.IO) {
-        val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
-        if (kotlin.math.abs(currentPos - pos) > 0.75) {
-          PlaybackSession.command("seek", pos.toString(), "absolute+exact")
+      syncplayManager.onRemoteSeek = { pos ->
+        viewModelScope.launch(Dispatchers.IO) {
+          val currentPos = PlaybackSession.getPropertyDouble("time-pos") ?: 0.0
+          if (kotlin.math.abs(currentPos - pos) > 0.75) {
+            PlaybackSession.command("seek", pos.toString(), "absolute+exact")
+          }
         }
       }
     }
@@ -2424,7 +2445,8 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         val playbackPhase = PlaybackSession.state.value.phase
         val hasActiveTimeline = playbackPhase == PlaybackPhase.READY || playbackPhase == PlaybackPhase.BACKGROUND
         if (!_isMpvCoreReady.value || !hasActiveTimeline) {
-          delay(250L)
+          // A collapsed in-app sheet keeps its state for the session; it must not keep waking up.
+          if (hostedInBrowser && !_isMpvCoreReady.value) _isMpvCoreReady.first { it } else delay(250L)
           continue
         }
         runCatching {
@@ -2510,7 +2532,8 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       }
     }
 
-    viewModelScope.launch {
+    // Crop, aspect and ambient work belongs to the video player's surface, never to the in-app sheet.
+    if (!hostedInBrowser) viewModelScope.launch {
       val activeGeneration =
         PlaybackSession.state
           .map { state ->
@@ -2536,7 +2559,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         }
     }
 
-    viewModelScope.launch {
+    if (!hostedInBrowser) viewModelScope.launch {
       combine(
         PlaybackSession.propInt["osd-width"],
         PlaybackSession.propInt["osd-height"],
@@ -2579,10 +2602,17 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     // Track selection is now handled by TrackSelector in PlayerActivity
 
     // Restore repeat mode and shuffle state from preferences
-    _repeatMode.value = playerPreferences.repeatMode.get()
-    _shuffleEnabled.value = playerPreferences.shuffleEnabled.get()
-    PlaybackSession.setRepeatMode(_repeatMode.value)
-    PlaybackSession.setShuffleEnabled(_shuffleEnabled.value)
+    if (hostedInBrowser) {
+      // The in-app sheet adopts the running queue instead of re-imposing the saved modes on it.
+      val queue = PlaybackSession.queue.value
+      _repeatMode.value = queue.repeatMode
+      _shuffleEnabled.value = queue.shuffleEnabled
+    } else {
+      _repeatMode.value = playerPreferences.repeatMode.get()
+      _shuffleEnabled.value = playerPreferences.shuffleEnabled.get()
+      PlaybackSession.setRepeatMode(_repeatMode.value)
+      PlaybackSession.setShuffleEnabled(_shuffleEnabled.value)
+    }
 
     // Observe volume boost cap changes to enforce limits dynamically (in PiP)
     viewModelScope.launch(playbackStateDispatcher) {
@@ -2607,10 +2637,13 @@ val isBrightnessSliderShown = MutableStateFlow(false)
         audioPreferences.volumeNormalization.changes(),
         audioPreferences.drcEnabled.changes(),
         audioPreferences.audioChannels.changes(),
-      ) { _, _, _ -> }.collect {
-        if (!_isMpvCoreReady.value) return@collect
-        applyEqualizerMpvFilters(immediate = true)
-      }
+      ) { _, _, _ -> }
+        // Re-sending the unchanged filter chain to a playing core rebuilds it and audibly hiccups.
+        .drop(if (hostedInBrowser) 1 else 0)
+        .collect {
+          if (!_isMpvCoreReady.value) return@collect
+          applyEqualizerMpvFilters(immediate = true)
+        }
     }
 
     // Monitor duration and AB loop changes to automatically enable precise seeking
@@ -2643,8 +2676,9 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       }
     }
 
-    // Refresh custom buttons whenever their configuration changes.
-    viewModelScope.launch {
+    // Refresh custom buttons whenever their configuration changes. Their scripts live in the
+    // shared core, so only the player screen that loaded them may rebuild them.
+    if (!hostedInBrowser) viewModelScope.launch {
       playerPreferences.customButtons.changes().drop(1).collect {
         setupCustomButtons()
       }
@@ -2715,6 +2749,81 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     _volumeBoostCap.value = null
     _precisePosition.value = 0f
     _preciseDuration.value = 0f
+  }
+
+  @Volatile
+  private var detachedPlaybackJob: Job? = null
+
+  /**
+   * Adopts the core [MediaPlaybackService] is playing, for the in-app music sheet. Unlike
+   * [onMpvCoreInitialized] it loads no scripts and writes nothing to mpv, so opening the sheet can
+   * never interrupt the audio that is already playing. The service keeps owning the session and
+   * advances the queue; this only mirrors it, the way PlayerActivity's load callbacks would.
+   */
+  fun attachToDetachedPlayback() {
+    if (!hostedInBrowser || detachedPlaybackJob?.isActive == true) return
+    detachedPlaybackJob =
+      viewModelScope.launch(playbackStateDispatcher) {
+        // Seed the timeline before the polling loop wakes, so the sheet never opens at 0:00.
+        PlaybackSession.getPropertyDouble("time-pos")?.let { _precisePosition.value = it.toFloat() }
+        PlaybackSession.getPropertyDouble("duration")?.takeIf { it > 0.0 }?.let { _preciseDuration.value = it.toFloat() }
+        _isMpvCoreReady.value = true
+        startMpvStateCollectors()
+        refreshPlaylistItems()
+        launch {
+          // The audio-only verdict needs the track list, which can land just after attaching.
+          withTimeoutOrNull(2_000L) { isAudioOnly.first { it } }
+          withContext(Dispatchers.Main) { syncLyricsWithPlayback() }
+        }
+        launch { PlaybackSession.queue.drop(1).collect { refreshPlaylistItems() } }
+        launch {
+          // Notification and widget shuffle toggles change the queue directly.
+          PlaybackSession.queue
+            .map { it.shuffleEnabled }
+            .distinctUntilChanged()
+            .collect { _shuffleEnabled.value = it }
+        }
+        val attachedState = PlaybackSession.state.value
+        var startedGeneration = attachedState.generation
+        var loadedGeneration =
+          attachedState.generation.takeIf {
+            attachedState.phase == PlaybackPhase.READY || attachedState.phase == PlaybackPhase.BACKGROUND
+          }
+        PlaybackSession.state
+          .map { it.generation to it.phase }
+          .distinctUntilChanged()
+          .collect { (generation, phase) ->
+            when (phase) {
+              PlaybackPhase.LOADING ->
+                if (generation != startedGeneration) {
+                  startedGeneration = generation
+                  withContext(Dispatchers.Main) { onVideoLoadStarted() }
+                }
+              PlaybackPhase.READY, PlaybackPhase.BACKGROUND ->
+                if (generation != loadedGeneration) {
+                  startedGeneration = generation
+                  loadedGeneration = generation
+                  refreshPlaylistItems()
+                  withContext(Dispatchers.Main) { syncLyricsWithPlayback() }
+                }
+              else -> Unit
+            }
+          }
+      }
+  }
+
+  /** Stops reading the core when the in-app sheet leaves; its UI state stays for the next open. */
+  fun detachFromDetachedPlayback() {
+    if (!hostedInBrowser) return
+    detachedPlaybackJob?.cancel()
+    detachedPlaybackJob = null
+    // Queued behind any attach work on the same single-threaded dispatcher, so it always wins.
+    viewModelScope.launch(playbackStateDispatcher) {
+      if (detachedPlaybackJob != null) return@launch
+      _isMpvCoreReady.value = false
+      mpvStateCollectorsJob?.cancel()
+      mpvStateCollectorsJob = null
+    }
   }
 
   private fun startMpvStateCollectors() {
@@ -3396,6 +3505,9 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     const val ABSOLUTE_SEEK_FEEDBACK_HOLD_MS = 3000L
     // The thumb updates immediately; decoder previews only need a modest cadence.
     const val PREVIEW_SEEK_INTERVAL_MS = 200L
+    // Network previews open remote ranges; keep them rare so the final seek is not queued behind
+    // abandoned preview work.
+    const val NETWORK_PREVIEW_SEEK_INTERVAL_MS = 800L
     const val FRAME_SEEK_POLL_INTERVAL_MS = 10L
     const val FRAME_SEEK_MIN_SETTLE_POLLS = 8
     const val FRAME_SEEK_MAX_SETTLE_POLLS = 75
@@ -5043,7 +5155,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
 
   fun showControls() {
     if (sheetShown.value != Sheets.None || panelShown.value != Panels.None) return
-    if (!isAudioOnly.value) {
+    if (!isAudioOnly.value && !hostedInBrowser) {
       try {
         if (playerPreferences.showSystemStatusBar.get()) {
           host?.windowInsetsController?.show(WindowInsetsCompat.Type.statusBars())
@@ -5064,7 +5176,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   }
 
   fun hideControls() {
-    if (!isAudioOnly.value) {
+    if (!isAudioOnly.value && !hostedInBrowser) {
       try {
         host?.windowInsetsController?.hide(WindowInsetsCompat.Type.statusBars())
         host?.windowInsetsController?.hide(WindowInsetsCompat.Type.navigationBars())
@@ -5079,7 +5191,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   }
 
   fun autoHideControls() {
-    if (!isAudioOnly.value) {
+    if (!isAudioOnly.value && !hostedInBrowser) {
       try {
         host?.windowInsetsController?.hide(WindowInsetsCompat.Type.statusBars())
         host?.windowInsetsController?.hide(WindowInsetsCompat.Type.navigationBars())
@@ -5158,6 +5270,13 @@ val isBrightnessSliderShown = MutableStateFlow(false)
 
   private suspend fun runSeekPreviewLoop(generation: Long) {
     var lastSentPosition: Float? = null
+    // Network seek previews each cost an upstream range open on some servers (SMB/WebDAV can take
+    // most of a second per open), so they run at a much lower cadence than local previews.
+    val isNetworkItem =
+      PlaybackSession.state.value.currentItem?.let { item ->
+        item.networkSource != null || item.originalUri.startsWith("mpvrx-network://")
+      } == true
+    val intervalMs = if (isNetworkItem) NETWORK_PREVIEW_SEEK_INTERVAL_MS else PREVIEW_SEEK_INTERVAL_MS
     while (kotlinx.coroutines.currentCoroutineContext().isActive) {
       val target =
         synchronized(seekPreviewLock) {
@@ -5173,7 +5292,7 @@ val isBrightnessSliderShown = MutableStateFlow(false)
       if (previous != null && kotlin.math.abs(target - previous) < 0.5f) continue
       if (!PlaybackSession.commandForGeneration(generation, "seek", target.toString(), "absolute+keyframes")) return
       lastSentPosition = target
-      delay(PREVIEW_SEEK_INTERVAL_MS)
+      delay(intervalMs)
     }
   }
 
@@ -8491,6 +8610,12 @@ val isBrightnessSliderShown = MutableStateFlow(false)
   }
 
   override fun onCleared() {
+    if (hostedInBrowser) {
+      // The core, its shaders, subtitle styling and Syncplay bindings belong to the playback owner.
+      runCatching { metadataCache.evictAll() }
+      super.onCleared()
+      return
+    }
     // The core can outlive this screen (background playback), so never leave the gesture style behind.
     restoreSubtitleGestureHighlight()
     // Deterministic cleanup of resources that previously relied on GC.

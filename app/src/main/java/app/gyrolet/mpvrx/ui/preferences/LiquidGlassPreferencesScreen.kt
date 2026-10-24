@@ -49,8 +49,10 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.liquidglass.LiquidButton
 import app.gyrolet.mpvrx.ui.liquidglass.LiquidToggle
+import app.gyrolet.mpvrx.ui.liquidglass.drawShapeTint
 import app.gyrolet.mpvrx.ui.liquidglass.liquidGlassEffects
 import app.gyrolet.mpvrx.ui.liquidglass.rememberLiquidGlassSettings
+import app.gyrolet.mpvrx.ui.theme.rememberLowEndDevice
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.preferences.components.liquidGlassPreferences
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
@@ -116,6 +118,31 @@ object LiquidGlassPreferencesScreen : Screen {
               contentPadding = PaddingValues(bottom = 28.dp),
             ) {
               item {
+                Row(
+                  modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  androidx.compose.material3.Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(50.dp),
+                  ) {
+                    Text(
+                      text = stringResource(R.string.pref_experimental_badge),
+                      style = MaterialTheme.typography.labelSmall,
+                      color = MaterialTheme.colorScheme.onTertiaryContainer,
+                      modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    )
+                  }
+                  Text(
+                    text = stringResource(R.string.pref_liquid_glass_experimental_note),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                  )
+                }
+              }
+              item {
                 PreferenceSectionHeader(title = stringResource(R.string.pref_section_general))
               }
               item {
@@ -166,6 +193,7 @@ object LiquidGlassPreferencesScreen : Screen {
 @Composable
 private fun LiquidGlassPreview(enabled: Boolean, height: Dp = 200.dp, compact: Boolean = false) {
   val backdrop = rememberLayerBackdrop()
+  val lowEnd = rememberLowEndDevice()
   val settings = rememberLiquidGlassSettings()
   val colors = MaterialTheme.colorScheme
   val shape = MaterialTheme.shapes.extraLargeIncreased
@@ -202,7 +230,7 @@ private fun LiquidGlassPreview(enabled: Boolean, height: Dp = 200.dp, compact: B
           .padding(if (compact) 8.dp else 20.dp)
           .fillMaxWidth()
           .then(
-            if (enabled) {
+            if (enabled && !lowEnd) {
               Modifier.drawBackdrop(
                 backdrop = backdrop,
                 shape = { shape },
@@ -219,7 +247,7 @@ private fun LiquidGlassPreview(enabled: Boolean, height: Dp = 200.dp, compact: B
                 highlight = { settings.highlight(Highlight.Default) },
                 shadow = { Shadow.Default },
                 innerShadow = { InnerShadow(radius = 4.dp, alpha = 0.2f) },
-                onDrawSurface = { drawRect(settings.surfaceColor(colors.surface.copy(alpha = 0.35f))) },
+                onDrawSurface = { drawShapeTint(shape, settings.surfaceColor(colors.surface.copy(alpha = 0.35f))) },
               )
             } else {
               Modifier.background(
@@ -242,7 +270,7 @@ private fun LiquidGlassPreview(enabled: Boolean, height: Dp = 200.dp, compact: B
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        if (enabled) {
+        if (enabled && !lowEnd) {
           LiquidButton(
             onClick = { playing = !playing },
             backdrop = backdrop,
@@ -269,7 +297,7 @@ private fun LiquidGlassPreview(enabled: Boolean, height: Dp = 200.dp, compact: B
           verticalAlignment = Alignment.CenterVertically,
         ) {
           Icon(Icons.RoundedFilled.Repeat, contentDescription = null, tint = colors.onSurface)
-          if (enabled) {
+          if (enabled && !lowEnd) {
             LiquidToggle(
               selected = { repeating },
               onSelect = { repeating = it },

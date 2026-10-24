@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
@@ -49,6 +50,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LoadingIndicator
+import app.gyrolet.mpvrx.ui.browser.states.EmptyState
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -105,17 +109,21 @@ import app.gyrolet.mpvrx.preferences.MediaLayoutMode
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
 import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
+import app.gyrolet.mpvrx.ui.browser.cards.MediaSelectionGridGap
+import app.gyrolet.mpvrx.ui.browser.cards.mediaSelectionNeighbors
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
 import app.gyrolet.mpvrx.ui.browser.components.ExpressiveScrollBar
 import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
 import app.gyrolet.mpvrx.ui.browser.dialogs.JellyfinSortDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.MusicSortDialog
 import app.gyrolet.mpvrx.ui.browser.music.MusicSortField
+import app.gyrolet.mpvrx.ui.browser.fab.FabPlacement
 import app.gyrolet.mpvrx.ui.browser.fab.FabScrollHelper
 import app.gyrolet.mpvrx.ui.browser.selection.rememberSelectionManager
 import app.gyrolet.mpvrx.ui.components.InlineSearchBar
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.rememberTabNavigation
@@ -372,6 +380,7 @@ fun JellyfinContent(
 
   val density = LocalDensity.current
   var topBarHeight by remember { mutableStateOf(0.dp) }
+  val gutter = jellyfinGutter()
 
   val isWallpaperActive = app.gyrolet.mpvrx.ui.theme.LocalAppWallpaperActive.current
   val scrimBaseColor =
@@ -452,7 +461,7 @@ fun JellyfinContent(
 
           // Loading state (initial)
           uiState.isLoading && uiState.libraries.isEmpty() && uiState.currentItems.isEmpty() && uiState.heroItems.isEmpty() -> {
-            CircularProgressIndicator(modifier = Modifier.padding(top = topBarHeight))
+            LoadingIndicator(modifier = Modifier.padding(top = topBarHeight).size(72.dp))
           }
 
           // Error state
@@ -478,15 +487,17 @@ fun JellyfinContent(
                   state = homeListState,
                   modifier = Modifier.fillMaxSize(),
                   contentPadding = PaddingValues(
-                    top = if (uiState.heroItems.isEmpty()) topBarHeight else 0.dp,
-                    bottom = navigationBarHeight + 84.dp,
+                    top = topBarHeight + 8.dp,
+                    bottom = navigationBarHeight + 96.dp,
                   ),
-                  verticalArrangement = Arrangement.spacedBy(20.dp),
+                  verticalArrangement = Arrangement.spacedBy(JellyfinSpacing.SectionGap),
                 ) {
                   // 1. Hero Featured Carousel Banner
                   if (uiState.heroItems.isNotEmpty()) {
                     item {
                       JellyfinHeroBanner(
+                        autoAdvance = uiState.detailItem == null && !selectionManager.isInSelectionMode &&
+                          !isSearching && !isAddDialogOpen && !isManageServersOpen && !isSortDialogOpen && !isSeerrRequestsOpen,
                         items = uiState.heroItems,
                         server = server,
                         onPlay = { item ->
@@ -511,24 +522,17 @@ fun JellyfinContent(
                     item {
                       Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(JellyfinSpacing.HeaderGap),
                       ) {
                         JellyfinSectionHeader(
-                          title = "Libraries",
+                          title = stringResource(R.string.jellyfin_libraries),
                         )
 
-                        LazyRow(
-                          horizontalArrangement = Arrangement.spacedBy(12.dp),
-                          contentPadding = PaddingValues(horizontal = 16.dp),
-                        ) {
-                          items(homeLibraries, key = { it.id }) { library ->
-                            JellyfinLibraryCard(
-                              item = library,
-                              server = server,
-                              onClick = { viewModel.navigateToItem(library) },
-                            )
-                          }
-                        }
+                        JellyfinLibrariesCarousel(
+                          libraries = homeLibraries,
+                          server = server,
+                          onOpen = { library -> viewModel.navigateToItem(library) },
+                        )
                       }
                     }
                   }
@@ -537,8 +541,7 @@ fun JellyfinContent(
                   if (uiState.resumeItems.isNotEmpty()) {
                     item {
                       JellyfinHorizontalSection(
-                        title = "Continue Watching",
-                        subtitle = "Jump back in",
+                        title = stringResource(R.string.jellyfin_continue_watching),
                         items = uiState.resumeItems,
                         server = server,
                         isContinueWatching = true,
@@ -568,8 +571,8 @@ fun JellyfinContent(
                     if (uiState.latestMovies.isNotEmpty()) {
                       item {
                         JellyfinHorizontalSection(
-                          title = "Latest Movies",
-                          subtitle = "Newly added to server",
+                          title = stringResource(R.string.jellyfin_latest_movies),
+                          subtitle = stringResource(R.string.seerr_recently_added),
                           items = uiState.latestMovies,
                           server = server,
                           onItemClick = { item -> viewModel.openDetail(item) },
@@ -586,8 +589,7 @@ fun JellyfinContent(
                     if (uiState.latestShows.isNotEmpty()) {
                       item {
                         JellyfinHorizontalSection(
-                          title = "Latest TV Shows",
-                          subtitle = "Newly updated series",
+                          title = stringResource(R.string.jellyfin_latest_series),
                           items = uiState.latestShows,
                           server = server,
                           onItemClick = { item -> viewModel.openDetail(item) },
@@ -605,8 +607,8 @@ fun JellyfinContent(
                   if (uiState.recommendations.isNotEmpty()) {
                     item {
                       JellyfinHorizontalSection(
-                        title = "Top Picks For You",
-                        subtitle = "Popular & trending media",
+                        title = stringResource(R.string.jellyfin_top_picks),
+                        subtitle = stringResource(R.string.jellyfin_top_picks_subtitle),
                         items = uiState.recommendations,
                         server = server,
                         onItemClick = { item -> viewModel.openDetail(item) },
@@ -620,11 +622,11 @@ fun JellyfinContent(
                     item {
                       Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(JellyfinSpacing.HeaderGap),
                       ) {
                         JellyfinSectionHeader(
-                          title = "Music",
-                          subtitle = "Albums & Tracks",
+                          title = stringResource(R.string.ui_music),
+                          subtitle = stringResource(R.string.jellyfin_music_subtitle),
                           onSeeAll = {
                             val musicLib = uiState.libraries.find { it.collectionType?.equals("music", ignoreCase = true) == true }
                             if (musicLib != null) viewModel.navigateToItem(musicLib)
@@ -632,8 +634,8 @@ fun JellyfinContent(
                         )
 
                         LazyRow(
-                          horizontalArrangement = Arrangement.spacedBy(12.dp),
-                          contentPadding = PaddingValues(horizontal = 16.dp),
+                          horizontalArrangement = Arrangement.spacedBy(JellyfinSpacing.RowItemGap),
+                          contentPadding = PaddingValues(horizontal = gutter, vertical = 4.dp),
                         ) {
                           items(uiState.latestMusic, key = { it.id }) { item ->
                             JellyfinMusicCard(
@@ -695,25 +697,18 @@ fun JellyfinContent(
               val isListMode = layoutMode == MediaLayoutMode.LIST || allEpisodes
 
               if (items.isEmpty() && !uiState.isLoading) {
-                Column(
-                  modifier = Modifier.padding(top = topBarHeight + 24.dp, start = 24.dp, end = 24.dp, bottom = 24.dp),
-                  horizontalAlignment = Alignment.CenterHorizontally,
-                  verticalArrangement = Arrangement.Center,
-                ) {
-                  Icon(
-                    imageVector = Icons.RoundedFilled.Movie,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(48.dp),
-                  )
-                  Spacer(modifier = Modifier.height(12.dp))
-                  Text(
-                    text = if (uiState.searchQuery.isNotBlank()) "No results found for \"${uiState.searchQuery}\"" else "No media found in this folder",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                  )
-                }
+                val query = uiState.searchQuery
+                EmptyState(
+                  icon = if (query.isNotBlank()) Icons.RoundedFilled.Search else Icons.RoundedFilled.Movie,
+                  title = stringResource(if (query.isNotBlank()) R.string.ui_no_results_found else R.string.ui_empty_folder),
+                  message =
+                    if (query.isNotBlank()) {
+                      stringResource(R.string.jellyfin_no_results_message, query)
+                    } else {
+                      stringResource(R.string.jellyfin_empty_folder_message)
+                    },
+                  modifier = Modifier.padding(top = topBarHeight, bottom = navigationBarHeight),
+                )
               } else if (isListMode) {
                 val listState = libraryListState
                 val hasEnoughItems = items.size > 6
@@ -740,13 +735,14 @@ fun JellyfinContent(
                   LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
+                    // Symmetric gutters; the fast-scroll bar floats over the end gutter.
                     contentPadding = PaddingValues(
-                      start = 16.dp,
-                      end = 24.dp,
+                      start = gutter,
+                      end = gutter,
                       top = topBarHeight + 8.dp,
-                      bottom = navigationBarHeight + 80.dp,
+                      bottom = navigationBarHeight + 96.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(JellyfinSpacing.ListItemGap),
                   ) {
                     items(items, key = { it.id }) { item ->
                       uiState.activeServer?.let { server ->
@@ -819,13 +815,16 @@ fun JellyfinContent(
                       modifier =
                         Modifier
                           .align(Alignment.CenterEnd)
-                          .padding(end = 2.dp, top = topBarHeight + 6.dp, bottom = navigationBarHeight + 80.dp)
+                          .padding(end = 2.dp, top = topBarHeight + 6.dp, bottom = navigationBarHeight + 96.dp)
                           .graphicsLayer { alpha = scrollbarAlpha },
                     )
                   }
                 }
               } else {
                 val gridState = libraryGridState
+                val gridColumns by remember(gridState) {
+                  derivedStateOf { gridState.layoutInfo.maxSpan.coerceAtLeast(1) }
+                }
                 val hasEnoughItems = items.size > 6
                 val scrollbarAlpha by animateFloatAsState(
                   targetValue = if (hasEnoughItems) 1f else 0f,
@@ -851,16 +850,18 @@ fun JellyfinContent(
                     state = gridState,
                     columns = GridCells.Adaptive(minSize = 130.dp),
                     modifier = Modifier.fillMaxSize(),
+                    // Cards carry their own padding, so the grid edge plus that padding lands on the gutter.
                     contentPadding = PaddingValues(
-                      start = 12.dp,
-                      end = 24.dp,
+                      start = gutter - JellyfinSpacing.CardPadding,
+                      end = gutter - JellyfinSpacing.CardPadding,
                       top = topBarHeight + 8.dp,
-                      bottom = navigationBarHeight + 80.dp,
+                      bottom = navigationBarHeight + 96.dp,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
+                    horizontalArrangement = Arrangement.spacedBy(MediaSelectionGridGap),
                   ) {
-                    items(items, key = { it.id }) { item ->
+                    items(count = items.size, key = { index -> items[index].id }) { index ->
+                      val item = items[index]
                       uiState.activeServer?.let { server ->
                         JellyfinPosterCard(
                           item = item,
@@ -879,6 +880,9 @@ fun JellyfinContent(
                           onLongClick = { selectionManager.handleLongClick(item) },
                           isSelected = selectionManager.isSelected(item),
                           isDownloaded = item.id in downloadedItemIds,
+                          selectionNeighbors = mediaSelectionNeighbors(index, items.size, gridColumns) { neighbor ->
+                            selectionManager.isSelected(items[neighbor])
+                          },
                         )
                       }
                     }
@@ -907,7 +911,7 @@ fun JellyfinContent(
                       modifier =
                         Modifier
                           .align(Alignment.CenterEnd)
-                          .padding(end = 2.dp, top = topBarHeight + 6.dp, bottom = navigationBarHeight + 80.dp)
+                          .padding(end = 2.dp, top = topBarHeight + 6.dp, bottom = navigationBarHeight + 96.dp)
                           .graphicsLayer { alpha = scrollbarAlpha },
                     )
                   }
@@ -944,16 +948,16 @@ fun JellyfinContent(
             Modifier
               .fillMaxWidth()
               .statusBarsPadding()
-              .padding(horizontal = 16.dp, vertical = 6.dp),
+              .padding(vertical = 6.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           InlineSearchBar(
             query = uiState.searchQuery,
             onQueryChange = viewModel::onSearchQueryChanged,
             onSearch = { query -> viewModel.performSearch(query, debounceMs = 0L) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = gutter),
             inputFieldModifier = Modifier.focusRequester(searchFocusRequester),
-            placeholder = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_search_movies_shows_episodes)) },
+            placeholder = { Text(stringResource(R.string.jellyfin_search_hint)) },
             leadingIcon = {
               Icon(
                 imageVector = Icons.RoundedFilled.Search,
@@ -981,12 +985,13 @@ fun JellyfinContent(
             tonalElevation = 6.dp,
           )
 
-          // Category Filter Chips
+          // Category Filter Chips, scrolling edge to edge from the gutter
           Row(
             modifier =
               Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = gutter),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
@@ -996,7 +1001,8 @@ fun JellyfinContent(
                 selected = isSelected,
                 onClick = { viewModel.setSearchCategory(category) },
                 label = { Text(category.displayName, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.tvFocusHighlight(CircleShape),
+                shape = CircleShape,
                 colors =
                   FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -1069,7 +1075,8 @@ fun JellyfinContent(
           selectedTabIndex = selectedTabIndex,
           containerColor = Color.Transparent,
           contentColor = MaterialTheme.colorScheme.onSurface,
-          edgePadding = 8.dp,
+          // Tabs pad their labels by 16 dp, so this lines the first label up with the gutter.
+          edgePadding = (gutter - 16.dp).coerceAtLeast(0.dp),
           divider = {},
         ) {
           musicTabs.forEachIndexed { index, tab ->
@@ -1153,7 +1160,7 @@ fun JellyfinContent(
                 ) {
                   Icon(
                     imageVector = Icons.RoundedFilled.PlayArrow,
-                    contentDescription = "Play",
+                    contentDescription = stringResource(R.string.ui_play),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.primary,
                   )
@@ -1168,7 +1175,7 @@ fun JellyfinContent(
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.CheckCircle,
-                  contentDescription = "Mark watched",
+                  contentDescription = stringResource(R.string.video_action_mark_watched),
                   modifier = Modifier.size(24.dp),
                   tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1182,7 +1189,7 @@ fun JellyfinContent(
               ) {
                 Icon(
                   imageVector = Icons.RoundedFilled.RemoveCircle,
-                  contentDescription = "Mark unwatched",
+                  contentDescription = stringResource(R.string.video_action_mark_unwatched),
                   modifier = Modifier.size(24.dp),
                   tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1194,7 +1201,7 @@ fun JellyfinContent(
                 ) {
                   Icon(
                     imageVector = Icons.RoundedFilled.Info,
-                    contentDescription = "Info",
+                    contentDescription = stringResource(R.string.jellyfin_details),
                     modifier = Modifier.size(24.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
@@ -1218,12 +1225,14 @@ fun JellyfinContent(
           uiState.activeServer != null &&
           (uiState.currentItems.isNotEmpty() || uiState.resumeItems.isNotEmpty() || uiState.heroItems.isNotEmpty())
 
-      // Expressive Floating Action Button Menu
+      // Expressive Floating Action Button Menu. It overlays the tab instead of using a Scaffold slot,
+      // so it applies the system bar inset itself to line up with every other browser FAB.
       FloatingActionButtonMenu(
         modifier =
           Modifier
             .align(Alignment.BottomEnd)
-            .padding(end = 16.dp, bottom = navigationBarHeight + 16.dp),
+            .windowInsetsPadding(FabPlacement.overlayInsets)
+            .padding(end = FabPlacement.ScaffoldFabSpacing, bottom = FabPlacement.overlayBottomPadding()),
         expanded = isFabExpanded && !quickPlayFabDirect,
         button = {
           ToggleFloatingActionButton(
@@ -1263,7 +1272,7 @@ fun JellyfinContent(
                 isSearching = true
               },
               icon = { Icon(Icons.RoundedFilled.Search, contentDescription = null) },
-              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.tutorial_search_title)) },
+              text = { Text(stringResource(R.string.settings_search_title)) },
             )
 
             FloatingActionButtonMenuItem(
@@ -1272,7 +1281,7 @@ fun JellyfinContent(
                 viewModel.playRandom(context)
               },
               icon = { Icon(Icons.RoundedFilled.Shuffle, contentDescription = null) },
-              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_play_random)) },
+              text = { Text(stringResource(R.string.jellyfin_play_random)) },
             )
 
             FloatingActionButtonMenuItem(
@@ -1281,7 +1290,7 @@ fun JellyfinContent(
                 isManageServersOpen = true
               },
               icon = { Icon(Icons.RoundedFilled.Jellyfin, contentDescription = null) },
-              text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_switch_server)) },
+              text = { Text(stringResource(R.string.jellyfin_switch_server)) },
             )
 
             FloatingActionButtonMenuItem(
@@ -1383,6 +1392,9 @@ fun JellyfinContent(
       onSortOrderChange = { viewModel.setMusicSortOrder(it) },
       onViewModeChange = { viewModel.setMusicViewMode(it) },
       availableFields = availableFields,
+      trackCountLabel = if (uiState.musicActiveTab == JellyfinMusicTab.ARTISTS) {
+        stringResource(R.string.ui_albums)
+      } else MusicSortField.TRACK_COUNT.displayName,
     )
   } else {
     // Standard Material 3 Sort Dialog (matches Home and Network Browser)
@@ -1453,49 +1465,27 @@ private fun EmptyServersView(
   onAddClick: () -> Unit,
   modifier: Modifier = Modifier,
 ) {
-  Column(
-    modifier = modifier.padding(32.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
-  ) {
-    Surface(
-      shape = CircleShape,
-      color = MaterialTheme.colorScheme.primaryContainer,
-      modifier = Modifier.size(80.dp),
-    ) {
-      Box(contentAlignment = Alignment.Center) {
-        androidx.compose.material3.Icon(
-          painter = painterResource(R.drawable.ic_jellyfin),
+  EmptyState(
+    icon = Icons.RoundedFilled.Jellyfin,
+    title = stringResource(R.string.pref_jellyfin_add_server),
+    message = stringResource(R.string.jellyfin_connect_message),
+    modifier = modifier,
+    action = {
+      Button(
+        onClick = onAddClick,
+        modifier = Modifier.heightIn(min = 48.dp).tvFocusHighlight(CircleShape),
+        shape = CircleShape,
+      ) {
+        Icon(
+          imageVector = Icons.RoundedFilled.Add,
           contentDescription = null,
-          tint = MaterialTheme.colorScheme.onPrimaryContainer,
-          modifier = Modifier.size(40.dp),
+          modifier = Modifier.size(18.dp),
         )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(stringResource(R.string.pref_jellyfin_add_server))
       }
-    }
-    Spacer(modifier = Modifier.height(16.dp))
-    Text(
-      text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_connect_to_jellyfin),
-      style = MaterialTheme.typography.titleLarge,
-      fontWeight = FontWeight.Bold,
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_stream_your_media_library_directly_with_mpvrx_hardware_acceleration_and_zer),
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      textAlign = TextAlign.Center,
-    )
-    Spacer(modifier = Modifier.height(20.dp))
-    Button(onClick = onAddClick) {
-      Icon(
-        imageVector = Icons.RoundedFilled.Add,
-        contentDescription = null,
-        modifier = Modifier.size(18.dp),
-      )
-      Spacer(modifier = Modifier.width(8.dp))
-      Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_jellyfin_server))
-    }
-  }
+    },
+  )
 }
 
 @Composable
@@ -1510,37 +1500,33 @@ private fun ErrorView(
     message.contains("forbidden", ignoreCase = true) ||
     message.contains("403", ignoreCase = true)
 
-  Column(
-    modifier = modifier.padding(24.dp),
-    horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.Center,
-  ) {
-    Icon(
-      imageVector = Icons.RoundedFilled.Info,
-      contentDescription = null,
-      tint = MaterialTheme.colorScheme.error,
-      modifier = Modifier.size(48.dp),
-    )
-    Spacer(modifier = Modifier.height(12.dp))
-    Text(
-      text = if (isAuthError) "Authentication failed (HTTP 401). Session expired or unauthorized." else message,
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.error,
-      textAlign = TextAlign.Center,
-    )
-    Spacer(modifier = Modifier.height(16.dp))
-    Row(
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      FilledTonalButton(onClick = onRetry) {
-        Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.audiobook_retry))
-      }
-      if (isAuthError && onReauthenticate != null) {
-        Button(onClick = onReauthenticate) {
-          Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_re_authenticate))
+  EmptyState(
+    icon = Icons.RoundedFilled.Info,
+    title = stringResource(R.string.jellyfin_error_title),
+    message = if (isAuthError) stringResource(R.string.jellyfin_auth_error_message) else message,
+    modifier = modifier,
+    action = {
+      Row(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        FilledTonalButton(
+          onClick = onRetry,
+          modifier = Modifier.heightIn(min = 48.dp).tvFocusHighlight(CircleShape),
+          shape = CircleShape,
+        ) {
+          Text(stringResource(R.string.ui_retry))
+        }
+        if (isAuthError && onReauthenticate != null) {
+          Button(
+            onClick = onReauthenticate,
+            modifier = Modifier.heightIn(min = 48.dp).tvFocusHighlight(CircleShape),
+            shape = CircleShape,
+          ) {
+            Text(stringResource(R.string.jellyfin_reauthenticate))
+          }
         }
       }
-    }
-  }
+    },
+  )
 }

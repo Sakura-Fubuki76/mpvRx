@@ -156,7 +156,7 @@ lint/tmp/
 # =========================
 *.hprof
 
-# graft's local graph cache — regenerable, not committed (run `graft build`).
+# Legacy graft-map cache. Trail's current cache is ignored by .trail/.gitignore.
 graft/
 # Local development notes are not release sources.
 /docs/

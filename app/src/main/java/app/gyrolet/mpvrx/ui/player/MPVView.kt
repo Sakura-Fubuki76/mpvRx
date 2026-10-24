@@ -369,7 +369,9 @@ class MPVView(
   fun getVideoOutAspect(): Double? {
     // Try to get aspect from video-params/aspect first
     val rawAspect = PlaybackSession.getPropertyDouble("video-params/aspect")
-    val rotate = PlaybackSession.getPropertyInt("video-params/rotate") ?: 0
+    // Before the first decoded frame video-params is absent and width/height below are the
+    // container's unrotated size, so use the container's rotation instead of assuming 0.
+    val rotate = PlaybackSession.getPropertyInt("video-params/rotate") ?: rotationBeforeDecode()
 
     // If aspect is not available or 0, calculate from width and height
     val finalAspect =
@@ -397,10 +399,20 @@ class MPVView(
       if (aspect <= 0.001) {
         return null
       }
-      val isRotated = (rotate % 180 == 90)
+      val normalizedRotate = ((rotate % 360) + 360) % 360
+      val isRotated = normalizedRotate == 90 || normalizedRotate == 270
       val correctedAspect = if (isRotated) 1.0 / aspect else aspect
       correctedAspect
     }
+  }
+
+  /** Mirrors mpv's decoder: `video-rotate=no` drops container rotation, otherwise it is added. */
+  private fun rotationBeforeDecode(): Int {
+    val option = runCatching { PlaybackSession.getPropertyString("video-rotate") }.getOrNull()?.trim()
+    if (option.equals("no", ignoreCase = true)) return 0
+    val container =
+      runCatching { PlaybackSession.getPropertyInt("current-tracks/video/demux-rotation") }.getOrNull() ?: 0
+    return container + (option?.toIntOrNull() ?: 0)
   }
 
   class TrackDelegate(
@@ -746,13 +758,16 @@ class MPVView(
     mapOf(
       "pause" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "paused-for-cache" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
+      // Network seeks wait for data too; the buffering indicator reacts to both.
+      "seeking" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "cache-buffering-state" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
       "demuxer-cache-duration" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "demuxer-cache-time" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
-      "network" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
+      "demuxer-via-network" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "video-params/aspect" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "video-params/w" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
       "video-params/h" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
+      "video-params/rotate" to MPVLib.MpvFormat.MPV_FORMAT_INT64,
       "container-fps" to MPVLib.MpvFormat.MPV_FORMAT_DOUBLE,
       "eof-reached" to MPVLib.MpvFormat.MPV_FORMAT_FLAG,
       "user-data/mpvrx/show_text" to MPVLib.MpvFormat.MPV_FORMAT_STRING,

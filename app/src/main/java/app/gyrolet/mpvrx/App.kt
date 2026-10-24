@@ -34,8 +34,9 @@ import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
-import app.gyrolet.mpvrx.presentation.crash.CrashActivity
-import app.gyrolet.mpvrx.presentation.crash.GlobalExceptionHandler
+import app.gyrolet.mpvrx.preferences.SettingsRestoreGuard
+import android.widget.Toast
+import app.gyrolet.mpvrx.presentation.crash.CrashMonitor
 import app.gyrolet.mpvrx.domain.network.NetworkImageRepository
 import app.gyrolet.mpvrx.repository.NetworkRepository
 import app.gyrolet.mpvrx.ui.player.MediaPlayerWidget
@@ -68,7 +69,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 @OptIn(KoinExperimentalAPI::class)
 class App :
   Application(),
+  androidx.work.Configuration.Provider,
   Application.ActivityLifecycleCallbacks {
+  override val workManagerConfiguration: androidx.work.Configuration
+    get() = androidx.work.Configuration.Builder().setMinimumLoggingLevel(Log.WARN).build()
   private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
   private val networkAutoConnectStarted = AtomicBoolean(false)
   private val metadataMaintenanceStarted = AtomicBoolean(false)
@@ -96,6 +100,8 @@ class App :
   )
 
   companion object {
+    @Volatile var isInForeground: Boolean = false
+      private set
     private const val TAG = "App"
     private const val POST_START_MAINTENANCE_DELAY_MS = 10_000L
     private const val THUMBNAIL_WARMUP_DELAY_MS = 1_500L
@@ -105,9 +111,17 @@ class App :
     private const val WATCH_STATS_INTERVAL_MS = 15_000L
   }
 
+  override fun attachBaseContext(base: android.content.Context) {
+    super.attachBaseContext(base)
+    // Before content providers and onCreate run, so no startup crash escapes the handler. The
+    // crash screen's own process keeps the platform handler, so a failing recovery cannot loop.
+    if (CrashMonitor.currentProcessName() != "$packageName:crash") CrashMonitor.install(this)
+  }
+
   @OptIn(ExperimentalComposeUiApi::class)
   override fun onCreate() {
     super.onCreate()
+    app.gyrolet.mpvrx.utils.device.DevicePerformance.init(this)
     app.gyrolet.mpvrx.domain.cloud.CloudTrace.initialize(this)
 
     // Material3 alpha29 brings Compose UI 1.13.0-alpha01, which re-enables out-of-frame
@@ -132,6 +146,10 @@ class App :
 
     configureDebugStrictMode()
 
+    // Before anything reads them: restored settings that kept the app from starting are reverted.
+    runCatching { SettingsRestoreGuard.onProcessStart(this) }
+      .onFailure { Log.w(TAG, "Could not check restored settings", it) }
+
     // Initialize Koin
     startKoin {
       androidContext(this@App)
@@ -150,9 +168,21 @@ class App :
     // reclaim it under pressure; without this the parsed index would only ever live in memory.
     runCatching { app.gyrolet.mpvrx.domain.cloud.MoovIndexCache.init(cacheDir) }
     registerActivityLifecycleCallbacks(this)
+    if (BuildConfig.ENABLE_UPDATE_FEATURE) {
+      applicationScope.launch(Dispatchers.IO) {
+        delay(1_500L)
+        runCatching { app.gyrolet.mpvrx.domain.update.UpdateWork.monitor(this@App) }
+          .onFailure { Log.w(TAG, "Update work monitoring stopped", it) }
+      }
+    }
     PlaybackSession.addObserver(PlaybackPerformanceTrace)
     startPlaybackPerformanceTracing()
-    Thread.setDefaultUncaughtExceptionHandler(GlobalExceptionHandler(applicationContext, CrashActivity::class.java))
+    // A library initialized during startup may have replaced the handler; keep ours on top.
+    CrashMonitor.ensureInstalled(this)
+    CrashMonitor.recordPreviousExits(this)
+    SettingsRestoreGuard.consumeRevertedSource(this)?.let { source ->
+      Toast.makeText(this, getString(R.string.settings_restore_reverted, source), Toast.LENGTH_LONG).show()
+    }
     startIdleMpvCoreReaper()
     startWidgetUpdates()
     startWatchStatsTracking()
@@ -282,6 +312,7 @@ class App :
   }
 
   override fun onActivityStarted(activity: Activity) {
+    isInForeground = true
     if (activity is PlayerActivity) PlaybackPerformanceTrace.mark("PLAYER_ACTIVITY_STARTED")
     if (startedActivityCount++ == 0) {
       mediaStoreLiveMonitor.start()
@@ -296,6 +327,7 @@ class App :
     if (activity is PlayerActivity) PlaybackPerformanceTrace.mark("PLAYER_ACTIVITY_STOPPED")
     startedActivityCount = (startedActivityCount - 1).coerceAtLeast(0)
     if (startedActivityCount == 0 && !activity.isChangingConfigurations) {
+      isInForeground = false
       mediaStoreLiveMonitor.stop()
       pauseVideoWhenBackgroundPlaybackDisabled(activity)
       getKoin().get<app.gyrolet.mpvrx.domain.syncplay.SyncplayManager>().onAppBackgrounded()
@@ -368,6 +400,14 @@ class App :
   }
 
   override fun onActivityResumed(activity: Activity) {
+    // Restored settings count as working once a screen has stayed up with them for a while.
+    SettingsRestoreGuard.onScreenShown(activity)
+    if (BuildConfig.ENABLE_UPDATE_FEATURE) {
+      applicationScope.launch(Dispatchers.IO) {
+        runCatching { app.gyrolet.mpvrx.domain.update.UpdateInstaller.onForeground(this@App) }
+          .onFailure { Log.w(TAG, "Could not resume update installation", it) }
+      }
+    }
     when (activity) {
       is PlayerActivity -> {
         PlaybackPerformanceTrace.mark("PLAYER_ACTIVITY_RESUMED")
@@ -380,6 +420,8 @@ class App :
         activity.window.decorView.postOnAnimation {
           PlaybackPerformanceTrace.mark("BROWSER_FIRST_FRAME")
         }
+        // A crash the user never saw (background crash, native crash, ANR) is shown here once.
+        CrashMonitor.presentPendingReport(activity)
       }
     }
   }
@@ -388,7 +430,7 @@ class App :
     if (activity is PlayerActivity) PlaybackPerformanceTrace.begin("ON_PAUSE")
   }
 
-  override fun onActivityPaused(activity: Activity) = Unit
+  override fun onActivityPaused(activity: Activity) = SettingsRestoreGuard.onScreenHidden()
 
   override fun onActivityPostPaused(activity: Activity) {
     if (activity is PlayerActivity) PlaybackPerformanceTrace.end("ON_PAUSE")

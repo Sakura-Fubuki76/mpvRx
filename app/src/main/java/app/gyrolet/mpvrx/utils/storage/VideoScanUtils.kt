@@ -43,6 +43,10 @@ object VideoScanUtils : KoinComponent {
   private val metadataCache: VideoMetadataCacheRepository by inject()
 
   /**
+   * Android indexes a video's container rotation in MediaColumns.ORIENTATION from API 29.
+   * Querying the legacy "rotation" name there drops the angle and launches quarter-turned videos
+   * in their encoded orientation until mpv corrects it. Retain the legacy name on older providers;
+   * the query below still retries without optional geometry when the column is unsupported.
    * Files per metadata extraction call in the filesystem pass. Small enough that the first batch
    * lands quickly on a large folder, large enough that the per-call overhead stays in the noise.
    */
@@ -54,7 +58,8 @@ object VideoScanUtils : KoinComponent {
    * Providers differ: some expose `rotation`, while newer Android/vendor providers reject it.
    * The query retries without this column when the provider does not support it.
    */
-  private const val VIDEO_ROTATION_COLUMN = "rotation"
+  private val videoRotationColumn =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) MediaStore.MediaColumns.ORIENTATION else "rotation"
 
   /**
    * Direct children only. The old `LIKE 'folder/%'` returned the whole subtree, so opening a storage
@@ -147,6 +152,10 @@ object VideoScanUtils : KoinComponent {
           mediaStoreError = error
         }
       }
+      for (video in UnindexedVideoDiscovery.videos(options, normalizedFolderPath)) {
+        val key = keyResolver.key(video.path) ?: continue
+        videosMap.putIfAbsent(key, video)
+      }
       // One folder is finished as far as MediaStore is concerned. Without this a folder that
       // MediaStore cannot see waits out a full publication interval before its own files show up.
       publisher.publishIfNeeded(force = true)
@@ -224,7 +233,7 @@ object VideoScanUtils : KoinComponent {
         MediaStore.Video.Media.WIDTH,
         MediaStore.Video.Media.HEIGHT,
       )
-    val projectionWithRotation = baseProjection + VIDEO_ROTATION_COLUMN
+    val projectionWithRotation = baseProjection + videoRotationColumn
 
     val normalizedFolderPath = normalizeStoragePath(folderPath) ?: return
     val normalizedFolderKey = storagePathKey(normalizedFolderPath) ?: return
@@ -232,25 +241,23 @@ object VideoScanUtils : KoinComponent {
     val selectionArgs = directChildSelectionArgs(normalizedFolderKey)
 
     try {
+      fun queryVideos(projection: Array<String>) =
+        context.contentResolver.query(
+          MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+          projection,
+          selection,
+          selectionArgs,
+          "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
+        )
       val cursor =
         try {
-          context.contentResolver.query(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            projectionWithRotation,
-            selection,
-            selectionArgs,
-            "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
-          )
-        } catch (_: IllegalArgumentException) {
-          // Some Android MediaStore providers reject the optional rotation column.
-          // Retry without it so the entire folder scan is not discarded.
-          context.contentResolver.query(
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-            baseProjection,
-            selection,
-            selectionArgs,
-            "${MediaStore.Video.Media.DISPLAY_NAME} ASC",
-          )
+          queryVideos(projectionWithRotation)
+        } catch (error: RuntimeException) {
+          // Providers reject the optional rotation column with IllegalArgumentException (strict
+          // projection) or SQLiteException (no such column). Retry without it so the entire folder
+          // scan is not discarded.
+          if (error !is IllegalArgumentException && error !is android.database.sqlite.SQLiteException) throw error
+          queryVideos(baseProjection)
         }
       cursor?.use { cursor ->
           val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media._ID)
@@ -263,7 +270,7 @@ object VideoScanUtils : KoinComponent {
           val mimeTypeColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.MIME_TYPE)
           val widthColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.WIDTH)
           val heightColumn = cursor.getColumnIndexOrThrow(MediaStore.Video.Media.HEIGHT)
-          val rotationColumn = cursor.getColumnIndex(VIDEO_ROTATION_COLUMN)
+          val rotationColumn = cursor.getColumnIndex(videoRotationColumn)
           val folderResolver = MediaFolderResolver(noMediaPathFilter)
           val existenceCache = FolderListingExistenceCache()
 
@@ -289,7 +296,10 @@ object VideoScanUtils : KoinComponent {
             val mimeType = cursor.getString(mimeTypeColumn) ?: "video/*"
             val width = cursor.getInt(widthColumn)
             val height = cursor.getInt(heightColumn)
-            val rotation = if (rotationColumn >= 0) cursor.getInt(rotationColumn) else 0
+            val rawRotation =
+              if (rotationColumn >= 0 && !cursor.isNull(rotationColumn)) cursor.getInt(rotationColumn) else 0
+            val normalizedRotation = ((rawRotation % 360) + 360) % 360
+            val rotation = if (normalizedRotation % 90 == 0) normalizedRotation else 0
 
             val uri =
               Uri.withAppendedPath(

@@ -10,6 +10,7 @@
 package app.gyrolet.mpvrx.ui.preferences
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -83,6 +84,7 @@ private data class SettingsDestination(
   val summary: String,
   val icon: AppIcon,
   val screen: Screen,
+  val experimental: Boolean = false,
 )
 
 private data class SettingsSection(
@@ -241,6 +243,7 @@ object PreferencesScreen : Screen {
                 ).joinToString(", "),
               icon = Icons.RoundedFilled.BlurOn,
               screen = LiquidGlassPreferencesScreen,
+              experimental = true,
             ),
           ),
       ),
@@ -327,13 +330,17 @@ object PreferencesScreen : Screen {
         title = stringResource(R.string.ui_network),
         tint = colorScheme.onSurfaceVariant,
         items =
-          listOf(
-            SettingsDestination(
-              title = stringResource(R.string.ui_network),
-              summary = stringResource(R.string.pref_network_summary),
-              icon = Icons.RoundedFilled.Language,
-              screen = NetworkConfigurationPreferencesScreen,
-            ),
+          listOfNotNull(
+            if (app.gyrolet.mpvrx.BuildConfig.ENABLE_YTDLP || !app.gyrolet.mpvrx.BuildConfig.IS_PLAY_STORE_BUILD) {
+              SettingsDestination(
+                title = stringResource(R.string.ui_network),
+                summary = stringResource(R.string.pref_network_summary),
+                icon = Icons.RoundedFilled.Language,
+                screen = NetworkConfigurationPreferencesScreen,
+              )
+            } else {
+              null
+            },
             SettingsDestination(
               title = stringResource(R.string.pref_media_servers_title),
               summary = stringResource(R.string.pref_media_servers_summary),
@@ -592,14 +599,33 @@ private fun SettingsDestinationRow(
       Spacer(modifier = Modifier.width(14.dp))
 
       Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = item.title,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
-          maxLines = 2,
-          overflow = TextOverflow.Ellipsis,
-        )
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = item.title,
+            modifier = Modifier.weight(1f, fill = false),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          if (item.experimental) {
+            Surface(
+              color = MaterialTheme.colorScheme.tertiaryContainer,
+              shape = RoundedCornerShape(50.dp),
+            ) {
+              Text(
+                text = stringResource(R.string.pref_experimental_badge),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+              )
+            }
+          }
+        }
         Text(
           text = item.summary,
           style = MaterialTheme.typography.bodyMedium,

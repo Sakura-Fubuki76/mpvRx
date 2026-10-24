@@ -68,6 +68,14 @@ class ThumbnailRepository(
   private val context: Context,
   cloudConcurrency: Int = app.gyrolet.mpvrx.domain.cloud.cloudMediaConcurrency(),
 ) {
+  private val _cacheRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+  /** Recomposition trigger for artwork consumers; bumped whenever cached artwork may have changed. */
+  val cacheRevision: kotlinx.coroutines.flow.StateFlow<Int> = _cacheRevision
+
+  /** Context used by artwork decoding helpers (embedded artwork, MediaStore lookups). */
+  val artworkContext: android.content.Context get() = context
+
   private val appearancePreferences by lazy {
     KoinJavaComponent.get<app.gyrolet.mpvrx.preferences.AppearancePreferences>(
       app.gyrolet.mpvrx.preferences.AppearancePreferences::class.java,

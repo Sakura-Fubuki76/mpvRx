@@ -44,6 +44,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -262,6 +264,30 @@ class MediaLibraryViewModel(
         },
       )
     }
+  }
+
+  private suspend fun publishVideos(
+    videos: List<Video>,
+    scanCacheKey: String,
+    observedGeneration: String?,
+    metadataEnriched: Boolean,
+  ) {
+    currentCoroutineContext().ensureActive()
+    _videos.value = videos
+    val scannedPaths = videos.mapTo(hashSetOf()) { it.path }
+    hiddenVideoPaths.update { states ->
+      states.filter { (path, state) -> state == DeletionState.Pending || path in scannedPaths }
+    }
+    MediaLibraryCache.save(
+      getApplication(),
+      videos.filterNot { hiddenVideoPaths.value[it.path] == DeletionState.Confirmed },
+      scanOptionsKey = scanCacheKey,
+      observedGeneration = observedGeneration,
+      metadataEnriched = metadataEnriched,
+    )
+    MediaStoreGenerationGuard.remember(getApplication(), observedGeneration)
+    loadPlaybackInfo(videos)
+    _isLoading.value = false
   }
 
   override suspend fun deleteVideos(videos: List<Video>): Pair<Int, Int> {

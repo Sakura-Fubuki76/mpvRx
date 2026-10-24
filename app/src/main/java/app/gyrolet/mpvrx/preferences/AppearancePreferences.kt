@@ -46,6 +46,7 @@ import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusReq
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusGroup
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
+import app.gyrolet.mpvrx.utils.device.DevicePerformance
 import kotlinx.collections.immutable.ImmutableList
 
 enum class LiquidGlassHighlightStyle { Component, Default, Ambient, Plain }
@@ -70,7 +71,9 @@ class AppearancePreferences(
   val customWallpaperAlpha = preferenceStore.getFloat("custom_wallpaper_alpha", 1f)
   val customWallpaperUseColors = preferenceStore.getBoolean("custom_wallpaper_use_colors", false)
   val amoledMode = preferenceStore.getBoolean("amoled_mode", false)
-  val liquidGlassEnabled = preferenceStore.getBoolean("liquid_glass_enabled", true)
+  // Glass records the whole screen behind it every frame and moves player video to a TextureView;
+  // low-end devices start without it (and without the progressive blur) unless the user opts in.
+  val liquidGlassEnabled = preferenceStore.getBoolean("liquid_glass_enabled", !DevicePerformance.isLowEnd)
   val liquidGlassInHdr = preferenceStore.getBoolean("liquid_glass_in_hdr", false)
   val liquidGlassOpacity = preferenceStore.getFloat("liquid_glass_opacity", 1f)
   val liquidGlassBlur = preferenceStore.getFloat("liquid_glass_blur", 1f)
@@ -87,6 +90,8 @@ class AppearancePreferences(
   val liquidGlassHighlightWidth = preferenceStore.getFloat("liquid_glass_highlight_width", 1f)
   val liquidGlassHighlightBlur = preferenceStore.getFloat("liquid_glass_highlight_blur", 1f)
   val navigationBarGlow = preferenceStore.getBoolean("navigation_bar_glow", true)
+  val legacyNavigationBar = preferenceStore.getBoolean("legacy_navigation_bar", false)
+  val progressiveNavigationBlur = preferenceStore.getBoolean("progressive_navigation_blur", !DevicePerformance.isLowEnd)
   val useSystemFont = preferenceStore.getBoolean("use_system_font", false)
   val googleFontFamily = preferenceStore.getString("google_font_family", "")
   val googleFontRevision = preferenceStore.getInt("google_font_revision", 0)
@@ -105,7 +110,16 @@ class AppearancePreferences(
   fun networkThumbnailsEnabled(): Boolean = showCloudThumbnails.get() || showNetworkThumbnails.get()
   val seekbarStyle = preferenceStore.getEnum("seekbar_style", SeekbarStyle.Thick)
   val portraitPlaybackControlsPosition =
-    preferenceStore.getEnum("portrait_playback_controls_position", PortraitPlaybackControlsPosition.Center)
+    preferenceStore.getEnum("portrait_playback_controls_position", PlaybackControlsPosition.Center)
+  val landscapePlaybackControlsPosition =
+    preferenceStore.getEnum("landscape_playback_controls_position", PlaybackControlsPosition.Center)
+  val portraitSeekbarPlacement =
+    preferenceStore.getEnum("portrait_seekbar_placement", SeekbarPlacement.AboveButtons)
+  val landscapeSeekbarPlacement =
+    preferenceStore.getEnum("landscape_seekbar_placement", SeekbarPlacement.BelowButtons)
+  // Absolute background level: 0.55 keeps each button's designed tint, 1 is opaque, 0 is clear.
+  // A new key, because "player_buttons_opacity" stored a multiplier whose 100% kept buttons translucent.
+  val playerButtonsBackgroundOpacity = preferenceStore.getFloat("player_buttons_background_opacity", 0.55f)
   val showMusicTab = preferenceStore.getBoolean("show_music_tab", true)
   val showProfileTab = preferenceStore.getBoolean("show_profile_tab", true)
   val profileName = preferenceStore.getString("profile_name", "")
@@ -128,9 +142,8 @@ class AppearancePreferences(
     serializer = { order -> order.joinToString(",") },
     deserializer = { stored ->
       val defaults = listOf("HOME", "CLOUD", "MUSIC", "NETWORK", "JELLYFIN", "PROFILE")
-      val parsed = stored.split(",").map(String::trim).filter { it.isNotEmpty() }.distinct()
-      parsed + defaults.filterNot { it in parsed }
-    },
+      val parsed = stored.split(",").map(String::trim).filter { it in defaults }.distinct()
+      listOf("HOME") + parsed.filterNot { it == "HOME" } + defaults.drop(1).filterNot { it in parsed }    },
   )
   val showQuickPlayFab = preferenceStore.getBoolean("show_quick_play_fab", true)
   val quickPlayFabDirect = preferenceStore.getBoolean("quick_play_fab_direct", false)
@@ -258,11 +271,18 @@ class AppearancePreferences(
       .toList()
 }
 
-enum class PortraitPlaybackControlsPosition(
+enum class PlaybackControlsPosition(
   val displayName: String,
 ) {
   Center("Center of screen"),
-  BelowSeekbar("Between seekbar and controls"),
+  BelowSeekbar("Below seekbar"),
+}
+
+enum class SeekbarPlacement(
+  val displayName: String,
+) {
+  AboveButtons("Above layout buttons"),
+  BelowButtons("Below layout buttons"),
 }
 
 @Composable

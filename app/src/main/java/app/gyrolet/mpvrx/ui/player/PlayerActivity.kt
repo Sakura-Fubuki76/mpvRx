@@ -35,6 +35,7 @@ import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.Settings
@@ -97,6 +98,9 @@ import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.AudioChannels
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.domain.thumbnail.getArtwork
+import app.gyrolet.mpvrx.domain.thumbnail.isLocalArtworkSource
 import app.gyrolet.mpvrx.preferences.FoldersPreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
 import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
@@ -159,6 +163,7 @@ import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 import okhttp3.OkHttpClient
 import java.io.File
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
@@ -201,6 +206,10 @@ class PlayerActivity :
    */
   private val binding by lazy { PlayerLayoutBinding.inflate(layoutInflater) }
   private val isTelevision by lazy(LazyThreadSafetyMode.NONE) { DeviceFormFactor.isTelevision(this) }
+  private var launchOrientationDecisionId = 0
+  private var launchOrientationName: String? = null
+  private var launchOrientationDecidedAtNs = 0L
+  private var orientationFromPlayback = false
   private val consumedTvRemoteKeys = mutableSetOf<Int>()
 
   /**
@@ -275,6 +284,7 @@ class PlayerActivity :
    * Preferences for browser settings.
    */
   private val browserPreferences: BrowserPreferences by inject()
+  private val thumbnailRepository: ThumbnailRepository by inject()
   private val foldersPreferences: FoldersPreferences by inject()
 
   /**
@@ -831,11 +841,11 @@ class PlayerActivity :
       }
     }
 
-    // Only auto-generate playlist from folder if playlist mode is enabled and no playlist_id
+    // Autoplay and visible navigation controls independently need a sibling queue.
     if (playlist.isEmpty() &&
       playlistId == null &&
       !intent.hasExtra(AudiobookPlayback.EXTRA_BOOK_ID) &&
-      playerPreferences.playlistMode.get() &&
+      playerPreferences.shouldBuildAutomaticQueue(isKnownAudioLaunch(intent)) &&
       !hasReusableSavedPlaybackSession
     ) {
       val path = parsePathFromIntent(intent)
@@ -904,6 +914,15 @@ class PlayerActivity :
     setupPlayerControls()
     setupAudioPlayerViewObserver()
     setupMediaSession()
+    lifecycleScope.launch {
+      thumbnailRepository.cacheRevision.drop(1).collect {
+        backgroundServiceSyncJob?.cancel()
+        lastBackgroundThumbnailKey = null
+        lastBackgroundThumbnail = null
+        pendingBackgroundThumbnailKey = null
+        syncBackgroundPlaybackService(updateThumbnail = true)
+      }
+    }
     observePlaybackSessionQueue()
     observeTorrentStreamingState()
     setupCastPlayback()
@@ -3596,12 +3615,19 @@ class PlayerActivity :
     vararg sources: Map<String, String>,
   ): Map<String, String> {
     if (!HttpUtils.isNetworkStream(uri)) return emptyMap()
-    var headers = PlaybackHttpHeaders.merge(*sources)
+    var headers = PlaybackSession.resolveHttpHeaders(uri.toString(), *sources)
     headers = PlaybackHttpHeaders.withDefault(headers, "Referer", HttpUtils.extractRefererDomain(uri))
     headers = PlaybackHttpHeaders.withDefault(headers, "User-Agent", NetworkUserAgent.resolve(this))
     app.gyrolet.mpvrx.network.CloudStreamingHeaders.userAgent(uri.toString())?.let { headers = headers.filterKeys { !it.equals("User-Agent", true) } + ("User-Agent" to it) }
     return headers
   }
+
+  /** Keep queue metadata explicit; resolve config defaults and inferred headers at request time. */
+  private fun buildMediaHeaders(
+    uri: Uri?,
+    vararg sources: Map<String, String>,
+  ): Map<String, String> =
+    if (HttpUtils.isNetworkStream(uri)) PlaybackHttpHeaders.merge(*sources) else emptyMap()
 
   private fun applyHttpHeaders(headers: Map<String, String>) {
     PlaybackSession.setPropertyString("user-agent", PlaybackHttpHeaders.userAgent(headers).orEmpty())
@@ -3903,7 +3929,7 @@ class PlayerActivity :
     val autoplay = isAudiobook || if (isAudio) playerPreferences.autoplayNextAudio.get() else playerPreferences.autoplayNextVideo.get()
     val repeatAll = repeatMode == RepeatMode.ALL
 
-    if (playlist.isNotEmpty()) {
+    if (playlist.size > 1 || PlaybackSession.queue.value.isExplicitQueue) {
       val hasNext = PlaybackSession.hasNext()
       if ((autoplay && hasNext) || repeatAll) {
         isAdvancingAtEof = true
@@ -3914,14 +3940,19 @@ class PlayerActivity :
       return
     }
 
-    if (playerPreferences.playlistMode.get() && (autoplay || repeatAll)) {
+    if (autoplay || repeatAll) {
       val path = parsePathFromIntent(intent)
       if (path != null) {
+        val requestGeneration = mediaRequestGeneration
+        val playbackGeneration = PlaybackSession.state.value.generation
         isAdvancingAtEof = true
         eofAdvanceJob =
           lifecycleScope.launch(Dispatchers.IO) {
-            generatePlaylistFromFolderInternal(path)
+            generatePlaylistFromFolderInternal(path, requestGeneration)
             withContext(Dispatchers.Main) {
+              if (!isCurrentMediaRequest(requestGeneration) ||
+                !PlaybackSession.isCurrentGeneration(playbackGeneration)
+              ) return@withContext
               val hasNext = PlaybackSession.hasNext()
               when {
                 (autoplay && hasNext) || (repeatAll && playlist.isNotEmpty()) -> playNextQueueItem()
@@ -5281,8 +5312,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       }
     }
 
-    // Auto-generate playlist from folder if playlist mode is enabled and no playlist_id
-    if (playlist.isEmpty() && playlistId == null && playerPreferences.playlistMode.get()) {
+    // Prepare autoplay independently of the next/previous button preference.
+    if (playlist.isEmpty() && playlistId == null &&
+      playerPreferences.shouldBuildAutomaticQueue(isKnownAudioLaunch(intent))
+    ) {
       val path = parsePathFromIntent(intent)
       if (path != null) {
         generatePlaylistFromFolder(path)
@@ -5379,7 +5412,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     val requestGeneration = mediaRequestGeneration
     val requestedSource = originalUri ?: extractUriFromIntent(sourceIntent)?.toString() ?: playableUri
     val requestedHeaders =
-      buildPlaybackHeaders(
+      buildMediaHeaders(
         Uri.parse(requestedSource),
         PlaybackHttpHeaders.fromFlatPairs(sourceIntent.extras?.getStringArray("headers")),
         requestedQueueItem?.headers.orEmpty(),
@@ -5561,6 +5594,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
                 mimeType = resolvedMimeType,
                 headers = requestedHeaders,
                 networkSource = networkSource,
+                durationSeconds = sourceIntent
+                  .takeIf { it.getBooleanExtra("internal_launch", false) }
+                  ?.getIntExtra("duration", 0)
+                  ?.takeIf { it > 0 },
                 torrentFileIndex = torrentResult?.selectedFile?.index,
               )
 
@@ -6195,19 +6232,29 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         PlayerOrientationPolicy.forAudioPreference(audioPreferences.audioOrientation.get())
       } else {
         val preference = playerPreferences.orientation.get()
-        // A hand-set aspect ratio is a deliberate override of the picture's shape, so keep the
-        // current orientation rather than rotating to the source geometry behind the user's back.
-        if (preference == PlayerOrientation.Video && hasCustomAspectRatio()) {
-          return
-        }
+        // A saved custom ratio is re-applied to every file and is already part of mpv's reported
+        // aspect, so it must not freeze "Video" orientation for all later videos.
         PlayerOrientationPolicy.forPreference(preference) {
           (sourceAspect ?: player.getVideoOutAspect())?.also { aspect ->
             PlayerOrientationPolicy.rememberVideoAspect(PlaybackSession.state.value.currentItem?.stableId, aspect)
+            orientationFromPlayback = true
           }
-        }
+        }?.also(::reportLaunchOrientationFlip)
       } ?: return
 
     if (requestedOrientation != target) requestedOrientation = target
+  }
+
+  /** Logs, once per launch, when mpv's geometry turns the window away from how it opened. */
+  private fun reportLaunchOrientationFlip(target: Int) {
+    val opened = launchOrientationName ?: return
+    launchOrientationName = null
+    val corrected = orientationName(target)
+    if (opened == corrected) return
+    val detail =
+      "opened=$opened corrected=$corrected afterMs=${"%.1f".format(ContainerGeometryProbe.elapsedMs(launchOrientationDecidedAtNs))}"
+    PlaybackPerformanceTrace.mark("ORIENTATION_FLIP", detail)
+    Log.i(TAG, "Launch orientation flipped: $detail")
   }
 
   /**
@@ -6236,9 +6283,6 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     if (requestedOrientation != target) requestedOrientation = target
   }
 
-  private fun hasCustomAspectRatio(): Boolean =
-    playerPreferences.lastCustomAspectRatio.get() > 0f
-
   /**
    * Orientation for "Video" mode before mpv exists, so the window opens the right way round.
    *
@@ -6249,59 +6293,118 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
    * PlayerActivity handles orientation|screenSize|screenLayout itself, so the late assignment does
    * not recreate the Activity; it relayouts the window mid-transition.
    *
-   * Media library launches carry width/height/rotation in the intent, so this is a pure lookup.
-   * Anything else falls back to MediaMetadataRetriever for the missing fields.
+   * Geometry comes from the launch intent, else from the container header the browser began reading
+   * on tap (waited for briefly here, applied late if slower). Unknown geometry keeps the current
+   * orientation: only the video's own geometry may turn the window. MediaMetadataRetriever is never
+   * used; it can stall like thumbnail extraction.
    */
   private fun applyInitialVideoOrientation(sourceIntent: Intent) {
+    launchOrientationName = null
     if (isTelevision) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
       return
     }
     if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) return
+    // Mini player and notification re-entry carry no media; applyLiveSessionOrientation decides those.
+    if (sourceIntent.data == null) return
 
+    val decisionId = ++launchOrientationDecisionId
+    val decisionStartedAtNs = SystemClock.elapsedRealtimeNanos()
+    orientationFromPlayback = false
     var width = sourceIntent.getIntExtra(EXTRA_VIDEO_WIDTH, 0)
     var height = sourceIntent.getIntExtra(EXTRA_VIDEO_HEIGHT, 0)
     var rotation = sourceIntent.getIntExtra(EXTRA_VIDEO_ROTATION, 0)
+    var source = "intent"
+    var probeState = "none"
 
-    // Only invoke expensive MediaMetadataRetriever synchronously if the intent carried no geometry.
-    if (width <= 0 || height <= 0 || rotation == 0) {
-      extractUriFromIntent(sourceIntent)
-        ?.takeIf { uri -> uri.scheme.equals("content", true) || uri.scheme.equals("file", true) }
-        ?.let { uri ->
-          runCatching {
-            val retriever = android.media.MediaMetadataRetriever()
-            try {
-              retriever.setDataSource(this, uri)
-              if (width <= 0) {
-                width =
-                  retriever
-                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
-                    ?.toIntOrNull()
-                    ?: 0
-              }
-              if (height <= 0) {
-                height =
-                  retriever
-                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
-                    ?.toIntOrNull()
-                    ?: 0
-              }
-              if (rotation == 0) {
-                rotation =
-                  retriever
-                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
-                    ?.toIntOrNull()
-                    ?: 0
-              }
-            } finally {
-              retriever.release()
-            }
-          }
+    val path = localVideoPath(sourceIntent)
+    val probe =
+      if (ContainerGeometryProbe.needsProbe(width, height, rotation)) {
+        val prefetched = ContainerGeometryProbe.isPrefetched(path)
+        ContainerGeometryProbe.request(path, sourceIntent.data, contentResolver)?.let { future ->
+          future to if (prefetched) PREFETCHED_GEOMETRY_WAIT_MS else UNPREFETCHED_GEOMETRY_WAIT_MS
         }
+      } else {
+        null
+      }
+    probe?.let { (future, waitMs) ->
+      val geometry = runCatching { future.get(waitMs, TimeUnit.MILLISECONDS) }.getOrNull()
+      probeState =
+        when {
+          geometry != null -> "%.1fms".format(geometry.probeNanos / 1_000_000.0)
+          future.isDone -> "unreadable"
+          else -> "pending"
+        }
+      if (geometry != null && geometry.width > 0 && geometry.height > 0) {
+        if (width <= 0 || height <= 0) {
+          width = geometry.width
+          height = geometry.height
+        }
+        if (rotation == 0 && geometry.quarterTurned) rotation = 90
+        source = "container"
+      }
     }
-    val initialOrientation = PlayerOrientationPolicy.forSourceGeometry(width, height, rotation) ?: return
-    if (requestedOrientation != initialOrientation) requestedOrientation = initialOrientation
+
+    val target = PlayerOrientationPolicy.forSourceGeometry(width, height, rotation)
+    if (target == null) {
+      source = "unknown"
+    } else if (requestedOrientation != target) {
+      requestedOrientation = target
+    }
+    launchOrientationName = target?.let(::orientationName) ?: currentOrientationName()
+    launchOrientationDecidedAtNs = decisionStartedAtNs
+
+    val detail =
+      "source=$source orientation=$launchOrientationName size=${width}x$height rotation=$rotation " +
+        "probe=$probeState decideMs=${"%.1f".format(ContainerGeometryProbe.elapsedMs(decisionStartedAtNs))}"
+    PlaybackPerformanceTrace.mark("ORIENTATION_DECIDED", detail)
+    Log.d(TAG, "Launch orientation: $detail")
+
+    if (probeState != "pending") return
+    val pending = probe?.first ?: return
+    lifecycleScope.launch {
+      val geometry =
+        withContext(Dispatchers.IO) { runCatching { pending.get(LATE_GEOMETRY_WAIT_MS, TimeUnit.MILLISECONDS) }.getOrNull() }
+          ?: return@launch
+      if (decisionId != launchOrientationDecisionId || orientationFromPlayback || isFinishing) return@launch
+      val hasSize = width > 0 && height > 0
+      val lateTarget =
+        PlayerOrientationPolicy.forSourceGeometry(
+          if (hasSize) width else geometry.width,
+          if (hasSize) height else geometry.height,
+          if (rotation == 0 && geometry.quarterTurned) 90 else rotation,
+        ) ?: return@launch
+      val opened = launchOrientationName
+      launchOrientationName = orientationName(lateTarget)
+      if (requestedOrientation != lateTarget) requestedOrientation = lateTarget
+      val lateDetail =
+        "orientation=$launchOrientationName changed=${opened != launchOrientationName} " +
+          "probeMs=${"%.1f".format(geometry.probeNanos / 1_000_000.0)} " +
+          "afterMs=${"%.1f".format(ContainerGeometryProbe.elapsedMs(decisionStartedAtNs))}"
+      PlaybackPerformanceTrace.mark("ORIENTATION_LATE_PROBE", lateDetail)
+      Log.d(TAG, "Late container geometry: $lateDetail")
+    }
   }
+
+  private fun currentOrientationName(): String =
+    if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) "landscape" else "portrait"
+
+  private fun orientationName(orientation: Int): String =
+    when (orientation) {
+      ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+      ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT,
+      ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+      -> "portrait"
+      ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+      ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
+      ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+      -> "landscape"
+      else -> orientation.toString()
+    }
+
+  private fun localVideoPath(sourceIntent: Intent): String? =
+    sourceIntent.getStringExtra("local_media_path")?.takeIf { it.isNotBlank() }
+      ?: sourceIntent.data?.takeIf { it.scheme == "file" }?.path
 
   private fun isKnownAudioLaunch(sourceIntent: Intent): Boolean =
     sourceIntent.getBooleanExtra("is_audio", false) ||
@@ -6384,6 +6487,16 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           consumedTvRemoteKeys += keyCode
           if ((event?.repeatCount ?: 0) == 0) viewModel.pauseUnpause()
           viewModel.showControls()
+          return true
+        }
+        TvPlayerRemoteAction.TOGGLE_MENU -> {
+          consumedTvRemoteKeys += keyCode
+          if ((event?.repeatCount ?: 0) == 0) toggleTvSheet(Sheets.More)
+          return true
+        }
+        TvPlayerRemoteAction.TOGGLE_SUBTITLES -> {
+          consumedTvRemoteKeys += keyCode
+          if ((event?.repeatCount ?: 0) == 0 && !viewModel.isAudioOnly.value) toggleTvSheet(Sheets.SubtitleTracks)
           return true
         }
         TvPlayerRemoteAction.DELEGATE -> {
@@ -6533,6 +6646,17 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         event?.let { player.onKey(it) }
         return super.onKeyDown(keyCode, event)
       }
+    }
+  }
+
+  private fun toggleTvSheet(sheet: Sheets) {
+    if (viewModel.sheetShown.value == sheet) {
+      viewModel.sheetShown.update { Sheets.None }
+      viewModel.showControls()
+    } else {
+      viewModel.panelShown.update { Panels.None }
+      viewModel.sheetShown.update { sheet }
+      viewModel.hideControls()
     }
   }
 
@@ -7430,43 +7554,24 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           delay(150)
           var generatedThumbnail: android.graphics.Bitmap? =
             withContext(Dispatchers.IO) {
-              currentQueueItem?.networkSource?.let { source ->
-                org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
-                  .getThumbnailForNetworkSource(source.connectionId, source.relativePath, 480, 300, generate = false, respectDisplayPreference = false)
-              } ?: app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
-                this@PlayerActivity,
-                currentQueueItem?.artworkUri,
-              ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull() ?: runCatching {
-                val uriStr = currentPlayableUri
-                if (!uriStr.isNullOrBlank()) {
-                  val parsedUri = Uri.parse(uriStr)
-                  val cleanPath =
-                    when (parsedUri.scheme) {
-                      null, "file" -> parsedUri.path ?: uriStr
-                      "content" -> null
-                      // Probing a remote/proxied URL opens a second upstream stream that competes
-                      // with live playback and audibly stalls it during Mini Player handoffs.
-                      else -> return@runCatching null
-                    }
-                  val retriever = android.media.MediaMetadataRetriever()
-                  try {
-                    if (cleanPath != null) {
-                      retriever.setDataSource(cleanPath)
-                    } else {
-                      retriever.setDataSource(this@PlayerActivity, parsedUri)
-                    }
-                    app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeEmbeddedArtwork(
-                      cleanPath,
-                      retriever,
-                    )
-                  } finally {
-                    retriever.release()
-                  }
-                } else {
-                  null
-                }
-              }.getOrNull()
-            }
+              val source = currentQueueItem?.originalUri ?: currentPlayableUri
+              // Cloud items have no local file to probe: their artwork comes from the network cache.
+              currentQueueItem?.networkSource?.let { networkSource ->
+                thumbnailRepository.getThumbnailForNetworkSource(
+                  networkSource.connectionId,
+                  networkSource.relativePath,
+                  480,
+                  300,
+                  generate = false,
+                  respectDisplayPreference = false,
+                )
+              } ?: if (isLocalArtworkSource(source)) {
+                thumbnailRepository.getArtwork(source, isAudio = isCurrentPlaybackAudio(), widthPx = 480)
+              } else {
+                app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver.decodeArtworkUri(
+                  this@PlayerActivity, currentQueueItem?.artworkUri,
+                ) ?: runCatching { PlaybackSession.grabThumbnail(480) }.getOrNull()
+              }            }
 
           if (generatedThumbnail == null) currentQueueItem?.networkSource?.let { source ->
             generatedThumbnail = withContext(Dispatchers.IO) {
@@ -7501,7 +7606,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   private fun buildBackgroundThumbnailKey(): String {
     if (mediaIdentifier.isBlank()) return ""
     val artworkUri = PlaybackSession.queue.value.currentItem?.artworkUri.orEmpty()
-    return "$mediaIdentifier|$playlistIndex|$artworkUri"
+    return "$mediaIdentifier|$playlistIndex|$artworkUri|${browserPreferences.thumbnailGenerator.get()}|${thumbnailRepository.cacheRevision.value}"
   }
 
   /**
@@ -7829,7 +7934,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
             ?.takeIf { it.isNotBlank() }
             ?.let { userAgent -> mapOf("User-Agent" to userAgent) }
             .orEmpty()
-        val headers = buildPlaybackHeaders(uri, networkPlaylistHeaders.getOrNull(index).orEmpty(), storedHeaders)
+        val headers = buildMediaHeaders(uri, networkPlaylistHeaders.getOrNull(index).orEmpty(), storedHeaders)
         val existingItem =
           existingQueueItems.firstOrNull { it.originalUri == uri.toString() || it.playableUri == uri.toString() }
 
@@ -8237,11 +8342,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     sourceIntent: Intent,
     requestGeneration: Long,
   ): Boolean {
-    val requestHeaders =
-      buildPlaybackHeaders(
+    val sourceHeaders =
+      buildMediaHeaders(
         Uri.parse(uriString),
         PlaybackHttpHeaders.fromFlatPairs(sourceIntent.extras?.getStringArray("headers")),
       )
+    val requestHeaders = buildPlaybackHeaders(Uri.parse(uriString), sourceHeaders)
     val userAgent = PlaybackHttpHeaders.userAgent(requestHeaders)
     val parseResult =
       when {
@@ -8278,9 +8384,9 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           networkPlaylistPaths = items.map { it.url }
           networkPlaylistHeaders =
             items.map { item ->
-              buildPlaybackHeaders(
+              buildMediaHeaders(
                 Uri.parse(item.url),
-                requestHeaders,
+                sourceHeaders,
                 item.userAgent?.let { mapOf("User-Agent" to it) }.orEmpty(),
               )
             }
@@ -8401,6 +8507,11 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     const val EXTRA_VIDEO_WIDTH = "video_width"
     const val EXTRA_VIDEO_HEIGHT = "video_height"
     const val EXTRA_VIDEO_ROTATION = "video_rotation"
+
+    // The browser starts the container probe on tap, so this mostly finds it finished already.
+    private const val PREFETCHED_GEOMETRY_WAIT_MS = 200L
+    private const val UNPREFETCHED_GEOMETRY_WAIT_MS = 80L
+    private const val LATE_GEOMETRY_WAIT_MS = 2_000L
 
     /** Start playback at this many seconds in, overriding resume-from-history. Set by snapshot jumps. */
     const val EXTRA_START_POSITION_SECONDS = "start_position_seconds"

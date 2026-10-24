@@ -48,7 +48,8 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
 import app.gyrolet.mpvrx.database.repository.PlaylistRepository
 import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
-import app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkResolver
+import app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository
+import app.gyrolet.mpvrx.domain.thumbnail.getArtwork
 import app.gyrolet.mpvrx.domain.torrent.TorrentStreamingEngine
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
@@ -102,6 +103,7 @@ class MediaPlaybackService :
     private const val PLAYBACK_STATE_SAVE_INTERVAL_MS = 5000L
     private const val PROGRESS_NOTIFICATION_UPDATE_INTERVAL_MS = 2000L
     private const val MEDIA_NOTIFICATION_UPDATE_INTERVAL_MS = 1000L
+    private const val MEDIA_SESSION_DRIFT_TOLERANCE_SECONDS = 2.0
     private const val MAX_MEDIA_SESSION_QUEUE_ITEMS = 200
     private const val VIDEO_CONTENT_INTENT_REQUEST_CODE = 1100
     private const val AUDIO_CONTENT_INTENT_REQUEST_CODE = 1101
@@ -183,6 +185,27 @@ class MediaPlaybackService :
 
     internal fun takeAudioOwnershipForDetachedPlayback(): Boolean = activeInstance?.takeAudioOwnership() == true
 
+    private val inAppPlayerVisible = MutableStateFlow(false)
+
+    /**
+     * The in-app music sheet shows the full player while the service keeps owning playback. While
+     * it is visible, turning background playback off means "stop once I leave", as it does in
+     * PlayerActivity, instead of stopping the playback the user is looking at.
+     */
+    internal fun setInAppPlayerVisible(visible: Boolean) {
+      inAppPlayerVisible.value = visible
+    }
+
+    // In-app full player transport. It shares the detached owner's queue handling, notification
+    // updates and forced state saves, exactly like the notification and media-session controls.
+    internal fun skipToNextFromApp(): Boolean = activeInstance?.playNextFromSession() == true
+
+    internal fun skipToPreviousFromApp() {
+      activeInstance?.playPreviousFromSession()
+    }
+
+    internal fun playQueueItemFromApp(index: Int): Boolean = activeInstance?.playQueueItemFromSession(index) == true
+
     internal fun setExternalDisplayActive(active: Boolean) {
       activeInstance?.updateExternalDisplayWakeLock(active)
     }
@@ -252,6 +275,7 @@ class MediaPlaybackService :
   private val advancedPreferences: AdvancedPreferences by inject()
   private val audioPreferences: AudioPreferences by inject()
   private val browserPreferences: BrowserPreferences by inject()
+  private val thumbnailRepository: ThumbnailRepository by inject()
   private val gesturePreferences: GesturePreferences by inject()
   private val playlistRepository: PlaylistRepository by inject()
   private val playbackStateRepository: PlaybackStateRepository by inject()
@@ -276,6 +300,17 @@ class MediaPlaybackService :
   private var lastPublishedPositionSeconds = 0.0
   @Volatile
   private var lastPlaybackStateSaveTime = 0L
+
+  // What the MediaSession last told the system, which extrapolates position from it.
+  @Volatile
+  private var sessionPositionSeconds = 0.0
+  @Volatile
+  private var sessionPositionUpdatedAt = 0L
+  @Volatile
+  private var sessionPositionSpeed = 0f
+
+  // Transport actions never change; creating a PendingIntent is a binder call per notification.
+  private val transportIntents = java.util.concurrent.ConcurrentHashMap<String, PendingIntent>()
 
   // Chapter & progress state for progress-centric notification
   private var chapters: List<ChapterNode> = emptyList()
@@ -455,8 +490,10 @@ class MediaPlaybackService :
         PlaybackSession.videoBackgroundPlaybackEnabled,
         audioPreferences.audioBackgroundPlayback.changes(),
         PlaybackSession.state,
-      ) { _, audioEnabled, playbackState ->
+        inAppPlayerVisible,
+      ) { _, audioEnabled, playbackState, inAppVisible ->
         when {
+          inAppVisible -> true
           playbackState.currentItem?.audiobook != null -> true
           playbackState.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.AUDIO -> audioEnabled
           playbackState.currentItem?.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO ->
@@ -476,6 +513,17 @@ class MediaPlaybackService :
 
     serviceScope.launch {
       PlaybackSession.queue.collect(::syncQueueState)
+    }
+
+    serviceScope.launch {
+      thumbnailRepository.cacheRevision.drop(1).collect {
+        replaceOwnedThumbnail(null)
+        updateMediaSessionMetadata()
+        updateNotification()
+        MediaPlayerWidget.clearArtworkCache()
+        MediaPlayerWidget.requestUpdate(this@MediaPlaybackService)
+        PlaybackSession.queue.value.currentItem?.let(::loadSessionArtwork)
+      }
     }
 
     serviceScope.launch {
@@ -812,6 +860,18 @@ class MediaPlaybackService :
     PlaybackSession.playPrevious()?.let(::applySessionItem) ?: refreshTransportControls()
   }
 
+  private fun playQueueItemFromSession(index: Int): Boolean {
+    if (!canHandleTransportAction()) return false
+    schedulePlaybackStateSave(force = true)
+    val item = PlaybackSession.playQueueItem(index)
+    if (item == null) {
+      refreshTransportControls()
+      return false
+    }
+    applySessionItem(item)
+    return true
+  }
+
   private fun handleMediaPlayAction(shouldPlay: Boolean) {
     when (gesturePreferences.mediaPlayGesture.get()) {
       SingleActionGesture.PlayPause -> {
@@ -928,25 +988,30 @@ class MediaPlaybackService :
   }
 
   private fun loadSessionArtwork(item: PlaybackItem) {
-    cloudArtworkJob?.cancel()
-    val artworkUri = item.artworkUri?.takeIf { it.isNotBlank() }
-    if (artworkUri == null && item.networkSource == null) return
+    val revision = thumbnailRepository.cacheRevision.value
     val expectedIdentifier = item.stableId
-    cloudArtworkJob = serviceScope.launch {
+    serviceScope.launch {
+      // Cloud items have no local file to probe: their artwork comes from the network thumbnail cache.
       val loaded =
-        try { withContext(Dispatchers.IO) {
-          artworkUri?.let { EmbeddedArtworkResolver.decodeArtworkUri(this@MediaPlaybackService, it) }
-            ?: item.networkSource?.let { source ->
-              kotlinx.coroutines.withTimeoutOrNull(30_000) {
-                org.koin.java.KoinJavaComponent.get<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>(app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository::class.java)
-                  .getThumbnailForNetworkSource(source.connectionId, source.relativePath, 480, 300, respectDisplayPreference = false)
-              }
+        item.networkSource?.let { source ->
+          withContext(Dispatchers.IO) {
+            kotlinx.coroutines.withTimeoutOrNull(30_000) {
+              thumbnailRepository.getThumbnailForNetworkSource(
+                source.connectionId,
+                source.relativePath,
+                480,
+                300,
+                respectDisplayPreference = false,
+              )
             }
-        } } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (error: Exception) { Log.w(TAG, "Could not load cloud notification artwork", error); null }
-          ?: return@launch
-      if (mediaIdentifier != expectedIdentifier) {
-        return@launch
+          }
+        } ?: thumbnailRepository.getArtwork(
+          source = item.originalUri,
+          artworkUri = item.artworkUri,
+          isAudio = resolveNotificationIsAudio(item, usesAudioBackgroundPlayback),
+          widthPx = 480,
+        ) ?: return@launch
+      if (mediaIdentifier != expectedIdentifier || revision != thumbnailRepository.cacheRevision.value) {        return@launch
       }
       val changed = replaceOwnedThumbnail(loaded)
       if (changed) {
@@ -1297,12 +1362,14 @@ class MediaPlaybackService :
         actions = 0L
       }
       val stateSpeed = if (state == PlaybackStateCompat.STATE_PLAYING) playbackSpeed else 0f
+      val positionMs = sanitizedPositionMs()
+      val updatedAt = SystemClock.elapsedRealtime()
       val stateBuilder =
         PlaybackStateCompat
           .Builder()
           .setActions(actions)
           .setActiveQueueItemId(activeQueueItemId)
-          .setState(state, sanitizedPositionMs(), stateSpeed, SystemClock.elapsedRealtime())
+          .setState(state, positionMs, stateSpeed, updatedAt)
       if (actions != 0L && currentNotificationStyle() == NotificationStyle.Media) {
         val favoriteLabel = favoriteActionLabel()
         stateBuilder.addCustomAction(
@@ -1317,9 +1384,23 @@ class MediaPlaybackService :
         )
       }
       mediaSession.setPlaybackState(stateBuilder.build())
+      sessionPositionSeconds = positionMs / 1000.0
+      sessionPositionSpeed = stateSpeed
+      sessionPositionUpdatedAt = updatedAt
     } catch (e: Exception) {
       Log.e(TAG, "Error updating MediaSession playback state", e)
     }
+  }
+
+  /** Android 13+ media controls render and advance Media-style progress from the session. */
+  private fun systemAdvancesMediaPosition(): Boolean =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && currentNotificationStyle() == NotificationStyle.Media
+
+  /** True once the system's extrapolated position is off, e.g. after a stall or a speed change. */
+  private fun sessionPositionDrifted(now: Long): Boolean {
+    val elapsedSeconds = (now - sessionPositionUpdatedAt).coerceAtLeast(0L) / 1000.0
+    val extrapolated = sessionPositionSeconds + elapsedSeconds * sessionPositionSpeed
+    return abs(currentPositionSeconds - extrapolated) > MEDIA_SESSION_DRIFT_TOLERANCE_SECONDS
   }
 
   private fun updateNotification() {
@@ -1427,14 +1508,16 @@ class MediaPlaybackService :
     action: String,
     requestCode: Int,
   ): PendingIntent =
-    PendingIntent.getService(
-      this,
-      requestCode,
-      Intent(this, MediaPlaybackService::class.java).apply {
-        this.action = action
-      },
-      PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-    )
+    transportIntents.getOrPut("$action#$requestCode") {
+      PendingIntent.getService(
+        this,
+        requestCode,
+        Intent(this, MediaPlaybackService::class.java).apply {
+          this.action = action
+        },
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+      )
+    }
 
   private fun prevAction() =
     NotificationCompat.Action(
@@ -1813,10 +1896,16 @@ class MediaPlaybackService :
         if (elapsedSinceUpdate >= updateInterval || positionJump) {
           lastNotificationUpdateTime = currentTime
           lastPublishedPositionSeconds = currentPositionSeconds
+          // Android 13+ draws Media-style progress from the MediaSession and advances it itself.
+          // Republishing every second repeated binder calls and a bitmap parcel on the main thread
+          // during playback, so there it only happens when the system's estimate has drifted.
+          val republish = positionJump || !systemAdvancesMediaPosition() || sessionPositionDrifted(currentTime)
           serviceScope.launch {
             schedulePlaybackStateSave()
-            updateMediaSessionPlaybackState()
-            updateNotification()
+            if (republish) {
+              updateMediaSessionPlaybackState()
+              updateNotification()
+            }
           }
         }
       }
@@ -1883,11 +1972,13 @@ class MediaPlaybackService :
     val now = SystemClock.elapsedRealtime()
     if (!force && now - lastPlaybackStateSaveTime < PLAYBACK_STATE_SAVE_INTERVAL_MS) return
     lastPlaybackStateSaveTime = now
-    val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return
 
     playbackStateSaveJob?.cancel()
     playbackStateSaveJob =
       serviceScope.launch(Dispatchers.IO) {
+        // The capture is several synchronous libmpv reads; doing them here keeps this periodic
+        // save from stalling the main thread every few seconds while media plays.
+        val snapshot = capturePlaybackStateSnapshot(identifier, oldState = null) ?: return@launch
         persistPlaybackState(identifier, snapshot)
       }
   }

@@ -6,7 +6,6 @@
   <string name="generic_increase">Збільшити</string>
   <string name="generic_decrease">Зменшити</string>
   <string name="generic_remove_from_favorites">Вилучити з обраного</string>
-  <string name="app_name" translatable="false">mpvRx</string>
   <string name="generic_reset">Скинути</string>
   <string name="generic_back">Назад</string>
   <string name="generic_home">Головна</string>
@@ -87,6 +86,11 @@
   <string name="pref_appearance_thumbnail_quality_summary">Максимальна роздільність мініатюр: %1$d пікс. Вища якість займає більше місця і може створюватися повільніше.</string>
   <string name="pref_appearance_thumbnail_position_title">Позиція кадру мініатюри</string>
   <string name="pref_appearance_thumbnail_position_summary">Захоплювати кадр на позначці %1$d%% тривалості відео</string>
+  <string name="pref_appearance_thumbnail_parallelism_title">Ядра для мініатюр</string>
+  <string name="pref_appearance_thumbnail_parallelism_auto">Авто (%1$d з %2$d)</string>
+  <string name="pref_appearance_thumbnail_parallelism_value">%1$d з %2$d</string>
+  <string name="pref_appearance_thumbnail_parallelism_dialog_summary">Скільки мініатюр створюється одночасно. Що більше, то швидше, але більше витрачається пам’яті й заряду, а прокручування може підгальмовувати. Авто вибирає безпечне значення для цього пристрою.</string>
+  <string name="pref_appearance_thumbnail_parallelism_warning">Більше за рекомендоване для цього пристрою (%1$d). Зменште, якщо списки гальмують або застосунок закривається у фоні.</string>
   <string name="pref_appearance_show_network_thumbnails_title">Мініатюри для мережевих потоків (експериментально)</string>
   <string name="pref_appearance_show_network_thumbnails_summary">Створювати мініатюри для мережевих потоків (може збільшити витрати мобільного трафіку)</string>
   <string name="pref_nav_music_title">Вкладка «Музика»</string>
@@ -195,8 +199,6 @@
   <string name="pref_enable_lua_scripts_summary">Завантажувати скрипти з каталогу конфігурації MPV</string>
   <string name="pref_enable_p2p_streaming_title">Увімкнути P2P-потокове відтворення торрентів</string>
   <string name="pref_enable_p2p_streaming_summary">Відтворювати медіа за magnet-посиланнями та torrent-файлами</string>
-  <string name="pref_enable_hls_proxy_title">Увімкнути проксі HLS-потоків</string>
-  <string name="pref_enable_hls_proxy_summary">Нормалізувати адаптивні маніфести HLS та обробляти розділені потоки аудіо/відео</string>
   <string name="pref_manage_lua_scripts_title">Керування скриптами</string>
   <string name="pref_manage_lua_scripts_summary">Керувати увімкненими скриптами</string>
   <string name="pref_clear_config_cache_title">Очистити кеш конфігурації</string>
@@ -247,6 +249,8 @@
   <string name="pref_player_gestures_volume">Жести гучності</string>
   <string name="pref_player_gestures_pinch_to_zoom">Масштабування щипком</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">Масштабування субтитрів щипком</string>
+  <string name="pref_player_gestures_two_finger_speed_swipe">Швидкість свайпом двома пальцями</string>
+  <string name="pref_player_gestures_two_finger_speed_swipe_summary">Проведіть двома пальцями вгору або вниз, щоб змінювати швидкість відтворення на 0,25x, від 0,5x до 4x</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">Проведення по субтитрах для діалогу пошуку</string>
   <string name="pref_player_gestures_swipe_subtitles_invert_direction">Інвертувати напрямок проведення по субтитрах</string>
   <string name="pref_player_gestures_swipe_subtitles_invert_direction_summary">Проведення справа наліво перемотує вперед, зліва направо — назад</string>
@@ -463,11 +467,6 @@
   <string name="track_badge_descriptive">Описові</string>
   <string name="track_badge_primary">Основні</string>
   <string name="track_badge_secondary">Вторинні</string>
-  <string name="player_sheets_track_title_w_lang" translatable="false">#%1$d: %2$s (%3$s)</string>
-  <string name="player_sheets_track_title_wo_lang" translatable="false">#%1$d: %2$s</string>
-  <string name="player_sheets_track_lang_wo_title" translatable="false">#%1$d: %2$s</string>
-  <string name="player_sheets_chapter_title_substitute_subtitle" translatable="false">Subtitle #%d</string>
-  <string name="player_sheets_chapter_title_substitute_audio" translatable="false">Audio #%d</string>
   <string name="player_sheets_off">Вимкнено</string>
   <string name="player_sheets_subtitles_settings_title">Налаштування субтитрів</string>
   <string name="player_sheets_subtitles_color_text">Текст</string>
@@ -560,15 +559,12 @@
   <string name="timer_title">Таймер сну</string>
   <string name="timer_remaining">Залишилося: %s</string>
   <string name="toast_sleep_timer_ended">Таймер сну завершився</string>
-  <string name="volume_slider_absolute_value" translatable="false">%d</string>
-  <string name="github_repo_url" translatable="false">https://github.com/Riteshp2001/mpvRx</string>
   <string name="swap_the_volume_and_brightness_slider">Поміняти місцями повзунки гучності та яскравості</string>
   <string name="pref_player_display_reduce_player_animation">Зменшити анімацію плеєра</string>
   <string name="pref_player_display_hide_player_control_time">Час приховування елементів керування</string>
   <string name="show_splash_ovals_on_double_tap_to_seek">Показувати хвилі під час подвійного дотику для перемотування</string>
   <string name="show_time_on_double_tap_to_seek">Показувати час перемотування</string>
   <string name="player_sheets_frame_navigation_title">Покадрова навігація</string>
-  <string name="player_sheets_frame_navigation_snapshot_saved" translatable="false">Saved to Pictures/mpvSnaps</string>
   <string name="player_sheets_frame_navigation_include_subtitles">Включати субтитри у знімок кадру</string>
   <string name="player_sheets_zoom_slider_label">Масштаб відео</string>
   <plurals name="seconds">
@@ -702,7 +698,7 @@
   <string name="pref_section_general">Загальні</string>
   <string name="pref_playlist_mode_title">Увімкнути навігацію наступний/попередній</string>
   <string name="pref_playlist_mode_summary">Показувати кнопки «Наступний»/«Попередній» для всіх відео в папці</string>
-  <string name="pref_playlist_mode_summary_disabled">Відтворювати відео окремо (виберіть кілька для списку відтворення)</string>
+  <string name="pref_playlist_mode_summary_disabled">Приховувати кнопки наступного/попереднього файлу; автовідтворення налаштовується окремо</string>
   <string name="pref_online_skip_markers_title">Використовувати онлайн-маркери пропуску</string>
   <string name="pref_online_skip_markers_summary">Отримувати маркери вступу, переказу, завершення, титрів і анонсу від вибраного провайдера</string>
   <string name="pref_marker_provider_title">Онлайн-провайдер маркерів</string>
@@ -813,6 +809,9 @@
   <string name="ui_sort_descending">За спаданням</string>
   <string name="ui_no_matching_episodes">Немає відповідних серій</string>
   <string name="ui_buffering">Буферизація…</string>
+  <string name="player_opening_stream">Відкриття потоку…</string>
+  <string name="player_buffering_percent">Буферизація %1$d %%</string>
+  <string name="player_buffering_seconds">Буферизація · готово %1$s с</string>
   <string name="torrent_picker_choose_title">Виберіть, що відтворити</string>
   <plurals name="torrent_picker_playable_count">
     <item quantity="one">Знайдено %1$d відтворюване відео</item>
@@ -902,6 +901,10 @@
   <string name="pref_config_cache_size">Розмір: %1$s</string>
   <string name="pref_thumbnail_cache_summary">Видалити всі збережені мініатюри відео (буде створено наново під час перегляду папок)</string>
   <string name="pref_thumbnail_cache_size">Розмір: %1$s</string>
+  <string name="pref_clear_animated_artwork_cache_title">Очистити кеш анімованих обкладинок</string>
+  <string name="pref_clear_animated_artwork_cache_summary">Видалити завантажені анімовані обкладинки альбомів (буде завантажено знову під час показу)</string>
+  <string name="pref_animated_artwork_cache_size">Розмір: %1$s</string>
+  <string name="pref_animated_artwork_cache_cleared">Кеш анімованих обкладинок очищено</string>
   <string name="pref_fonts_cache_size">Розмір: %1$s · шрифтів: %2$d</string>
   <string name="pref_failed_to_clear">Не вдалося очистити: %1$s</string>
   <string name="pref_export_failed">Помилка експорту: %1$s</string>
@@ -993,13 +996,8 @@
   <string name="pref_decoder_vulkan_experimental_title">Vulkan (Експериментально)</string>
   <string name="hdr_mode_off">Вимкнено</string>
   <string name="hdr_mode_off_description">Звичайний вивід SDR</string>
-  <string name="hdr_mode_bt2100_pq" translatable="false">BT.2100 PQ</string>
-  <string name="hdr_mode_pq_short" translatable="false">PQ</string>
   <string name="hdr_mode_bt2100_pq_description">PQ у стилі HDR10 з тональним відображенням Astra та колірним охопленням Bottosson</string>
-  <string name="hdr_mode_bt2100_hlg" translatable="false">BT.2100 HLG</string>
-  <string name="hdr_mode_hlg_short" translatable="false">HLG</string>
   <string name="hdr_mode_bt2100_hlg_description">HLG HDR через ланцюжок шейдерів hdr-toys Astra та Bottosson</string>
-  <string name="hdr_mode_bt2020" translatable="false">BT.2020</string>
   <string name="hdr_mode_bt2020_description">Перетворення BT.2020 / BT.1886 з використанням охоплення hdr-toys</string>
   <string name="hdr_mode_linear">Лінійний HDR</string>
   <string name="hdr_mode_linear_short">Лінійний</string>
@@ -1328,14 +1326,8 @@
   <string name="ui_advanced_options">Розширені параметри</string>
   <string name="ui_target_size">Цільовий розмір</string>
   <string name="ui_encoding">Кодування</string>
-  <string name="ui_av1" translatable="false">AV1</string>
-  <string name="ui_h_265" translatable="false">H.265</string>
-  <string name="ui_h_264" translatable="false">H.264</string>
   <string name="ui_resolution">Роздільність</string>
   <string name="ui_framerate">Частота кадрів</string>
-  <string name="ui_60fps" translatable="false">60fps</string>
-  <string name="ui_30fps" translatable="false">30fps</string>
-  <string name="ui_24fps" translatable="false">24fps</string>
   <string name="ui_audio_options">Параметри звуку</string>
   <string name="ui_remove_audio">Видалити звук</string>
   <string name="ui_audio_bitrate">Бітрейт звуку</string>
@@ -1588,6 +1580,7 @@
   <string name="update_version_format">Версія %1$s</string>
   <string name="update_release_date">Дата випуску</string>
   <string name="update_size">Розмір</string>
+  <string name="update_package">Пакет</string>
   <string name="update_unknown_size">Невідомий розмір</string>
   <string name="update_beta_build_format">Бета r%1$d</string>
   <string name="ui_beta_badge_suffix"> (Бета)</string>
@@ -1646,6 +1639,10 @@
   <string name="ui_script_file_not_found">Файл скрипта не знайдено</string>
   <string name="ui_search_models">Пошук моделей…</string>
   <string name="ui_portrait_playback_buttons">Кнопки відтворення в портретному режимі</string>
+  <string name="ui_landscape_playback_buttons">Кнопки відтворення в альбомному режимі</string>
+  <string name="ui_portrait_seekbar_position">Положення смуги перемотування в портретному режимі</string>
+  <string name="ui_landscape_seekbar_position">Положення смуги перемотування в альбомному режимі</string>
+  <string name="pref_player_buttons_opacity">Непрозорість фону кнопок плеєра</string>
   <string name="ui_time_network_clock">Годинник часу та мережі</string>
   <string name="ui_show_media_info_in_chooser">Показувати відомості про медіа в діалозі вибору</string>
   <string name="ui_show_media_info_in_system">Показувати пункт «Відомості про медіа» в системному меню «Відкрити за допомогою» та меню надсилання для аналізу файлів з інших додатків.</string>
@@ -2189,8 +2186,6 @@
   <string name="audiobook_language">Мова</string>
   <string name="audiobook_publisher">Видавництво</string>
   <string name="audiobook_published">Опубліковано</string>
-  <string name="audiobook_isbn" translatable="false">ISBN</string>
-  <string name="audiobook_asin" translatable="false">ASIN</string>
   <string name="audiobook_details">Подробиці про книгу</string>
   <string name="audiobook_edit">Редагувати книгу</string>
   <string name="audiobook_search_online_title">Онлайн-пошук обкладинки</string>
@@ -2364,9 +2359,20 @@
   <string name="onboarding_configuration_restoring">Перевірка резервних копій налаштувань…</string>
   <string name="onboarding_configuration_no_backup">Папку налаштовано. Завантаження використовуватимуть Configuration/Downloads.</string>
   <string name="onboarding_configuration_restored">Відновлено налаштування з %1$s. Завантаження використовуватимуть Configuration/Downloads.</string>
+  <plurals name="onboarding_configuration_restored_partial">
+    <item quantity="one">Відновлено налаштування з %1$s. Пропущено %2$d пошкоджений запис. Завантаження використовуватимуть Configuration/Downloads.</item>
+    <item quantity="few">Відновлено налаштування з %1$s. Пропущено %2$d пошкоджені записи. Завантаження використовуватимуть Configuration/Downloads.</item>
+    <item quantity="many">Відновлено налаштування з %1$s. Пропущено %2$d пошкоджених записів. Завантаження використовуватимуть Configuration/Downloads.</item>
+    <item quantity="other">Відновлено налаштування з %1$s. Пропущено %2$d пошкодженого запису. Завантаження використовуватимуть Configuration/Downloads.</item>
+  </plurals>
+  <string name="settings_restore_reverted">Налаштування, відновлені з %1$s, спричинили збій, тому їх скасовано.</string>
   <string name="onboarding_configuration_restore_failed">Не вдалося завершити налаштування папки: %1$s</string>
   <string name="navbar_glow_title">Світіння скла</string>
   <string name="navbar_glow_summary">Підсвічування краю та дотиків панелі навігації</string>
+  <string name="legacy_navigation_bar_title">Класична панель навігації</string>
+  <string name="legacy_navigation_bar_summary">Використовувати класичну панель навігації на всю ширину замість плаваючої панелі.</string>
+  <string name="progressive_navigation_blur_title">Поступове розмиття панелі навігації</string>
+  <string name="progressive_navigation_blur_summary">Використовувати поступове розмиття Haze позаду плавучої панелі навігації. Автоматично вимикається за класичної панелі.</string>
   <string name="pref_seekbar_preview_skip_markers">Позначки пропуску</string>
   <string name="pref_liquid_glass_optics">Оптика</string>
   <string name="pref_liquid_glass_opacity">Непрозорість тла</string>
@@ -2534,4 +2540,233 @@
   <string name="pref_playstore_hidden_dot">Назва папки починається з крапки</string>
   <string name="pref_playstore_hidden_marker">Містить файл %1$s</string>
   <string name="pref_playstore_hidden_access_required">Потрібен доступ до папки</string>
+  <string name="app_icon_create_custom_shortcut">Додати точну власну піктограму на головний екран</string>
+  <string name="pref_experimental_badge">Експериментально</string>
+  <string name="pref_liquid_glass_experimental_note">Ефекти рідкого скла є експериментальними й можуть відрізнятися залежно від пристрою.</string>
+  <string name="pref_hidden_scan_per_mode_summary">Виберіть, чи скануватиме кожен режим головного екрана папки, приховані маркером або з крапкою на початку назви. Після вимкнення їх також буде пропущено під час перегляду. Перемикач угорі вмикає приховані медіафайли в усьому застосунку.</string>
+  <string name="pref_hidden_scan_scoped_summary">Кожен режим перегляду може включати або пропускати папки з крапкою на початку назви чи приховані маркером лише в межах папок, до яких надано доступ в Android. Інші папки залишаються недоступними.</string>
+  <string name="pref_hidden_scan_library">Медіатека</string>
+  <string name="pref_hidden_scan_tree">Дерево</string>
+  <string name="pref_hidden_scan_folders">Папки</string>
+  <string name="pref_hidden_scan_marked">Сканувати папки, приховані маркером</string>
+  <string name="pref_hidden_scan_marked_summary">Папки з файлом .nomedia або іншим маркером із вашого списку</string>
+  <string name="pref_hidden_scan_single_marker_summary">Включати папки з цим маркером у цьому поданні</string>
+  <string name="pref_hidden_scan_dot_summary">Папки, назви яких починаються з крапки, наприклад .Videos</string>
+  <string name="ambient_cinema">Кіно</string>
+  <string name="ambient_echo">Відлуння</string>
+  <string name="ambient_mirror">Дзеркало</string>
+  <string name="ambient_ambilight">Ambilight</string>
+  <string name="ambient_fx_auto_hint">Цей режим повністю автоматичний: параметри зафіксовано для найкращого візуального результату, змінити їх не можна.</string>
+  <string name="app_icon_bg_crimson">Багряний</string>
+  <string name="app_icon_bg_rose">Рожевий</string>
+  <string name="app_icon_bg_peach">Персиковий</string>
+  <string name="app_icon_bg_amber">Бурштиновий</string>
+  <string name="app_icon_bg_lemon">Лимонний</string>
+  <string name="app_icon_bg_lime">Лаймовий</string>
+  <string name="app_icon_bg_forest">Лісовий зелений</string>
+  <string name="app_icon_bg_teal">Бірюзовий</string>
+  <string name="app_icon_bg_sky">Небесно-блакитний</string>
+  <string name="app_icon_bg_cobalt">Кобальтовий</string>
+  <string name="app_icon_bg_plum">Сливовий</string>
+  <string name="app_icon_bg_cocoa">Какао</string>
+  <string name="app_icon_bg_wallpaper">Кольори шпалер</string>
+  <string name="downloads_all">Усі завантаження</string>
+  <string name="downloads_attention_section">Потребує уваги</string>
+  <string name="downloads_search_hint">Пошук завантажень</string>
+  <string name="downloads_no_matches_hint">Спробуйте інший фільтр або пошуковий запит.</string>
+  <string name="search_clear_query">Очистити пошук</string>
+  <string name="libraries_built_together">Створено разом</string>
+  <string name="libraries_count">Бібліотеки · %1$d</string>
+  <string name="libraries_search_hint">Пошук бібліотек або ліцензій</string>
+  <string name="libraries_open_project">Відкрити сайт проєкту</string>
+  <string name="pref_nav_home_title">Головна / Файли</string>
+  <string name="pref_nav_home_summary">Перегляд локальних папок і файлів (завжди доступний)</string>
+  <string name="pref_nav_actions_section">Дії навігації</string>
+  <string name="pref_about_playback_libraries">Бібліотеки відтворення</string>
+  <string name="color_picker_field">Вибір кольору</string>
+  <string name="color_picker_sliders">Повзунки</string>
+  <string name="color_picker_field_description">Насиченість і яскравість. Для точного налаштування скористайтеся повзунками.</string>
+  <string name="color_picker_hue">Відтінок. Для точного налаштування скористайтеся повзунками.</string>
+  <string name="color_picker_selected">Вибраний колір</string>
+  <string name="color_picker_quick_colors">Швидкі кольори</string>
+  <string name="app_icon_custom_background">Власне тло</string>
+  <string name="app_icon_custom_background_hint">Виберіть колір. Android використовує найближчу вбудовану піктограму в списку застосунків. Точний колір можна зберегти як піктограму головного екрана й використовувати в нещодавніх застосунках.</string>
+  <string name="app_icon_custom_logo_hint">Виберіть логотип для накладання на власне тло.</string>
+  <string name="app_icon_shortcut_preview">Попередній перегляд ярлика головного екрана</string>
+  <string name="app_icon_custom_requested">Ваш дизайн</string>
+  <string name="app_icon_custom_native_match">Фактична піктограма лаунчера</string>
+  <string name="app_icon_use_wallpaper_colors">Використати кольори шпалер</string>
+  <string name="app_icon_shortcut_apply">Додати або оновити ярлик</string>
+  <string name="app_icon_shortcut_requested">Запит надіслано. Підтвердьте додавання ярлика в лаунчері.</string>
+  <string name="app_icon_shortcut_updated">Ярлик головного екрана оновлено</string>
+  <string name="app_icon_shortcut_unsupported">Цей лаунчер не підтримує додавання ярликів на головний екран.</string>
+  <string name="app_icon_shortcut_failed">Не вдалося зберегти ярлик. Спробуйте ще раз.</string>
+  <string name="color_picker_wheel">Колірне коло</string>
+  <string name="color_picker_brightness">Яскравість</string>
+    <string name="only_for_video_list">Лише для списку відео</string>
+    <string name="only_for_folder_list">Лише для списку тек</string>
+  <string name="selection_info_title">Відомості про вибране</string>
+  <string name="selection_info_folders">Папки</string>
+  <string name="selection_info_total_size">Загальний розмір</string>
+  <string name="selection_info_total_duration">Загальна тривалість</string>
+  <string name="selection_info_average_duration">Середня тривалість</string>
+  <string name="selection_info_average_size">Середній розмір</string>
+  <string name="selection_info_resolutions">Роздільні здатності</string>
+  <string name="selection_info_codecs">Відеокодеки</string>
+  <string name="selection_info_formats">Формати</string>
+  <string name="selection_info_frame_rates">Частоти кадрів</string>
+  <string name="selection_info_subtitles">Вбудовані субтитри</string>
+  <string name="selection_info_subtitles_value">%1$d / %2$d</string>
+  <string name="selection_info_longest">Найдовший файл</string>
+  <string name="selection_info_largest">Найбільший файл</string>
+  <string name="selection_info_modified">Дата зміни</string>
+  <string name="selection_info_items">Вибрані елементи</string>
+  <string name="selection_info_scanning">Сканування папок (%1$d/%2$d)…</string>
+  <string name="selection_info_scan_failed">Не вдалося завантажити відомості про вибране. Перевірте доступ до папок і спробуйте ще раз.</string>
+  <string name="selection_info_folder_unreadable">Не вдалося прочитати медіафайли в %1$s</string>
+  <string name="selection_info_fps_value">%1$.2f кадр/с</string>
+  <string name="selection_info_metadata_note">Зведення використовує доступні метадані бібліотеки. Натисніть на файл, щоб переглянути всі метадані.</string>
+  <string name="selection_info_missing_metadata">Недоступні метадані</string>
+  <string name="selection_info_missing_metadata_value">Файлів із невідомим розміром: %1$d; із невідомою тривалістю: %2$d. Підсумки й середні значення враховують лише відомі дані.</string>
+  <string name="selection_info_no_media">У вибраних папках не знайдено відтворюваних медіафайлів</string>
+  <string name="selection_info_copy_summary">Копіювати зведення</string>
+  <string name="selection_info_open_media_info">Відкрити повні відомості про медіафайл</string>
+  <plurals name="selection_info_video_count">
+    <item quantity="one">%1$d відео</item>
+    <item quantity="few">%1$d відео</item>
+    <item quantity="many">%1$d відео</item>
+    <item quantity="other">%1$d відео</item>
+  </plurals>
+  <plurals name="selection_info_audio_count">
+    <item quantity="one">%1$d аудіофайл</item>
+    <item quantity="few">%1$d аудіофайли</item>
+    <item quantity="many">%1$d аудіофайлів</item>
+    <item quantity="other">%1$d аудіофайла</item>
+  </plurals>
+  <plurals name="selection_info_file_count">
+    <item quantity="one">%1$d файл</item>
+    <item quantity="few">%1$d файли</item>
+    <item quantity="many">%1$d файлів</item>
+    <item quantity="other">%1$d файла</item>
+  </plurals>
+  <plurals name="selection_info_folder_count">
+    <item quantity="one">%1$d папка</item>
+    <item quantity="few">%1$d папки</item>
+    <item quantity="many">%1$d папок</item>
+    <item quantity="other">%1$d папки</item>
+  </plurals>
+
+  <!-- Audio format indicators -->
+  <string name="audio_quality_hi_res">Без втрат у високій роздільній здатності</string>
+  <string name="audio_quality_lossless">Без втрат</string>
+  <string name="audio_quality_lossy">Із втратами</string>
+  <string name="audio_quality_dsd">Direct Stream Digital</string>
+  <string name="audio_quality_audio">Аудіо</string>
+
+  <!-- Delete action size -->
+  <string name="delete_size_loading">Обчислення…</string>
+  <string name="delete_size_unknown">Розмір невідомий</string>
+  <string name="delete_size_description">Загальний розмір: %1$s</string>
+
+  <!-- Thumbnail information -->
+  <string name="media_info_tab_thumbnail">Мініатюра</string>
+  <string name="thumbnail_preview_description">Кешована мініатюра для %1$s</string>
+  <string name="thumbnail_status_disk">Кешована на диску</string>
+  <string name="thumbnail_status_memory">Кешована в пам’яті</string>
+  <string name="thumbnail_status_unreadable">Не вдалося декодувати кешоване зображення</string>
+  <string name="thumbnail_status_missing">Немає кешованої мініатюри</string>
+  <string name="thumbnail_info_status">Стан кешу</string>
+  <string name="thumbnail_info_generator">Політика створення</string>
+  <string name="thumbnail_info_strategy">Вибір кадру або обкладинки</string>
+  <string name="thumbnail_strategy_artwork">Обкладинка альбому</string>
+  <string name="thumbnail_strategy_android">Кадр, вибраний Android</string>
+  <string name="thumbnail_info_quality">Задана якість</string>
+  <string name="thumbnail_info_maximum">Задане обмеження розміру</string>
+  <string name="thumbnail_maximum_value">До %1$d пікс. на довшій стороні</string>
+  <string name="thumbnail_info_dimensions">Фактичні розміри зображення</string>
+  <string name="thumbnail_dimensions_value">%1$d × %2$d пікс.</string>
+  <string name="thumbnail_info_format">Формат кешованого зображення</string>
+  <string name="thumbnail_info_size">Розмір файлу кешу</string>
+  <string name="thumbnail_info_memory">Є в кеші пам’яті оглядача</string>
+  <string name="thumbnail_info_preview_memory">Пам’ять для попереднього перегляду</string>
+  <string name="thumbnail_info_frame">Задана позиція кадру</string>
+  <string name="thumbnail_percent_value">%1$.1f%%</string>
+  <string name="thumbnail_info_jpeg_setting">Налаштування JPEG-кодувальника застосунку</string>
+  <string name="thumbnail_jpeg_value">%1$d%%</string>
+  <string name="thumbnail_info_modified">Час оновлення файлу кешу</string>
+  <string name="thumbnail_info_cache_path">Шлях до файлу кешу</string>
+  <string name="thumbnail_info_source">URI джерела</string>
+  <string name="thumbnail_yes">Так</string>
+  <string name="thumbnail_no">Ні</string>
+  <string name="thumbnail_refresh">Оновити відомості</string>
+  <string name="thumbnail_generate">Створити мініатюру</string>
+  <string name="thumbnail_quality_note">Попередній перегляд показує фактичне кешоване зображення для поточних налаштувань. Плитки оглядача можуть кешувати зображення, менше за задане обмеження розміру. Відкриття цієї вкладки не створює нового кадру.</string>
+  <string name="thumbnail_inspection_failed">Не вдалося прочитати відомості про мініатюру. Спробуйте оновити.</string>
+  <string name="thumbnail_generation_unavailable">Вибраний генератор не повернув мініатюру для цього файлу.</string>
+
+  <!-- Automatic thumbnail generation -->
+  <string name="pref_appearance_thumbnail_generator_summary">Виберіть Авто, Native або MediaStore для локальних мініатюр та обкладинок пісень</string>
+  <string name="pref_thumbnail_generator_auto">Авто (за замовчуванням)</string>
+  <string name="pref_thumbnail_generator_auto_summary">Спочатку використовується MediaStore; якщо мініатюра або обкладинка пісні недоступна, використовується Native, зокрема у прихованих папках. Зміна режиму очищає кеш мініатюр.</string>
+  <string name="thumbnail_strategy_auto">Спочатку MediaStore, потім Native у разі невдачі</string>
+
+  <string name="update_download_failed">Помилка завантаження. Натисніть «Повторити», щоб продовжити.</string>
+  <string name="update_install_failed">Не вдалося відкрити програму встановлення. Повторіть спробу.</string>
+  <string name="update_install_permission">Дозвольте цій програмі встановлювати оновлення в налаштуваннях Android, а потім знову натисніть «Установити».</string>
+  <string name="update_checking_download">Перевірка завантаженого APK…</string>
+  <string name="update_check_failed">Не вдалося перевірити оновлення. Перевірте з’єднання або повторіть спробу пізніше.</string>
+  <string name="update_auto_install">Автоматично завантажувати й установлювати</string>
+  <string name="update_auto_install_summary">Завантажувати через мережі без тарифікації та встановлювати, коли mpvRx не використовується. Android може запитати підтвердження.</string>
+  <string name="update_download_and_install">Завантажити й установити</string>
+  <string name="update_background_downloading">Завантаження оновлення застосунку…</string>
+  <string name="update_installing">Установлення оновлення…</string>
+  <string name="update_approval_required">Android потрібен ваш дозвіл для завершення встановлення. Натисніть «Підтвердити встановлення».</string>
+  <string name="update_confirm_install">Підтвердити встановлення</string>
+  <string name="update_install_complete">Оновлення встановлено. Натисніть, щоб відкрити mpvRx.</string>
+  <string name="update_download_waiting">Очікування мережі або повторна спроба завантаження…</string>
+  <string name="pref_appearance_thumbnail_generator_title">Спосіб створення мініатюр</string>
+  <string name="pref_thumbnail_generator_native">Пряме видобування</string>
+  <string name="pref_thumbnail_generator_mediastore">MediaStore</string>
+  <string name="pref_thumbnail_generator_native_summary">Видобувати мініатюри локальних відео й обкладинки пісень із медіафайлу. Перемикання очищує кеш мініатюр.</string>
+  <string name="pref_thumbnail_generator_mediastore_summary">Використовувати мініатюри й обкладинки альбомів Android для локальних відео та пісень. Перемикання очищує кеш мініатюр; якщо зображення недоступне, відображається заповнювач. Для мережевих переглядів використовується пряме видобування.</string>
+  <string name="ui_update_channels_summary">Стабільні версії, нічні попередні версії або експериментальні збірки CI.</string>
+  <string name="update_experimental_build_format">Експ. r%1$d</string>
+  <string name="tv_nav_settings">Налаштування</string>
+  <string name="tv_player_play_pause">Відтворити або призупинити</string>
+  <string name="tv_player_subtitles">Субтитри</string>
+  <string name="tv_player_audio">Аудіодоріжки</string>
+  <string name="tv_player_chapters">Розділи</string>
+  <string name="tv_player_speed">Швидкість відтворення</string>
+  <string name="tv_player_aspect_ratio">Співвідношення сторін</string>
+  <string name="tv_player_quality">Якість відео</string>
+  <string name="tv_player_seek_bar">Смуга перемотування</string>
+  <string name="pref_audio_animated_artwork_title">Анімовані обкладинки альбомів</string>
+  <string name="pref_audio_animated_artwork_summary">Завантажувати відповідні анімовані обкладинки з Apple Music у повноекранному музичному програвачі. Назва пісні, виконавець і альбом надсилаються до Apple; використовуються мобільні дані. Типово вимкнено. Якщо анімація недоступна, залишається поточна обкладинка. Щоб побачити її, перемкніться з візуалізатора на обкладинку.</string>
+  <string name="jellyfin_featured">Рекомендоване</string>
+  <string name="jellyfin_series">Серіал</string>
+  <string name="jellyfin_movie">Фільм</string>
+  <string name="jellyfin_browse_series">Переглянути серіал</string>
+  <string name="jellyfin_details">Відомості</string>
+  <string name="jellyfin_trailer">Трейлер</string>
+  <string name="jellyfin_open_trailer_error">Немає застосунку для відкриття трейлерів.</string>
+  <string name="jellyfin_libraries">Медіатеки</string>
+  <string name="jellyfin_continue_watching">Продовжити перегляд</string>
+  <string name="jellyfin_latest_movies">Нові фільми</string>
+  <string name="jellyfin_latest_series">Нові серіали</string>
+  <string name="jellyfin_top_picks">Рекомендації для вас</string>
+  <string name="jellyfin_top_picks_subtitle">Популярне на вашому сервері</string>
+  <string name="jellyfin_music_subtitle">Альбоми й треки</string>
+  <string name="jellyfin_connect_message">Дивіться медіатеку з апаратним декодуванням mpvRx, без перекодування.</string>
+  <string name="jellyfin_empty_folder_message">У цій теці поки немає медіафайлів.</string>
+  <string name="jellyfin_no_results_message">Нічого не знайдено за запитом «%1$s». Спробуйте іншу назву чи категорію.</string>
+  <string name="jellyfin_filter_all">Усі</string>
+  <string name="jellyfin_play_random">Випадкове відтворення</string>
+  <string name="jellyfin_switch_server">Змінити сервер</string>
+  <string name="jellyfin_error_title">Не вдалося підключитися до сервера</string>
+  <string name="jellyfin_auth_error_message">Сеанс завершився або цей обліковий запис не має доступу. Увійдіть знову, щоб продовжити.</string>
+  <string name="jellyfin_reauthenticate">Увійти знову</string>
+  <string name="jellyfin_cast">У ролях</string>
+  <string name="jellyfin_more_like_this">Схоже</string>
+  <string name="jellyfin_watched">Переглянуто</string>
+  <string name="jellyfin_search_hint">Пошук фільмів, серіалів і епізодів…</string>
 </resources>

@@ -225,8 +225,8 @@ object FoldersPreferencesScreen : Screen {
         initialUri?.let { putExtra(DocumentsContract.EXTRA_INITIAL_URI, it) }
       })
     }
-    val settingsHighlight =
-      rememberSettingsSearchHighlight(FoldersPreferencesScreen, MaterialTheme.colorScheme.primary)
+    val (settingsListState, settingsHighlight) =
+      rememberSettingsSearchList(FoldersPreferencesScreen, MaterialTheme.colorScheme.primary)
 
     val allBlacklistedFolders = remember(blacklistedVideoFolders, blacklistedAudioFolders) {
       (blacklistedVideoFolders + blacklistedAudioFolders).toList().sorted()
@@ -280,6 +280,7 @@ object FoldersPreferencesScreen : Screen {
       // One scrolling viewport: media settings, blacklisted folders and Add all travel
       // together. A weighted inner list used to leave only two blacklist rows visible.
       LazyColumn(
+        state = settingsListState,
         modifier =
           Modifier
             .fillMaxSize()
@@ -312,7 +313,7 @@ object FoldersPreferencesScreen : Screen {
             // SAF scanning remains restricted to folders explicitly selected by the user.
             PlayStoreHiddenFolderCard(
               enabled = includeNoMediaFolders,
-              shape = rememberConnectedShape(0, 2, ConnectedLayout.Vertical),
+              shape = rememberConnectedShape(0, 6, ConnectedLayout.Vertical),
               onEnabledChange = { enabled ->
                 preferences.includeNoMediaFolders.set(enabled)
                 onScanPreferenceChanged()
@@ -326,7 +327,7 @@ object FoldersPreferencesScreen : Screen {
             enabled = includeNoMediaFolders,
             shape = rememberConnectedShape(
               if (BuildConfig.SCOPED_STORAGE_ONLY) 1 else 0,
-              if (BuildConfig.SCOPED_STORAGE_ONLY) 2 else 1,
+              if (BuildConfig.SCOPED_STORAGE_ONLY) 6 else 5,
               ConnectedLayout.Vertical,
             ),
             showMasterToggle = !BuildConfig.SCOPED_STORAGE_ONLY,
@@ -853,7 +854,7 @@ private fun CompactHiddenScanOption(
   Card(
     modifier = Modifier.fillMaxWidth(),
     shape = shape,
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
   ) {
     Row(
       modifier = Modifier
@@ -913,17 +914,20 @@ private fun HiddenScanSettingsCard(
     }
   }
 
-  Card(
+  // Each setting draws its own connected surface; avoid one oversized parent card.
+  val offset = if (BuildConfig.SCOPED_STORAGE_ONLY) 1 else 0
+  val groupSize = 5 + offset
+  Column(
     modifier = modifier.fillMaxWidth(),
-    shape = shape,
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    verticalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing),
   ) {
-    Column(
-      modifier = Modifier.fillMaxWidth().padding(12.dp),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = shape,
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
       Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -937,12 +941,18 @@ private fun HiddenScanSettingsCard(
           IconSwitch(checked = enabled, onCheckedChange = onEnabledChange)
         }
       }
-
+    }
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = rememberConnectedShape(offset + 1, groupSize, ConnectedLayout.Vertical),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+      Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
       Text(
         text = stringResource(R.string.pref_hidden_scan_enable_in),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+        modifier = Modifier.padding(bottom = 8.dp),
       )
       Row(
         modifier = Modifier.fillMaxWidth(),
@@ -973,28 +983,30 @@ private fun HiddenScanSettingsCard(
           shape = rememberConnectedShape(2, 3, ConnectedLayout.Horizontal),
         )
       }
-
-      Column(verticalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing)) {
-        CompactHiddenScanOption(
-          title = stringResource(R.string.pref_folders_hidden_markers_title),
-          checked = markerEnabled,
-          enabled = enabled,
-          onCheckedChange = onMarkerChanged,
-          shape = rememberConnectedShape(0, 2, ConnectedLayout.Vertical),
-        )
-        CompactHiddenScanOption(
-          title = stringResource(R.string.pref_hidden_scan_dot),
-          checked = dotEnabled,
-          enabled = enabled,
-          onCheckedChange = onDotChanged,
-          shape = rememberConnectedShape(1, 2, ConnectedLayout.Vertical),
-        )
       }
-
-      // Individual markers are small selectable chips instead of a third switch row per marker.
+    }
+    CompactHiddenScanOption(
+      title = stringResource(R.string.pref_folders_hidden_markers_title),
+      checked = markerEnabled,
+      enabled = enabled,
+      onCheckedChange = onMarkerChanged,
+      shape = rememberConnectedShape(offset + 2, groupSize, ConnectedLayout.Vertical),
+    )
+    CompactHiddenScanOption(
+      title = stringResource(R.string.pref_hidden_scan_dot),
+      checked = dotEnabled,
+      enabled = enabled,
+      onCheckedChange = onDotChanged,
+      shape = rememberConnectedShape(offset + 3, groupSize, ConnectedLayout.Vertical),
+    )
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = rememberConnectedShape(offset + 4, groupSize, ConnectedLayout.Vertical),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
       LazyRow(
         state = markerListState,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
