@@ -1221,12 +1221,24 @@ internal fun ExpressivePillNavigationBar(
 
 @Composable
 internal fun mainNavigationLabel(tab: MainScreen.MainTab): String =
-  if (tab == MainScreen.MainTab.CLOUD) "WebDAV" else stringResource(when (tab) {    MainScreen.MainTab.HOME -> R.string.ui_home
-    MainScreen.MainTab.MUSIC -> R.string.ui_music
-    MainScreen.MainTab.NETWORK -> R.string.ui_network
-    MainScreen.MainTab.JELLYFIN -> R.string.ui_jellyfin
-    MainScreen.MainTab.PROFILE -> R.string.ui_profile
-  })
+  if (tab == MainScreen.MainTab.CLOUD) {
+    // The cloud tab is presented as WebDAV in this fork.
+    "WebDAV"
+  } else {
+    stringResource(
+      when (tab) {
+        MainScreen.MainTab.HOME -> R.string.ui_home
+        MainScreen.MainTab.MUSIC -> R.string.ui_music
+        MainScreen.MainTab.RECENTS -> R.string.ui_recents
+        MainScreen.MainTab.PLAYLISTS -> R.string.ui_playlists
+        MainScreen.MainTab.SNAPSHOTS -> R.string.ui_snapshots
+        MainScreen.MainTab.NETWORK -> R.string.ui_network
+        MainScreen.MainTab.CLOUD -> R.string.ui_network
+        MainScreen.MainTab.JELLYFIN -> R.string.ui_jellyfin
+        MainScreen.MainTab.PROFILE -> R.string.ui_profile
+      },
+    )
+  }
 
 @Composable
 private fun LegacyMaterialNavigationBar(

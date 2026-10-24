@@ -445,7 +445,7 @@ object NetworkStreamingScreen : Screen {
               onClick = { showAddMediaDialog = true },
               icon = { Icon(Icons.RoundedFilled.Add, contentDescription = null) },
               text = { Text(androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_add_media)) },
-              modifier = Modifier.padding(bottom = bottomOverlayClearance),
+              modifier = Modifier.padding(bottom = app.gyrolet.mpvrx.ui.browser.fab.FabPlacement.scaffoldBottomPadding()),
             )
           }
         }

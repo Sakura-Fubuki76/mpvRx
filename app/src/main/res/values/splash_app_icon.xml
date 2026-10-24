@@ -242,4 +242,8 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_black_animated</item>
         <item name="windowSplashScreenBackground">@color/icon_bg_wallpaper</item>
     </style>
+    <style name="Theme.mpvrx.Splash.SageCharacter">
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
+        <item name="windowSplashScreenBackground">@color/icon_bg_sage</item>
+    </style>
 </resources>

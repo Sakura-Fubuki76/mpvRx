@@ -644,14 +644,6 @@ class FileSystemBrowserViewModel(
         if (path == STORAGE_ROOTS_MARKER) {
           Log.d(TAG, "Loading storage roots")
           _breadcrumbs.value = emptyList()
-          val roots = MediaFileRepository.getStorageRoots(getApplication(), forceFileSystemCheck)
-          ensureActive()
-          _unsortedItems.value = roots
-          loadedDirectoryPath = path
-          reconcileItemChanges(path, roots, scanRevision)
-          _videoFilesWithPlayback.value = emptyMap()
-          _newVideoIds.value = emptySet()
-          _watchedVideoIds.value = emptySet()
           // Volumes appear first with no counts, then each one republishes as its recursive count
           // finishes. Waiting for every count before showing the list means a storage picker that
           // stays blank on a large library, and the counts are decoration on this screen.

@@ -160,7 +160,7 @@ class NetworkBrowserViewModel(
     metadataObserver?.cancel()
     metadataProbe?.cancel()
     val generation = ++loadGeneration
-    directoryJob = viewModelScope.launch {
+    val request = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
       _isLoading.value = true
       _error.value = null
 
@@ -234,6 +234,7 @@ class NetworkBrowserViewModel(
         if (generation == loadGeneration) _isLoading.value = false
       }
     }
+    directoryJob = request
     pendingListing = request
     request.start()
   }
@@ -371,9 +372,9 @@ class NetworkBrowserViewModel(
   private fun playVideoInternal(
     connection: NetworkConnection,
     file: NetworkFile,
-    episodeQueue: List<NetworkFile>? = null,
+    explicitQueue: List<NetworkFile>? = null,
   ) {
-    val playableFiles = episodeQueue ?: currentDirectoryPlayableFiles(file)
+    val playableFiles = explicitQueue?.takeIf { it.isNotEmpty() } ?: currentDirectoryPlayableFiles(file)
     val playlistIndex =
       playableFiles
         .indexOfFirst { it.path == file.path }
@@ -411,7 +412,6 @@ class NetworkBrowserViewModel(
     val fallbackMimeType = if (file.isPlayableNetworkAudio()) "audio/*" else "video/*"
     intent.setDataAndType(uri, file.mimeType ?: fallbackMimeType)
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.launch", connectionId, file.path)
     application.startActivity(intent)
   }
 

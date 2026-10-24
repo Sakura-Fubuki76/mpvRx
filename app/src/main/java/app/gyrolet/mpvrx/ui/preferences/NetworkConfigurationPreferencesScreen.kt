@@ -50,6 +50,8 @@ object NetworkConfigurationPreferencesScreen : Screen {
     val backStack = LocalBackStack.current
     val preferences = koinInject<AdvancedPreferences>()
     val enableP2pStreaming by preferences.enableP2pStreaming.collectAsState()
+    val tmdbToken by preferences.tmdbArtworkToken.collectAsState()
+    val tmdbApiKey by preferences.tmdbArtworkApiKey.collectAsState()
 
     Scaffold(
       topBar = {
@@ -85,10 +87,13 @@ object NetworkConfigurationPreferencesScreen : Screen {
         ) {
           PreferenceSectionHeader(title = stringResource(R.string.tmdb_artwork_title))
           PreferenceCard {
-            for ((value, preference, label) in listOf(
-              Triple(tmdbToken, preferences.tmdbArtworkToken, R.string.tmdb_artwork_token),
-              Triple(tmdbApiKey, preferences.tmdbArtworkApiKey, R.string.tmdb_artwork_key),
-            )) TextFieldPreference(
+            val tmdbFields:
+              List<Triple<String, app.gyrolet.mpvrx.preferences.preference.Preference<String>, Int>> =
+              listOf(
+                Triple(tmdbToken, preferences.tmdbArtworkToken, R.string.tmdb_artwork_token),
+                Triple(tmdbApiKey, preferences.tmdbArtworkApiKey, R.string.tmdb_artwork_key),
+              )
+            for ((value, preference, label) in tmdbFields) TextFieldPreference(
               value = value, onValueChange = { preference.set(it.trim()) }, textToValue = { it },
               title = { Text(stringResource(label)) },
               summary = { Text(stringResource(if (value.isBlank()) R.string.tmdb_artwork_unset else R.string.tmdb_artwork_saved)) },

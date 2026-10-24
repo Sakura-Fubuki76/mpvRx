@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
@@ -173,4 +174,19 @@ internal fun SelectionIndicator(
   ) {
     Icon(Icons.RoundedFilled.Check, null, tint = MaterialTheme.colorScheme.onTertiary)
   }
+}
+
+/**
+ * Exact proportional grid cell height. LazyVerticalGrid measures children separately, so a plain
+ * heightIn(min) leaves shorter cells incomplete once the metadata row wraps.
+ */
+internal fun Modifier.mediaGridTileHeight(
+  aspect: Float,
+  footer: androidx.compose.ui.unit.Dp,
+): Modifier = layout { measurable, constraints ->
+  val artworkWidth = (constraints.maxWidth - 8.dp.roundToPx()).coerceAtLeast(0)
+  val target = (artworkWidth / aspect).toInt() + footer.roundToPx()
+  val height = target.coerceIn(constraints.minHeight, constraints.maxHeight)
+  val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+  layout(placeable.width, height) { placeable.placeRelative(0, 0) }
 }

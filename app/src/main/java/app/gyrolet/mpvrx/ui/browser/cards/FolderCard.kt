@@ -161,6 +161,7 @@ fun FolderCard(
   newVideoCount: Int = 0,
   customChipContent: @Composable (() -> Unit)? = null,
   isGridMode: Boolean = false,
+  deferThumbnailLoading: Boolean = false,
   gridRowMinHeight: Dp = 0.dp,
   onGridContentHeightChanged: ((Int) -> Unit)? = null,
   isPinned: Boolean = false,

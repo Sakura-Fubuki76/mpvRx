@@ -366,13 +366,13 @@ private fun rememberAudioPresentationMetadata(
   val repository = koinInject<app.gyrolet.mpvrx.domain.thumbnail.ThumbnailRepository>()
   val revision by repository.cacheRevision.collectAsState()
   val generator by koinInject<BrowserPreferences>().thumbnailGenerator.collectAsState()
-  AudioPresentationMetadataCache.invalidate(revision)
+  AudioPresentationMetadataCache.invalidate(revision.toLong())
   var metadata by remember(pathOrUri, artworkUri, generator, revision) {
     mutableStateOf<AudioPresentationMetadata?>(null)
   }
   LaunchedEffect(pathOrUri, artworkUri, generator, revision) {
     metadata = if (pathOrUri.isNullOrBlank()) null else {
-      AudioPresentationMetadataCache.resolve(context, pathOrUri, artworkUri, repository, generator, revision)
+      AudioPresentationMetadataCache.resolve(context, pathOrUri, artworkUri, repository, generator, revision.toLong())
     }
   }
   return metadata

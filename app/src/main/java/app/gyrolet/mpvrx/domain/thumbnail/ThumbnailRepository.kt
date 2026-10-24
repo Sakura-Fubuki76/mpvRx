@@ -26,6 +26,7 @@ import app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia
 import app.gyrolet.mpvrx.domain.cloud.CloudKeyframeExtractor
 import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.preferences.ThumbnailGenerator
 import app.gyrolet.mpvrx.preferences.ThumbnailMode
 import app.gyrolet.mpvrx.repository.NetworkRepository
 import app.gyrolet.mpvrx.ui.player.resolveLocalPath
@@ -287,6 +288,67 @@ class ThumbnailRepository(
       memoryCache.get(key)
     }
   }
+
+  /** Device default used when the parallelism setting is Auto. */
+  internal val automaticParallelism: Int
+    get() = localGenerationParallelism
+
+  /** Discard the in-flight work for a folder; the next visible folder re-schedules it. */
+  fun pauseFolderThumbnailGeneration(folderId: String) {
+    folderJobs.remove(folderId)?.cancel()
+  }
+
+  /** Publish the new generator only after the old cache has been removed. */
+  suspend fun setThumbnailGenerator(generator: ThumbnailGenerator) =
+    withContext(Dispatchers.IO) {
+      if (browserPreferences.thumbnailGenerator.get() != generator) {
+        clearThumbnailCache()
+        browserPreferences.thumbnailGenerator.set(generator)
+      }
+    }
+
+  /**
+   * Read-only snapshot of what is cached for [video]. Never starts frame extraction, so the
+   * information screen cannot accidentally trigger work for an item the user is only inspecting.
+   */
+  internal suspend fun inspectThumbnail(video: Video): ThumbnailInspection =
+    withContext(Dispatchers.IO) {
+      val network = isNetworkUrl(video.path)
+      val memoryBitmap =
+        synchronized(memoryCache) {
+          memoryCache
+            .snapshot()
+            .entries
+            .firstOrNull { (key, bitmap) -> !bitmap.isRecycled && key.startsWith(videoBaseKey(video)) }
+            ?.value
+        }
+      val file = if (network) null else File(localDiskDir, keyToFileName(diskCacheKey(video))).takeIf { it.isFile }
+      val bounds =
+        file?.let { cached ->
+          BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { options ->
+            runCatching { BitmapFactory.decodeFile(cached.absolutePath, options) }
+          }
+        }
+      val preview =
+        file?.let { cached -> runCatching { BitmapFactory.decodeFile(cached.absolutePath) }.getOrNull() }
+          ?: memoryBitmap
+      ThumbnailInspection(
+        cacheVideo = video,
+        preview = preview,
+        generator = if (network) ThumbnailGenerator.Native else browserPreferences.thumbnailGenerator.get(),
+        mode = browserPreferences.thumbnailMode.get(),
+        quality = browserPreferences.thumbnailQuality.get(),
+        framePositionPercent = browserPreferences.thumbnailFramePosition.get(),
+        width = bounds?.outWidth?.takeIf { it > 0 } ?: preview?.width,
+        height = bounds?.outHeight?.takeIf { it > 0 } ?: preview?.height,
+        mimeType = bounds?.outMimeType,
+        filePath = file?.absolutePath,
+        fileSizeBytes = file?.length(),
+        modifiedAtMillis = file?.lastModified()?.takeIf { it > 0 },
+        cachedInMemory = memoryBitmap != null,
+        jpegEncoderQuality = THUMBNAIL_JPEG_QUALITY,
+      )
+    }
 
   fun clearThumbnailCache() {
     folderJobs.values.forEach { it.cancel() }

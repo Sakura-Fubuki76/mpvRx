@@ -233,6 +233,9 @@ fun VideoCard(
   useFolderNameStyle: Boolean = false,
   allowThumbnailGeneration: Boolean = true,
   allowThumbnailLoading: Boolean = true,
+  deferThumbnailLoading: Boolean = false,
+  thumbnailCacheRevision: Int = 0,
+  gridFooterHeight: androidx.compose.ui.unit.Dp = 0.dp,
   uiConfig: VideoCardUiConfig? = null,
   onSwipeAction: ((Video, Boolean, VideoSwipeAction) -> Unit)? = null,
   /** Source badge shown ahead of the metadata chips, e.g. "Local". Null renders nothing. */
