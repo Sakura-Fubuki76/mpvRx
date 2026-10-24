@@ -366,6 +366,5 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             release-assets/*.apk
-            release-assets/*.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
