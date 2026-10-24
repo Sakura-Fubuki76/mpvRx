@@ -1722,19 +1722,24 @@ is PlayerUpdates.FrameInfo -> {
             }
           }
 
+          // Snapshot the starting visibility: scrubbing hides controls, but must not make an
+          // already visible timeline disappear. The preference applies to gestures that started
+          // with hidden controls. Scrub previews follow this flag: a popup is its own window, so
+          // without it a gesture could leave a floating sprite on an otherwise empty screen.
+          val seekbarVisible =
+            (controlsShown ||
+              if (isHorizontalSeekActive) {
+                // Portrait videos deliberately do not surface the timeline for an on-screen swipe;
+                // the scrub preview there was never reliable and the feature is not wanted.
+                !isPortrait &&
+                  (showSeekbarDuringHorizontalSeeking ||
+                    (currentPlayerUpdate as PlayerUpdates.HorizontalSeek).startedWithControlsShown)
+              } else {
+                seekBarShown
+              }) &&
+              !areControlsLocked
           AnimatedVisibility(
-            visible =
-              // Snapshot the starting visibility: scrubbing hides controls, but must not
-              // make an already visible timeline disappear. The preference applies to
-              // gestures that started with hidden controls.
-              (controlsShown ||
-                if (isHorizontalSeekActive) {
-                  showSeekbarDuringHorizontalSeeking ||
-                    (currentPlayerUpdate as PlayerUpdates.HorizontalSeek).startedWithControlsShown
-                } else {
-                  seekBarShown
-                }) &&
-                !areControlsLocked,
+            visible = seekbarVisible,
             enter = buildControlsEnterV(controlsAnimStyle, reduceMotion, enterMs) { it },
             exit = buildControlsExitV(controlsAnimStyle, reduceMotion, exitMs) { it },
             modifier =

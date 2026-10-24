@@ -2890,6 +2890,26 @@ val isBrightnessSliderShown = MutableStateFlow(false)
     applyEqualizerMpvFilters()
     if (isAudioOnly.value) loadLyricsForCurrentTrack()
     scheduleAutoCropAnalysis()
+    schedulePlaybackDiagnostics()
+  }
+
+  private var playbackDiagnosticsJob: kotlinx.coroutines.Job? = null
+
+  /**
+   * Records which decoder/backend the file actually ended up on. hwdec settles a few hundred
+   * milliseconds after load, and auto-crop temporarily drops to software, so sample twice.
+   */
+  private fun schedulePlaybackDiagnostics() {
+    playbackDiagnosticsJob?.cancel()
+    val item = PlaybackSession.state.value.currentItem
+    playbackDiagnosticsJob =
+      viewModelScope.launch {
+        PlaybackDiagnostics.logSnapshot("load", item)
+        delay(1_500)
+        PlaybackDiagnostics.logSnapshot("load+1.5s", item)
+        delay(3_000)
+        PlaybackDiagnostics.logSnapshot("load+4.5s", item)
+      }
   }
 
   fun updateTorrentState(state: TorrentStreamingState) {

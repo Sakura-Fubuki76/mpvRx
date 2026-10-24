@@ -56,6 +56,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -63,6 +64,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -664,15 +667,50 @@ private fun SeekbarContent(
     }
 
   val previewDensity = androidx.compose.ui.platform.LocalDensity.current
+  val spriteRepository =
+    org.koin.compose.koinInject<app.gyrolet.mpvrx.domain.cloud.CloudSpriteRepository>()
+  val previewSheet by spriteRepository.current.collectAsState()
+  var previewAnchorWidth by remember { mutableIntStateOf(0) }
+  var previewAnchorPosition by remember { mutableStateOf(androidx.compose.ui.unit.IntOffset.Zero) }
   Box(
-    modifier = modifier.then(seekKeyModifier),
+    modifier =
+      modifier
+        .then(seekKeyModifier)
+        .onSizeChanged { previewAnchorWidth = it.width }
+        .onGloballyPositioned { coordinates ->
+          val position = coordinates.positionInWindow()
+          previewAnchorPosition =
+            androidx.compose.ui.unit.IntOffset(position.x.toInt(), position.y.toInt())
+        },
     contentAlignment = Alignment.Center,
   ) {
-    if (isVisuallyInteracting && !showWavyVisualizer) {
+    // Portrait gesture seeking has no timeline, so it must not leave a floating sprite either.
+    val suppressGesturePreview = previewPosition != null && isPortrait
+    if (isVisuallyInteracting && !showWavyVisualizer && previewAnchorWidth > 0 && !suppressGesturePreview) {
       val gap = with(previewDensity) { 16.dp.roundToPx() }
       val fraction = if (safeDuration > 0) safeThumbPosition / safeDuration else 0f
+      val (previewWidthDp, previewHeightDp) =
+        SeekPreviewPlacement.cellSizeDp(
+          previewSheet?.metadata?.cellWidth ?: 0,
+          previewSheet?.metadata?.cellHeight ?: 0,
+        )
+      val previewWidthPx = with(previewDensity) { previewWidthDp.dp.roundToPx() }
+      val previewHeightPx = with(previewDensity) { previewHeightDp.dp.roundToPx() }
+      // A separate window is required (the preview is taller than the bar and would be clipped by
+      // the animated controls container), but its position comes from the bar's measured window
+      // coordinates rather than Compose's anchor rectangle, which is not reliable on the frame the
+      // popup is created.
+      val previewOrigin =
+        SeekPreviewPlacement.origin(
+          anchorPosition = previewAnchorPosition,
+          anchorWidthPx = previewAnchorWidth,
+          fraction = fraction,
+          previewWidthPx = previewWidthPx,
+          previewHeightPx = previewHeightPx,
+          gapPx = gap,
+        )
       androidx.compose.ui.window.Popup(
-        popupPositionProvider = remember(gap, fraction) { SeekPreviewPositionProvider(gap, fraction) },
+        popupPositionProvider = remember(previewOrigin) { FixedPreviewPositionProvider(previewOrigin) },
         properties = androidx.compose.ui.window.PopupProperties(focusable = false),
       ) { CloudSeekPreview(safeThumbPosition) }
     }

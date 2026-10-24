@@ -472,6 +472,12 @@ class MPVView(
       if (hardwareDecoderCodecs.isNotEmpty()) {
         PlaybackSession.setOptionString("hwdec-codecs", hardwareDecoderCodecs.joinToString(","))
       }
+      android.util.Log.i(
+        "MpvDiag",
+        "stage=options vo=${backend.vo} gpu-api=${backend.gpuApi} gpu-context=${backend.gpuContext} " +
+          "hwdec=${if (hardwareDecoderCodecs.isEmpty()) "no" else hwdecMode} " +
+          "hwdec-codecs=${hardwareDecoderCodecs.joinToString(",")} reason=${backend.reason}",
+      )
     }
 
     // These were forced on between the last known-good build (e3b1de8) and the first build

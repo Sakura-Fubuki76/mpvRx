@@ -25,8 +25,9 @@ internal fun CloudSeekPreview(position: Float, modifier: Modifier = Modifier) {
   val index = meta.frameIndex((position * 1000).toLong())
   if (!meta.hasFrame((position * 1000).toLong())) return
   val image = remember(current.bitmap) { current.bitmap.asImageBitmap() }
-  val displayScale = 160f / maxOf(meta.cellWidth, meta.cellHeight)
-  Canvas(modifier.clip(MaterialTheme.shapes.small).requiredSize((meta.cellWidth * displayScale).dp, (meta.cellHeight * displayScale).dp)) {
+  val (previewWidthDp, previewHeightDp) =
+    SeekPreviewPlacement.cellSizeDp(meta.cellWidth, meta.cellHeight)
+  Canvas(modifier.clip(MaterialTheme.shapes.small).requiredSize(previewWidthDp.dp, previewHeightDp.dp)) {
       drawImage(image, srcOffset = IntOffset(index % meta.columns * meta.cellWidth, index / meta.columns * meta.cellHeight),
         srcSize = IntSize(meta.cellWidth, meta.cellHeight), dstSize = IntSize(size.width.toInt(), size.height.toInt()))
   }
