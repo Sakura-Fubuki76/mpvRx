@@ -2,7 +2,13 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
-## Unreleased
+## 3.0.1 - Upstream 3.0.1 Merge
+
+- Synced upstream 3.0.1 (86 commits): persistent status HUD with live preview, two-finger speed swipe, configurable seekbar and playback-button placement, Android TV style volume and brightness levels, Jellyfin Material 3 Expressive browsing, an in-app music player, container rotation and crash reporting fixes, and mpvlib 1.1.4.
+- The merge follows "upstream first, then the fork's delta": settings backup, folder scanning and the thumbnail pipeline now sit on upstream's structure, with the cloud/WebDAV thumbnail pipeline, progressive folder scan results and anime mapping restore re-applied on top.
+- Fixed seek previews detaching from the seekbar, MediaCodec failures being swallowed (H.264 High 10 videos now fall back to mpv software decoding for their sprite sheets), and the desktop launcher entry lost in the manifest merge.
+- Added a first-party "Show network thumbnails" switch (enabled by default); the upstream experimental path stays opt-in.
+
 ## 2.7.5 - Artwork, Playback and Cloud Compatibility
 
 - Added new character artwork for adaptive launcher icons, themed icons and transparent system/app splash screens. Launcher shapes are supplied by the device.
