@@ -72,7 +72,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
@@ -82,6 +81,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import app.gyrolet.mpvrx.ui.browser.components.rememberVideoSwipeActions
 import app.gyrolet.mpvrx.ui.browser.components.rememberSwipePlaybackInfo
 import app.gyrolet.mpvrx.domain.archive.ZipArchiveMedia
@@ -121,6 +121,7 @@ import app.gyrolet.mpvrx.ui.browser.states.EmptyState
 import app.gyrolet.mpvrx.ui.browser.states.LoadingState
 import app.gyrolet.mpvrx.ui.browser.states.PermissionDeniedState
 import app.gyrolet.mpvrx.ui.components.InlineSearchBar
+import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.theme.AppMotion
@@ -129,6 +130,8 @@ import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.popUpTo
 import app.gyrolet.mpvrx.ui.utils.calculateResponsiveGridSpans
 import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.ui.tv.focusableWhen
+import app.gyrolet.mpvrx.ui.tv.isTelevision
 import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.MediaUtils
 import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
@@ -621,6 +624,8 @@ fun FileSystemBrowserScreen(path: String? = null) {
             onSettingsClick = {
               backstack.navigateTo(app.gyrolet.mpvrx.ui.preferences.PreferencesScreen)
             },
+            onTitleDoubleTap = { backstack.navigateTo(SecureFolderGateScreen) },
+            onTitleLongPress = { backstack.navigateTo(SecureFolderGateScreen) },
             isSingleSelection = selectionManager.isSingleSelection,
             onInfoClick = showSelectionInfo,
             onShareClick = {
@@ -648,8 +653,8 @@ fun FileSystemBrowserScreen(path: String? = null) {
                     foldersPreferences.addBlacklistedFolders(paths, app.gyrolet.mpvrx.preferences.BlacklistScope.VIDEO_ONLY)
                     selectionManager.clear()
                     viewModel.refresh()
-                    android.widget.Toast
-                      .makeText(context, foldersBlacklistedMessage, android.widget.Toast.LENGTH_SHORT)
+                    app.gyrolet.mpvrx.ui.components.AppToast
+                      .makeText(context, foldersBlacklistedMessage, app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT)
                       .show()
                   }
                 }
@@ -701,7 +706,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
                       .animateFloatingActionButton(
                         visible = isFabShouldBeVisible,
                         alignment = Alignment.BottomEnd,
-                      ),
+                      ).focusableWhen(isFabShouldBeVisible),
                   checked = isFabExpanded.value && !quickPlayFabDirect,
                   onCheckedChange = {
                     if (quickPlayFabDirect) {
@@ -743,7 +748,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
               FloatingActionButtonMenuItem(
                 onClick = {
                   isFabExpanded.value = false
-                  filePicker.launch(arrayOf("video/*"))
+                  filePicker.launch(FileTypeUtils.videoPickerMimeTypes())
                 },
                 icon = { Icon(Icons.RoundedFilled.FileOpen, contentDescription = null) },
                 text = {
@@ -1990,7 +1995,13 @@ private fun FileSystemSearchContent(
     }
 
   // Keep high-frequency scroll reads out of composition in large search result sets.
-  LaunchedEffect(isGridMode, listState, gridState) {
+  // On TV the FAB stays put: every D-pad step scrolls the list, and a hidden FAB still takes focus.
+  val isTelevision = isTelevision()
+  LaunchedEffect(isGridMode, listState, gridState, isTelevision) {
+    if (isTelevision) {
+      isFabVisible.value = true
+      return@LaunchedEffect
+    }
     var previousIndex = if (isGridMode) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
     var previousOffset =
       if (isGridMode) gridState.firstVisibleItemScrollOffset else listState.firstVisibleItemScrollOffset
@@ -2259,4 +2270,3 @@ private fun FileSystemSearchContent(
     }
   }
 }
-

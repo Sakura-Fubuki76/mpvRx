@@ -20,6 +20,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -276,6 +277,8 @@ private fun ThemeTransitionContent(content: @Composable () -> Unit) {
 @Composable
 fun MpvrxTheme(
   transitionState: ThemeTransitionState = rememberThemeTransitionState(),
+  // The isolated :crash process registers only PreferencesModule, not domainModule.
+  // It must not try to resolve GoogleFontsRepository while drawing the recovery UI.
   loadDownloadedFonts: Boolean = true,
   content: @Composable () -> Unit,
 ) {
@@ -384,7 +387,9 @@ fun MpvrxTheme(
         motionScheme = MotionScheme.expressive(),
         content = {
           ProvideTvFocusRipple {
-            app.gyrolet.mpvrx.ui.utils.ProvideAppHaptics(content)
+            app.gyrolet.mpvrx.ui.utils.ProvideAppHaptics {
+              app.gyrolet.mpvrx.ui.components.AppToastHost(content)
+            }
           }
         },
       )
@@ -464,6 +469,7 @@ private const val RIPPLE_HOVERED_ALPHA = .4f
 private const val RIPPLE_PRESSED_ALPHA = .6f
 
 // The default ~10% focus tint is invisible from couch distance; rows from libraries rely on it.
+// D-pad scrolling also keeps the focused item away from the screen edges on every TV.
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("DEPRECATION")
 @Composable
@@ -474,6 +480,7 @@ private fun ProvideTvFocusRipple(content: @Composable () -> Unit) {
     return
   }
   CompositionLocalProvider(
+    LocalBringIntoViewSpec provides app.gyrolet.mpvrx.ui.tv.TvBringIntoViewSpec,
     LocalRippleConfiguration provides
       RippleConfiguration(
         color = MaterialTheme.colorScheme.primary,

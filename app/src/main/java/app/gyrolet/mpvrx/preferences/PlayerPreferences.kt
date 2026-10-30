@@ -106,7 +106,7 @@ class PlayerPreferences(
   val showSystemStatusBar = preferenceStore.getBoolean("show_system_status_bar")
   val showSystemNavigationBar = preferenceStore.getBoolean("show_system_navigation_bar")
   val safeAreaWindow = preferenceStore.getBoolean("safe_area_window", false)
-  val reduceMotion = preferenceStore.getBoolean("reduce_motion", true)
+  val reduceMotion = preferenceStore.getBoolean("reduce_motion", false)
   val playerTimeToDisappear = preferenceStore.getInt("player_time_to_disappear", 4000)
   val clockFormat = preferenceStore.getEnum("player_clock_format", PlayerClockFormat.SYSTEM)
 
@@ -167,7 +167,7 @@ class PlayerPreferences(
   val enableVideoMiniPlayer = DependentBooleanPreference(storedEnableVideoMiniPlayer, videoBackgroundPlayback)
 
   val keepScreenOnWhenPaused = preferenceStore.getBoolean("keep_screen_on_when_paused", false)
-  val externalDisplayProjection = preferenceStore.getBoolean("external_display_projection", true)
+  val externalDisplayProjection = preferenceStore.getBoolean("external_display_projection", false)
   val autoplayAfterScreenUnlock = preferenceStore.getBoolean("autoplay_after_screen_unlock", false)
   val enableMediaInfoIntent = preferenceStore.getBoolean("enable_mediainfo_intent", true)
   val enableWebStreamLinkIntents = preferenceStore.getBoolean("enable_web_stream_link_intents", true)

@@ -12,10 +12,10 @@ package app.gyrolet.mpvrx.preferences
 import app.gyrolet.mpvrx.preferences.preference.Preference
 import app.gyrolet.mpvrx.preferences.preference.PreferenceStore
 import app.gyrolet.mpvrx.preferences.preference.getEnum
-import kotlinx.coroutines.flow.Flow
 import app.gyrolet.mpvrx.ui.browser.music.MusicSortField
 import app.gyrolet.mpvrx.ui.browser.music.MusicSortOrder
 import app.gyrolet.mpvrx.ui.browser.music.MusicViewMode
+import app.gyrolet.mpvrx.utils.device.DeviceFormFactor
 
 /**
  * Preferences for the video browser (folder and video lists)
@@ -46,6 +46,8 @@ class BrowserPreferences(
   val animeFields = AnimeFieldPreferences(preferenceStore)
   val animeSortType = preferenceStore.getEnum("anime_sort_type", app.gyrolet.mpvrx.domain.cloud.AnimeSortType.Title)
   val animeSortOrder = preferenceStore.getEnum("anime_sort_order", SortOrder.Ascending)
+  // TV boxes decode thumbnails slowly enough to stall D-pad navigation, so TV starts without them.
+  private val television = DeviceFormFactor.isTelevision(context)
 
   // Folder sorting preferences
   val folderSortType = preferenceStore.getEnum("folder_sort_type", FolderSortType.Title)
@@ -85,12 +87,10 @@ class BrowserPreferences(
       defaultLayoutMode = MediaLayoutMode.GRID,
       inheritGlobalLayout = false,
     )
-  val recentView = BrowserPageViewPreferences(preferenceStore, "recent")
+  val recentView = BrowserPageViewPreferences(preferenceStore, "recent", thumbnailsByDefault = !television)
   val playlistView = BrowserPageViewPreferences(preferenceStore, "playlist_library", folderDefaults = true)
-  val playlistItemView = BrowserPageViewPreferences(preferenceStore, "playlist_item")
-  val showPlaylistLocation = preferenceStore.getBoolean("show_playlist_location", true)
-  val showPlaylistCategory = preferenceStore.getBoolean("show_playlist_category", true)
-  val showPlaylistStreamDetails = preferenceStore.getBoolean("show_playlist_stream_details", true)
+  val playlistItemView =
+    BrowserPageViewPreferences(preferenceStore, "playlist_item", thumbnailsByDefault = !television)
 
   // Music view mode and sorting preferences
   val musicViewMode = preferenceStore.getEnum("music_view_mode", MusicViewMode.GRID)
@@ -130,11 +130,12 @@ class BrowserPreferences(
   val videoGridColumnsDualPaneLandscape = preferenceStore.getInt("video_grid_columns_dual_pane_landscape", 0)
 
   val showExtensionField = preferenceStore.getBoolean("show_extension_field", false)
-  val showDurationField = preferenceStore.getBoolean("show_duration_field", true)
+  // Off by default: files without a MediaStore duration are probed one by one to fill it.
+  val showDurationField = preferenceStore.getBoolean("show_duration_field", false)
 
   // Visibility preferences for video card chips
   val cloudStorageSelection = preferenceStore.getString("cloud_storage_selection", "")
-  val showVideoThumbnails = preferenceStore.getBoolean("show_video_thumbnails", true)
+  val showVideoThumbnails = preferenceStore.getBoolean("show_video_thumbnails", !television)
   val thumbnailGenerator = preferenceStore.getEnum("thumbnail_generator", ThumbnailGenerator.Auto)
   val thumbnailMode = preferenceStore.getEnum("thumbnail_mode", ThumbnailMode.Smart)
   val thumbnailQuality = preferenceStore.getEnum("thumbnail_quality", ThumbnailQuality.High)
@@ -142,7 +143,7 @@ class BrowserPreferences(
 
   /** Thumbnails generated at the same time; 0 means Auto (a safe value for this device). */
   val thumbnailParallelism = preferenceStore.getInt("thumbnail_parallelism", 0)
-  val showSizeChip = preferenceStore.getBoolean("show_size_chip", true)
+  val showSizeChip = preferenceStore.getBoolean("show_size_chip", false)
 
   // Metadata-dependent chips (disabled by default for better performance)
   val showResolutionChip = preferenceStore.getBoolean("show_resolution_chip", false)
@@ -164,9 +165,9 @@ class BrowserPreferences(
 
   // Metadata-dependent chips (disabled by default for better performance)
   val showTotalDurationChip = preferenceStore.getBoolean("show_total_duration_chip", false)
-  val showTotalSizeChip = preferenceStore.getBoolean("show_total_size_chip", true)
+  val showTotalSizeChip = preferenceStore.getBoolean("show_total_size_chip", false)
   val showDateChip = preferenceStore.getBoolean("show_date_chip", false)
-  val showFolderPath = preferenceStore.getBoolean("show_folder_path", true)
+  val showFolderPath = preferenceStore.getBoolean("show_folder_path", false)
   val showFolderThumbnails = preferenceStore.getBoolean("show_folder_thumbnails", false)
 
   // Auto-scroll to last played media preference (like MX Player)
@@ -178,9 +179,6 @@ class BrowserPreferences(
   val includeImagesInBrowser = preferenceStore.getBoolean("include_images_in_browser", false)
   val minimumAudioDurationSeconds = preferenceStore.getInt("minimum_audio_duration_seconds", 0)
   val mediaLibraryType = preferenceStore.getEnum("media_library_type", MediaLibraryType.Video)
-
-  // Set by onboarding when the user opts into the quick tour; cleared once the tour ran.
-  val demoTutorialPending = preferenceStore.getBoolean("demo_tutorial_pending", false)
 
   // True once the user finished (or skipped through) the first-run permission flow.
   val onboardingCompleted = preferenceStore.getBoolean(ONBOARDING_COMPLETED_KEY, false)
@@ -206,6 +204,7 @@ class BrowserPageViewPreferences internal constructor(
    * opt out so their grid default is not dragged to the list by an unrelated setting.
    */
   inheritGlobalLayout: Boolean = true,
+  thumbnailsByDefault: Boolean = !folderDefaults,
 ) {
   val layoutMode =
     if (inheritGlobalLayout) {
@@ -228,14 +227,14 @@ class BrowserPageViewPreferences internal constructor(
   )
   val showThumbnails = boolean(
     "show_thumbnails",
-    !folderDefaults,
+    thumbnailsByDefault,
     if (folderDefaults) "show_folder_thumbnails" else "show_video_thumbnails",
   )
   val unlimitedNameLines = boolean("unlimited_name_lines", false)
   val centerGridTitles = boolean("center_grid_titles", true)
   val showExtensionField = boolean("show_extension_field", false)
-  val showDurationField = boolean("show_duration_field", true)
-  val showSizeChip = boolean("show_size_chip", true)
+  val showDurationField = boolean("show_duration_field", false)
+  val showSizeChip = boolean("show_size_chip", false)
   val showResolutionChip = boolean("show_resolution_chip", false)
   val showFramerateInResolution = boolean("show_framerate_in_resolution", false)
   val showSubtitleIndicator = boolean("show_subtitle_indicator", false)

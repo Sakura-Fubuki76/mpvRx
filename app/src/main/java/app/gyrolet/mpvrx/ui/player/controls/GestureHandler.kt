@@ -11,6 +11,7 @@ package app.gyrolet.mpvrx.ui.player.controls
 
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 
+import android.view.ViewConfiguration as AndroidViewConfiguration
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,8 @@ import app.gyrolet.mpvrx.ui.player.getTrackSelectionId
 import app.gyrolet.mpvrx.ui.player.isSecondarySubtitleActive
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
@@ -68,6 +71,14 @@ import kotlin.math.sqrt
 
 private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f)
 private const val SPEED_HOLD_INTENT_THRESHOLD_MS = 250L
+private const val MULTI_TAP_SEEK_TIMEOUT_MS = 1_000L
+private const val CENTER_SINGLE_TAP_VERTICAL_EDGE_FRACTION = 0.35f
+
+private data class TapSeekFeedback(
+  val region: String,
+  val generation: Long,
+  val lastSeekUptimeMs: Long,
+)
 
 private enum class GestureOwner {
   SPEED,
@@ -124,6 +135,9 @@ fun GestureHandler(
   val gesturePreferences = koinInject<GesturePreferences>()
   val subtitlesPreferences = koinInject<SubtitlesPreferences>()
   val context = LocalContext.current
+  val mediaGeneration by remember {
+    PlaybackSession.state.map { it.generation }.distinctUntilChanged()
+  }.collectAsState(initial = PlaybackSession.state.value.generation)
   val currentOnLockedTouchSideChanged by rememberUpdatedState(onLockedTouchSideChanged)
   val currentOnSeekRipple by rememberUpdatedState(onSeekRipple)
   val subtitleTracks by viewModel.subtitleTracks.collectAsState(emptyList())
@@ -155,16 +169,19 @@ fun GestureHandler(
 
   val panelShown by viewModel.panelShown.collectAsState()
   val anyPanelShown = panelShown != Panels.None || externalPanelShown
-  val allowGesturesInPanels by playerPreferences.allowGesturesInPanels.collectAsState()
+  val allowPanelGesturesPreference by playerPreferences.allowGesturesInPanels.collectAsState()
+  val settingsPanelShown = panelShown == Panels.PlayerSettings
+  val allowGesturesInPanels = allowPanelGesturesPreference && !settingsPanelShown
   val paused by PlaybackSession.propBoolean["pause"].collectAsState()
   val duration by PlaybackSession.propInt["duration"].collectAsState()
   val position by PlaybackSession.propInt["time-pos"].collectAsState()
   val playbackSpeed by PlaybackSession.propFloat["speed"].collectAsState()
-  val controlsShown by viewModel.controlsShown.collectAsState()
   val areControlsLocked by viewModel.areControlsLocked.collectAsState()
   val seekState by viewModel.seekState.collectAsState()
   val seekAmount = seekState.amount
+  val useSingleTapForLeft by gesturePreferences.useSingleTapForLeft.collectAsState()
   val useSingleTapForCenter by gesturePreferences.useSingleTapForCenter.collectAsState()
+  val useSingleTapForRight by gesturePreferences.useSingleTapForRight.collectAsState()
   val doubleTapSeekAreaWidth by gesturePreferences.doubleTapSeekAreaWidth.collectAsState()
   val centerVerticalSubtitlePositionGesture by gesturePreferences.centerVerticalSubtitlePositionGesture.collectAsState()
   val enableCenterSwipeUpGesture by gesturePreferences.enableCenterSwipeUpGesture.collectAsState()
@@ -175,19 +192,10 @@ fun GestureHandler(
   val isSwipeSubtitlesInverted by gesturePreferences.swipeSubtitlesInvertDirection.collectAsState()
   val twoFingerSpeedSwipe by gesturePreferences.twoFingerSpeedSwipe.collectAsState()
   var speedSwipeFeedbackJob by remember { mutableStateOf<Job?>(null) }
-  var isDoubleTapSeeking by remember { mutableStateOf(false) }
-  var lastSeekRegion by remember { mutableStateOf<String?>(null) }
-  var lastSeekTime by remember { mutableStateOf<Long?>(null) }
-  LaunchedEffect(seekAmount) {
-    delay(800)
-    isDoubleTapSeeking = false
-    lastSeekRegion = null
-    lastSeekTime = null
-    viewModel.updateSeekAmount(0)
-    viewModel.updateSeekText(null)
-    delay(100)
-    viewModel.hideSeekBar()
-  }
+  var isTapSeeking by remember { mutableStateOf(false) }
+  var seekFeedbackBurst by remember { mutableStateOf<TapSeekFeedback?>(null) }
+  var seekFeedbackRevision by remember { mutableStateOf(0L) }
+  var tapInProgress by remember { mutableStateOf(false) }
   val multipleSpeedGesture by playerPreferences.holdForMultipleSpeed.collectAsState()
   val brightnessGesture by playerPreferences.brightnessGesture.collectAsState()
   val volumeGesture by playerPreferences.volumeGesture.collectAsState()
@@ -265,241 +273,245 @@ fun GestureHandler(
       )
     }
 
-  // Isolated double-tap state tracking
+  // Isolated tap state tracking
   var tapCount by remember { mutableStateOf(0) }
   var lastTapTime by remember { mutableStateOf(0L) }
+  var lastTapGeneration by remember { mutableStateOf(-1L) }
   var lastTapPosition by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
   var lastTapRegion by remember { mutableStateOf<String?>(null) }
   var pendingSingleTapRegion by remember { mutableStateOf<String?>(null) }
-  var pendingSingleTapPosition by remember { mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
-  val doubleTapTimeout = 250L
-  val multiTapContinueWindow = 650L
+  val doubleTapTimeout = AndroidViewConfiguration.getDoubleTapTimeout().toLong()
+  val doubleTapSlop = remember(context) {
+    AndroidViewConfiguration.get(context).scaledDoubleTapSlop.toFloat()
+  }
 
-  // Auto-reset tap count on timeout and execute single tap if no double tap detected
-  LaunchedEffect(tapCount, longPressTriggeredDuringTouch) {
+  fun toggleControls() {
+    if (anyPanelShown && !allowGesturesInPanels) {
+      if (viewModel.panelShown.value != Panels.None) viewModel.panelShown.update { Panels.None }
+      if (externalPanelShown) onDismissExternalPanel()
+    }
+    if (viewModel.areControlsLocked.value || !viewModel.controlsShown.value) {
+      viewModel.showControls()
+    } else {
+      viewModel.hideControls()
+    }
+  }
+
+  LaunchedEffect(
+    mediaGeneration,
+    areControlsLocked,
+    doubleTapSeekAreaWidth,
+    externalPanelShown,
+    panelShown,
+    useSingleTapForLeft,
+    useSingleTapForCenter,
+    useSingleTapForRight,
+  ) {
+    tapCount = 0
+    lastTapRegion = null
+    pendingSingleTapRegion = null
+    isTapSeeking = false
+    seekFeedbackBurst = null
+    viewModel.updateSeekText(null)
+    viewModel.hideSeekBar()
+    viewModel.updateSeekAmount(0)
+  }
+
+  // Regions in double-tap mode wait before treating a lone tap as a controls toggle.
+  LaunchedEffect(tapCount, lastTapTime, longPressTriggeredDuringTouch, tapInProgress) {
+    if (tapInProgress) return@LaunchedEffect
     if (tapCount == 1 && pendingSingleTapRegion != null) {
       delay(doubleTapTimeout)
-      // Timeout occurred, execute single tap action only if not double-tap seeking and not triggered by long press
-      if (tapCount == 1 && pendingSingleTapRegion != null && !isDoubleTapSeeking && !longPressTriggeredDuringTouch) {
-        val region = pendingSingleTapRegion!!
-        val isCenterTap = region == "center"
-        if (useSingleTapForCenter && isCenterTap) {
-          viewModel.handleCenterSingleTap()
-        } else {
-          if (anyPanelShown && !allowGesturesInPanels) {
-            if (panelShown != Panels.None) viewModel.panelShown.update { Panels.None }
-            if (externalPanelShown) onDismissExternalPanel()
-          }
-          if (areControlsLocked) {
-            viewModel.showControls()
-          } else if (controlsShown) {
-            viewModel.hideControls()
-          } else {
-            viewModel.showControls()
-          }
-        }
+      if (tapCount == 1 && pendingSingleTapRegion != null && !isTapSeeking && !longPressTriggeredDuringTouch) {
+        toggleControls()
         pendingSingleTapRegion = null
-        pendingSingleTapPosition = null
       }
       tapCount = 0
       lastTapRegion = null
-      if (!isDoubleTapSeeking) {
+      if (!isTapSeeking) {
+        seekFeedbackBurst = null
         viewModel.updateSeekAmount(0)
       }
     }
   }
 
-  // Reset double-tap seek state when seeking stops
-  LaunchedEffect(seekAmount) {
-    if (seekAmount == 0) {
-      delay(100)
-      isDoubleTapSeeking = false
-      lastSeekRegion = null
-      lastSeekTime = null
+  // Each accepted seek restarts feedback, even if the amount is unchanged at a media boundary.
+  // Never expire the tap sequence while a finger or another gesture is still active.
+  LaunchedEffect(seekAmount, seekFeedbackRevision, tapInProgress, gestureOwner) {
+    if ((seekAmount == 0 && !isTapSeeking) || tapInProgress || gestureOwner != null) {
+      return@LaunchedEffect
     }
+    delay(MULTI_TAP_SEEK_TIMEOUT_MS)
+    isTapSeeking = false
+    seekFeedbackBurst = null
+    viewModel.updateSeekText(null)
+    viewModel.hideSeekBar()
+    // This changes the effect's key, so clear it last instead of cancelling pending cleanup.
+    viewModel.updateSeekAmount(0)
   }
 
   Box(
     modifier =
       modifier
         .fillMaxSize()
-        .pointerInput(areControlsLocked, doubleTapSeekAreaWidth, gesturePreferences, isVerticalGestureActive) {
-          // Isolated double-tap detection that doesn't interfere with other gestures
-          if (isVerticalGestureActive) return@pointerInput
+        .pointerInput(
+          areControlsLocked,
+          doubleTapSeekAreaWidth,
+          useSingleTapForLeft,
+          useSingleTapForCenter,
+          useSingleTapForRight,
+          gesturePreferences,
+          isVerticalGestureActive,
+          mediaGeneration,
+          externalPanelShown,
+          anyPanelShown,
+          allowGesturesInPanels,
+          settingsPanelShown,
+        ) {
+          // Tap detection is isolated from drags and multi-finger gestures.
+          if (isVerticalGestureActive || settingsPanelShown) return@pointerInput
           awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             beginGesture(down.id.value, down.uptimeMillis)
             val downPosition = down.position
-            val downTime = System.currentTimeMillis()
+            val downTime = down.uptimeMillis
+            val generation = PlaybackSession.state.value.generation
+            tapInProgress = true
+            var completedTap = false
 
-            if (areControlsLocked) {
-              currentOnLockedTouchSideChanged(downPosition.x < size.width / 2f)
-            }
+            try {
+              if (areControlsLocked) {
+                currentOnLockedTouchSideChanged(downPosition.x < size.width / 2f)
+              }
 
-            // Calculate regions
-            val seekAreaFraction = (doubleTapSeekAreaWidth / 100f).coerceIn(0.01f, 0.5f)
-            val leftBoundary = size.width * seekAreaFraction
-            val rightBoundary = size.width * (1f - seekAreaFraction)
-            val region =
-              when {
+              val seekAreaFraction = (doubleTapSeekAreaWidth / 100f).coerceIn(0.01f, 0.5f)
+              val leftBoundary = size.width * seekAreaFraction
+              val rightBoundary = size.width * (1f - seekAreaFraction)
+              val region = when {
                 downPosition.x > rightBoundary -> "right"
                 downPosition.x < leftBoundary -> "left"
                 else -> "center"
               }
-            // Normalize within the physical seek region so feedback stays under the finger
-            // in either orientation, including right-to-left interface languages.
-            val seekRegionWidth = (size.width * seekAreaFraction).coerceAtLeast(1f)
-            val seekRegionStart = if (region == "right") rightBoundary else 0f
-            val ripplePosition = Offset(
-              x = ((downPosition.x - seekRegionStart) / seekRegionWidth).coerceIn(0f, 1f),
-              y = (downPosition.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f),
-            )
-
-            // Track for potential drag
-            var isDrag = false
-            var wasConsumedByTapGesture = false
-            var wasOwnedByAnotherGesture = gestureOwner != null
-
-            do {
-              val event = awaitPointerEvent()
-              val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
-              if (gestureOwner != null) wasOwnedByAnotherGesture = true
-
-              // Check if this is a drag (not a tap)
-              val distance =
-                sqrt(
-                  (pointer.position.x - downPosition.x) * (pointer.position.x - downPosition.x) +
-                    (pointer.position.y - downPosition.y) * (pointer.position.y - downPosition.y),
-                )
-
-              if (distance > 10f) {
-                isDrag = true
-                // Don't consume - let other pointer inputs handle drag gestures
+              val singleTapEnabled = when (region) {
+                "left" -> useSingleTapForLeft
+                "right" -> useSingleTapForRight
+                else -> useSingleTapForCenter
               }
+              // Only center single taps use the middle 30% of the player's height.
+              // The existing horizontal regions give the center 30% width by default.
+              val isSingleTapActionArea = region != "center" ||
+                (downPosition.y >= size.height * CENTER_SINGLE_TAP_VERTICAL_EDGE_FRACTION &&
+                  downPosition.y < size.height * (1f - CENTER_SINGLE_TAP_VERTICAL_EDGE_FRACTION))
+              val seekRegionWidth = (size.width * seekAreaFraction).coerceAtLeast(1f)
+              val seekRegionStart = if (region == "right") rightBoundary else 0f
+              val ripplePosition = Offset(
+                x = ((downPosition.x - seekRegionStart) / seekRegionWidth).coerceIn(0f, 1f),
+                y = (downPosition.y / size.height.coerceAtLeast(1)).coerceIn(0f, 1f),
+              )
+              var isDrag = false
+              var wasOwnedByAnotherGesture = gestureOwner != null
 
-              if (!pointer.pressed) {
-                // Pointer lifted - this is a tap if it wasn't a drag
-                if (
-                  !isDrag &&
-                  !wasConsumedByTapGesture &&
-                  !wasOwnedByAnotherGesture &&
-                  !gestureClaimedForPointer
-                ) {
-                  val timeSinceLastTap = downTime - lastTapTime
-                  val positionChange =
-                    sqrt(
-                      (downPosition.x - lastTapPosition.x) * (downPosition.x - lastTapPosition.x) +
-                        (downPosition.y - lastTapPosition.y) * (downPosition.y - lastTapPosition.y),
-                    )
+              do {
+                val event = awaitPointerEvent()
+                val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (gestureOwner != null || event.changes.count { it.pressed } > 1) {
+                  wasOwnedByAnotherGesture = true
+                }
+                val distance = (pointer.position - downPosition).getDistance()
+                if (distance > viewConfiguration.touchSlop) isDrag = true
 
-                  // Check if this is a continuation of multi-tap sequence
-                  val isMultiTapContinuation =
-                    lastTapRegion == region &&
-                      timeSinceLastTap < multiTapContinueWindow &&
-                      positionChange < 100f &&
-                      tapCount >= 2 &&
-                      isDoubleTapSeeking
-
-                  // Check if this is a valid double-tap
-                  val isDoubleTap =
-                    timeSinceLastTap < doubleTapTimeout &&
-                      lastTapRegion == region &&
-                      positionChange < 100f &&
-                      tapCount == 1
-
-                  if (isDoubleTap && !areControlsLocked) {
-                    // Valid double-tap detected
-                    tapCount = 2
-                    lastTapTime = downTime
-                    lastTapPosition = downPosition
-                    pendingSingleTapRegion = null // Cancel pending single tap
-                    pendingSingleTapPosition = null
-                    wasConsumedByTapGesture = true
-                    pointer.consume()
-
-                    when (region) {
-                      "right" -> {
-                        val rightGesture = gesturePreferences.rightSingleActionGesture.get()
-                        if (rightGesture == SingleActionGesture.Seek) {
-                          isDoubleTapSeeking = true
-                          lastSeekTime = System.currentTimeMillis()
-                          if (lastSeekRegion != null && lastSeekRegion != "right") {
-                            viewModel.updateSeekAmount(0)
-                          }
-                          lastSeekRegion = "right"
-                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = true))
-                        }
-                        viewModel.handleRightDoubleTap()
-                      }
-                      "left" -> {
-                        val leftGesture = gesturePreferences.leftSingleActionGesture.get()
-                        if (leftGesture == SingleActionGesture.Seek) {
-                          isDoubleTapSeeking = true
-                          lastSeekTime = System.currentTimeMillis()
-                          if (lastSeekRegion != null && lastSeekRegion != "left") {
-                            viewModel.updateSeekAmount(0)
-                          }
-                          lastSeekRegion = "left"
-                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = false))
-                        }
-                        viewModel.handleLeftDoubleTap()
-                      }
-                      "center" -> {
-                        viewModel.handleCenterDoubleTap()
-                      }
+                if (!pointer.pressed) {
+                  completedTap = true
+                  if (!isDrag && !wasOwnedByAnotherGesture && !gestureClaimedForPointer) {
+                    // A tap after a volume/brightness swipe should restore access to controls
+                    // immediately, without waiting for the overlay timer or firing a tap action.
+                    if (viewModel.dismissAdjustmentOverlays()) {
+                      tapCount = 0
+                      isTapSeeking = false
+                      seekFeedbackBurst = null
+                      lastTapRegion = null
+                      pendingSingleTapRegion = null
+                      viewModel.showControls()
+                      pointer.consume()
+                      break
                     }
-                  } else if (isMultiTapContinuation && isDoubleTapSeeking) {
-                    // Continue multi-tap seeking
-                    tapCount++
-                    wasConsumedByTapGesture = true
-                    pointer.consume()
-                    lastSeekTime = System.currentTimeMillis()
-                    lastTapTime = downTime
-                    lastTapPosition = downPosition
-
-                    when (region) {
-                      "right" -> {
-                        val rightGesture = gesturePreferences.rightSingleActionGesture.get()
-                        if (rightGesture == SingleActionGesture.Seek) {
-                          if (lastSeekRegion != null && lastSeekRegion != "right") {
-                            viewModel.updateSeekAmount(0)
-                          }
-                          lastSeekRegion = "right"
-                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = true))
-                        }
-                        viewModel.handleRightDoubleTap()
-                      }
-                      "left" -> {
-                        val leftGesture = gesturePreferences.leftSingleActionGesture.get()
-                        if (leftGesture == SingleActionGesture.Seek) {
-                          if (lastSeekRegion != null && lastSeekRegion != "left") {
-                            viewModel.updateSeekAmount(0)
-                          }
-                          lastSeekRegion = "left"
-                          currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = false))
-                        }
-                        viewModel.handleLeftDoubleTap()
-                      }
-                      "center" -> {
-                        viewModel.handleCenterDoubleTap()
-                      }
+                    // Platform double-tap timing measures first UP to second DOWN. Input uptime
+                    // remains accurate when a busy frame delays delivery of a pointer event.
+                    val gap = downTime - lastTapTime
+                    val sameMediaAndRegion = lastTapGeneration == generation && lastTapRegion == region
+                    val gesture = when (region) {
+                      "left" -> gesturePreferences.leftSingleActionGesture.get()
+                      "right" -> gesturePreferences.rightSingleActionGesture.get()
+                      else -> gesturePreferences.centerSingleActionGesture.get()
                     }
-                  } else if (tapCount == 0 || timeSinceLastTap >= doubleTapTimeout) {
-                    // Single tap or timed out - start new tap sequence
-                    tapCount = 1
-                    lastTapTime = downTime
+                    val isSeekRegion = region != "center" && gesture == SingleActionGesture.Seek
+                    val tapActionsAllowed = !areControlsLocked && (!anyPanelShown || allowGesturesInPanels)
+                    val isSingleTap = tapActionsAllowed && singleTapEnabled && isSingleTapActionArea
+                    val isDoubleTap = tapActionsAllowed && !singleTapEnabled && tapCount == 1 && sameMediaAndRegion &&
+                      gap in 0L..doubleTapTimeout &&
+                      (downPosition - lastTapPosition).getDistance() <= doubleTapSlop
+
+                    if (singleTapEnabled && (!isSingleTapActionArea || !tapActionsAllowed)) {
+                      tapCount = 0
+                      pendingSingleTapRegion = null
+                      isTapSeeking = false
+                      seekFeedbackBurst = null
+                      viewModel.updateSeekAmount(0)
+                      toggleControls()
+                    } else if (isSingleTap || isDoubleTap) {
+                      tapCount = 0
+                      pendingSingleTapRegion = null
+                      isTapSeeking = isSeekRegion
+                      if (isSeekRegion) {
+                        val previousFeedback = seekFeedbackBurst
+                        val continuesFeedback = previousFeedback != null && previousFeedback.region == region &&
+                          previousFeedback.generation == generation &&
+                          downTime - previousFeedback.lastSeekUptimeMs in 0L..MULTI_TAP_SEEK_TIMEOUT_MS
+                        if (!continuesFeedback) viewModel.updateSeekAmount(0)
+                        seekFeedbackBurst = TapSeekFeedback(region, generation, pointer.uptimeMillis)
+                        seekFeedbackRevision++
+                        currentOnSeekRipple(SeekRippleRequest(ripplePosition, isForward = region == "right"))
+                      } else {
+                        seekFeedbackBurst = null
+                        viewModel.updateSeekAmount(0)
+                      }
+                      when (region) {
+                        "right" -> viewModel.handleRightTap()
+                        "left" -> viewModel.handleLeftTap()
+                        else -> viewModel.handleCenterTap()
+                      }
+                    } else {
+                      // A moved, opposite-side or expired tap starts a new candidate. Never drop
+                      // a rapid tap just because it failed the previous sequence's conditions.
+                      tapCount = 1
+                      isTapSeeking = false
+                      pendingSingleTapRegion = region
+                    }
+                    lastTapTime = pointer.uptimeMillis
                     lastTapPosition = downPosition
                     lastTapRegion = region
-                    pendingSingleTapRegion = region
-                    pendingSingleTapPosition = downPosition
-                    wasConsumedByTapGesture = true
+                    lastTapGeneration = generation
                     pointer.consume()
-                    // Don't execute single tap action yet - wait to see if second tap comes
+                  } else {
+                    tapCount = 0
+                    isTapSeeking = false
+                    seekFeedbackBurst = null
+                    lastTapRegion = null
+                    pendingSingleTapRegion = null
                   }
+                  break
                 }
-                break
+              } while (event.changes.any { it.pressed })
+            } finally {
+              if (!completedTap) {
+                tapCount = 0
+                isTapSeeking = false
+                seekFeedbackBurst = null
+                lastTapRegion = null
+                pendingSingleTapRegion = null
               }
-            } while (event.changes.any { it.pressed })
+              tapInProgress = false
+            }
           }
         }.pointerInput(
           areControlsLocked,
@@ -1455,8 +1467,7 @@ fun GestureHandler(
                         val clampedPosition = targetPosition.coerceAtMost(maxDuration)
                         pendingSeekPosition = clampedPosition
 
-                        // Keep the live preview bounded and keyframe-only while scrubbing. The final
-                        // exact seek is issued once on gesture release below.
+                        // Stream targets update feedback only; local decoder previews stay bounded.
                         viewModel.seekPreviewTo(clampedPosition)
 
                         // Format and display time position updates
@@ -1506,12 +1517,12 @@ fun GestureHandler(
 
             // Apply the final seek when gesture ends
             if (hasStartedSeeking) {
-              // Finalize with the last bounded preview target; seekTo cancels any pending preview.
-              pendingSeekPosition?.let { viewModel.seekTo(it.toInt()) }
-
-              // Only the scrub seek paused playback; a subtitle swipe must leave it as it was.
-              if (gestureType == "horizontal_seek" && !wasPlayerAlreadyPaused) {
-                viewModel.unpause()
+              pendingSeekPosition?.let {
+                if (gestureType == "horizontal_seek") {
+                  viewModel.seekFromScrub(it, resumePlayback = !wasPlayerAlreadyPaused)
+                } else {
+                  viewModel.seekTo(it.toInt())
+                }
               }
 
               // Briefly retain the timeline; an older gesture must not clear a newer one.

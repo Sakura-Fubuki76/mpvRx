@@ -11,7 +11,7 @@ package app.gyrolet.mpvrx.ui.player.controls
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -445,6 +445,7 @@ fun PlayerSheets(
 
     Sheets.More -> {
       val anime4KUiState by viewModel.anime4KUiState.composeCollectAsState()
+      val isAudioOnly by viewModel.isAudioOnly.composeCollectAsState()
       // Read here: an active sleep timer ticks every second, and collecting it in PlayerControls
       // re-ran the entire controls tree on each tick even while this sheet was closed.
       val sleepTimerTimeRemaining by viewModel.remainingTime.composeCollectAsState()
@@ -454,6 +455,8 @@ fun PlayerSheets(
         onDismissRequest = onDismissRequest,
         onEnterFiltersPanel = { onOpenPanel(Panels.VideoFilters) },
         onEnterLuaScriptsPanel = { onOpenPanel(Panels.LuaScripts) },
+        onEnterSettingsPanel =
+          if (!isTelevision && !isAudioOnly) ({ onOpenPanel(Panels.PlayerSettings) }) else null,
         onEnterEqualizerSheet = { onShowSheet(Sheets.Equalizer) },
         anime4KUiState = anime4KUiState,
         onAnime4KModeSelected = viewModel::selectAnime4KMode,

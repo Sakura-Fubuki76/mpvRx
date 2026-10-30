@@ -56,10 +56,8 @@
   <string name="pref_appearance_ui_scale_restart_now">今すぐ再起動</string>
   <string name="pref_appearance_unlimited_name_lines_title">名前をすべて表示</string>
   <string name="pref_appearance_unlimited_name_lines_summary">フォルダー名と動画名を省略せずにすべて表示します</string>
-  <string name="pref_appearance_hide_player_buttons_background_title">プレーヤーボタンの背景を非表示</string>
   <string name="pref_appearance_force_dark_player_buttons_background_title">プレーヤーボタンの背景を常に暗くする</string>
   <string name="pref_appearance_force_dark_player_buttons_background_summary">ライト、ダーク、自動の各テーマでプレーヤー操作ボタンの背景を暗く保ちます</string>
-  <string name="pref_appearance_hide_player_buttons_background_summary">プレーヤーのすべての操作ボタンの背景を非表示にします</string>
   <string name="pref_appearance_category_file_browser">ファイルブラウザー</string>
   <string name="pref_appearance_category_thumbnails">サムネイル</string>
   <string name="pref_appearance_category_navigation">ナビゲーション</string>
@@ -162,7 +160,7 @@
   <string name="pref_player_show_chapter_indicators_title">シークバーにチャプター表示を追加</string>
   <string name="pref_player_show_chapter_indicators_summary">シークバー上でチャプターを視覚的に区切ります。</string>
   <!-- Gesture Preferences Hardcoded -->
-  <string name="pref_double_tap_seek_area_width_title">ダブルタップシーク領域の幅</string>
+  <string name="pref_double_tap_seek_area_width_title">タップジェスチャー領域の幅</string>
   <!-- Advanced Preferences Hardcoded -->
   <string name="pref_export_settings_title">設定をエクスポート</string>
   <string name="pref_export_settings_summary">設定をXMLファイルにエクスポートします</string>
@@ -196,7 +194,7 @@
   <string name="pref_player_orientation_reverse_landscape">逆横向き</string>
   <string name="pref_player_orientation_sensor_landscape">センサー横向き</string>
   <string name="pref_player_save_position_on_quit">終了時に位置を保存</string>
-  <string name="pref_player_double_tap_seek_duration">ダブルタップシーク時間</string>
+  <string name="pref_player_double_tap_seek_duration">タップシーク時間</string>
   <string name="pref_player_custom_skip_duration_title">カスタムスキップ時間</string>
   <string name="pref_player_custom_skip_duration_summary">カスタムスキップボタンで進める時間</string>
   <string name="pref_player_seeking_title">シーク</string>
@@ -222,18 +220,24 @@
   <string name="pref_player_controls_show_loading_circle">読み込み中の円を表示</string>
   <string name="pref_player_display_show_status_bar">操作中にシステムステータスバーを表示</string>
   <string name="pref_gesture">ジェスチャー</string>
-  <string name="pref_gesture_summary">ダブルタップ、メディア操作</string>
-  <string name="pref_gesture_double_tap_title">ダブルタップ</string>
+  <string name="pref_gesture_summary">シングル/ダブルタップ、メディア操作</string>
+  <string name="pref_gesture_double_tap_title">タップジェスチャー</string>
   <string name="pref_gesture_double_tap_none">なし</string>
   <string name="pref_gesture_double_tap_seek">シーク</string>
   <string name="pref_gesture_double_tap_play">再生/一時停止</string>
   <string name="pref_gesture_double_tap_custom">カスタム</string>
   <string name="pref_gesture_double_tap_left_title">ダブルタップ（左）</string>
+  <string name="pref_gesture_single_tap_left_title">シングルタップ（左）</string>
   <string name="pref_gesture_double_tap_center_title">ダブルタップ（中央）</string>
   <string name="pref_gesture_single_tap_center_title">シングルタップ（中央）</string>
   <string name="pref_gesture_double_tap_right_title">ダブルタップ（右）</string>
-  <string name="pref_gesture_use_single_tap_for_center_title">中央ジェスチャーにシングルタップを使用</string>
-  <string name="pref_gesture_use_single_tap_for_center_summary">中央のジェスチャー（再生/一時停止など）にダブルタップではなくシングルタップを使用します。</string>
+  <string name="pref_gesture_single_tap_right_title">シングルタップ（右）</string>
+  <string name="pref_gesture_use_single_tap_for_left_title">左側をシングルタップ</string>
+  <string name="pref_gesture_use_single_tap_for_center_title">中央をシングルタップ</string>
+  <string name="pref_gesture_use_single_tap_for_right_title">右側をシングルタップ</string>
+  <string name="pref_gesture_use_single_tap_for_left_summary">2回の代わりに1回タップして、左側の操作を実行します。</string>
+  <string name="pref_gesture_use_single_tap_for_center_summary" formatted="false">中央の範囲（幅は初期設定で30%、高さは30%）を1回タップします。中央のそれ以外の場所では操作ボタンを表示・非表示にします。</string>
+  <string name="pref_gesture_use_single_tap_for_right_summary">2回の代わりに1回タップして、右側の操作を実行します。</string>
   <string name="pref_gesture_center_vertical_subtitle_position_title">ドラッグで字幕を移動</string>
   <string name="pref_gesture_center_vertical_subtitle_position_summary">中央を長押しして上下にドラッグすると主字幕を移動できます。字幕を直接長押しすると、そのトラックを個別に移動できます。通常のスワイプでは引き続きプレイリストが開きます。</string>
   <string name="pref_gesture_double_tap_custom_info">input.confで次のキーコードを使用して、これらのジェスチャーにカスタム操作を割り当てられます：
@@ -426,9 +430,6 @@
   <string name="player_sheets_sub_misc_card_title">その他</string>
   <string name="player_sheets_sub_delay_card_title">字幕の遅延</string>
   <string name="player_sheets_sub_delay_card_delay">遅延</string>
-  <string name="player_sheets_delay_quick_sync_summary">クイック同期は絶対オフセットを設定するため、同じチップを2回押しても値は変わりません。</string>
-  <string name="player_sheets_delay_offset_seconds">%1$+d 秒</string>
-  <string name="player_sheets_delay_offset_zero_seconds">0 秒</string>
   <string name="player_sheets_sub_delay_card_speed">速度</string>
   <string name="player_sheets_sub_delay_subtitle_voice_heard">音声が聞こえた位置</string>
   <string name="player_sheets_sub_delay_subtitle_text_seen">文字が見えた位置</string>
@@ -487,7 +488,7 @@
   <string name="pref_player_display_reduce_player_animation">プレーヤーのアニメーションを減らす</string>
   <!-- Animation settings -->
   <string name="pref_player_display_hide_player_control_time">プレーヤー操作の時刻を非表示</string>
-  <string name="show_splash_ovals_on_double_tap_to_seek">ダブルタップシーク時に波紋を表示</string>
+  <string name="show_splash_ovals_on_double_tap_to_seek">タップシーク時に波紋を表示</string>
   <string name="show_time_on_double_tap_to_seek">シーク時間を表示</string>
   <string name="player_sheets_frame_navigation_title">フレーム移動</string>
   <string name="player_sheets_frame_navigation_include_subtitles">スナップショットに字幕を含める</string>
@@ -753,7 +754,7 @@
   <string name="pref_config_cache_cleared_toast">設定キャッシュを消去しました</string>
   <string name="pref_thumbnail_cache_confirm_title">サムネイルキャッシュを消去しますか？</string>
   <string name="pref_thumbnail_cache_confirm_subtitle">ストレージとメモリからキャッシュ済みサムネイルが削除されます。</string>
-  <string name="pref_section_logging">ログ</string>
+  <string name="pref_section_logging">ログ・診断・プライバシー</string>
   <string name="pref_export_failed_toast">エクスポートに失敗しました：%1$s</string>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
@@ -814,7 +815,6 @@
   <!-- Folders Preferences                                        -->
   <!-- ═══════════════════════════════════════════════════════════ -->
   <string name="pref_media_library_section">メディアライブラリ</string>
-  <string name="pref_hidden_folders_section">非表示フォルダー</string>
   <string name="pref_clear_content_desc">消去</string>
 
   <!-- ═══════════════════════════════════════════════════════════ -->
@@ -845,10 +845,6 @@
   <string name="pref_config_cache_size">サイズ: %1$s</string>
   <string name="pref_thumbnail_cache_summary">キャッシュされた動画サムネイルをすべて削除（フォルダー閲覧時に再生成されます）</string>
   <string name="pref_thumbnail_cache_size">サイズ: %1$s</string>
-  <string name="pref_clear_animated_artwork_cache_title">アニメーションアートワークのキャッシュを消去</string>
-  <string name="pref_clear_animated_artwork_cache_summary">ダウンロード済みのアニメーションアルバムカバーを削除します（表示時に再ダウンロードされます）</string>
-  <string name="pref_animated_artwork_cache_size">サイズ: %1$s</string>
-  <string name="pref_animated_artwork_cache_cleared">アニメーションアートワークのキャッシュを消去しました</string>
   <string name="pref_fonts_cache_size">サイズ: %1$s · %2$dフォント</string>
   <string name="pref_failed_to_clear">消去できませんでした: %1$s</string>
   <string name="pref_export_failed">エクスポートに失敗しました: %1$s</string>
@@ -1629,7 +1625,6 @@
   <string name="secure_folder_move_items_subtitle">元に戻されるまで、このリストおよびアプリの他の場所から消えます。</string>
   <string name="secure_folder_moved_success">%1$d件のファイルを安全なフォルダへ移動しました</string>
   <string name="secure_folder_moved_partial">%1$d件移動、%2$d件失敗</string>
-  <string name="secure_folder_move_failed">安全なフォルダへの移動に失敗しました</string>
   <string name="secure_folder_error_incorrect_pin">PINが正しくありません</string>
   <string name="secure_folder_error_pins_dont_match">PINが一致しません</string>
   <string name="secure_folder_error_answer_question">秘密の質問に答えてください</string>
@@ -1866,9 +1861,6 @@
   <string name="ui_yt_dlp_commit">コミット %1$s</string>
   <string name="ui_version_unavailable">バージョンを取得できません</string>
   <string name="ui_update_channel">アップデートチャンネル</string>
-  <string name="ui_stable_releases">安定版</string>
-  <string name="ui_preview_builds">プレビュー (Nightly)</string>
-  <string name="ui_preview_builds_summary">プレビュービルドは最新の mpvRx の変更から公開される署名済みテスト版で、不安定な場合があります。</string>
   <string name="update_whats_new">新機能</string>
   <string name="update_no_release_notes">リリースノートはありません。</string>
   <string name="update_ready_to_install">インストール準備完了</string>
@@ -2059,8 +2051,6 @@
   <string name="pref_appearance_custom_wallpaper_transparency">透明度</string>
   <string name="pref_folders_add_marker">マーカーファイルを追加</string>
   <string name="pref_folders_add_marker_title">隠しフォルダーのマーカーを追加</string>
-  <string name="pref_folders_hidden_markers_empty">マーカーファイルは設定されていません。名前がドットで始まるフォルダーは引き続き対象になります。</string>
-  <string name="pref_folders_hidden_markers_summary">これらのファイルを含むフォルダーとそのサブフォルダーを対象にします。名前がドットで始まるフォルダーは常に対象になります。</string>
   <string name="pref_folders_hidden_markers_title">マーカーファイル</string>
   <string name="pref_folders_include_hidden_summary">名前がドットで始まるフォルダーや、選択したマーカーファイルを含むフォルダー内の動画を検索します。</string>
   <string name="pref_folders_include_hidden_title">隠しメディアフォルダーを含める</string>
@@ -2267,7 +2257,6 @@
   <string name="snapshot_delete_title">スナップショットを削除しますか？</string>
   <string name="snapshot_delete_selected_title">%1$d 件のスナップショットを削除しますか？</string>
   <string name="snapshot_delete_message">アプリから記録を削除します。画像はギャラリーに残ります。</string>
-  <string name="snapshot_delete">削除</string>
   <string name="snapshot_remove">記録を削除</string>
 
   <string name="snapshot_root">ルート</string>
@@ -2567,20 +2556,13 @@
   <string name="app_icon_create_custom_shortcut">指定したカスタムアイコンをホーム画面に追加</string>
   <string name="pref_experimental_badge">試験的</string>
   <string name="pref_liquid_glass_experimental_note">リキッドグラス効果は試験的な機能であり、端末によって見え方が異なる場合があります。</string>
-  <string name="pref_hidden_scan_per_mode_summary">ホームの各表示モードで、マーカーによって非表示にされたフォルダーや名前がドットで始まるフォルダーをスキャンするか選択します。オフにすると閲覧時にも除外されます。上のスイッチは非表示メディアを全体で有効にします。</string>
-  <string name="pref_hidden_scan_scoped_summary">各表示では、Androidでアクセスを許可したフォルダー内に限り、ドットで始まるフォルダーやマーカーで非表示にされたフォルダーを含めるか選べます。許可していないフォルダーにはアクセスできません。</string>
   <string name="pref_hidden_scan_library">ライブラリ</string>
   <string name="pref_hidden_scan_tree">ツリー</string>
   <string name="pref_hidden_scan_folders">フォルダー</string>
-  <string name="pref_hidden_scan_marked">マーカーで非表示のフォルダーをスキャン</string>
-  <string name="pref_hidden_scan_marked_summary">.nomedia またはリストにある別のマーカーを含むフォルダー</string>
-  <string name="pref_hidden_scan_single_marker_summary">この表示で、このマーカーを含むフォルダーを表示</string>
-  <string name="pref_hidden_scan_dot_summary">.Videos など、名前がドットで始まるフォルダー</string>
   <string name="ambient_cinema">シネマ</string>
   <string name="ambient_echo">エコー</string>
   <string name="ambient_mirror">ミラー</string>
   <string name="ambient_ambilight">アンビライト</string>
-  <string name="ambient_fx_auto_hint">このモードは完全自動です。最適な表示のため設定値は固定されており、変更できません。</string>
   <string name="app_icon_bg_crimson">クリムゾン</string>
   <string name="app_icon_bg_rose">ローズ</string>
   <string name="app_icon_bg_peach">ピーチ</string>
@@ -2606,7 +2588,6 @@
   <string name="pref_nav_home_title">ホーム / ファイル</string>
   <string name="pref_nav_home_summary">端末内のフォルダーとファイルを参照（常に利用可能）</string>
   <string name="pref_nav_actions_section">ナビゲーション操作</string>
-  <string name="pref_about_playback_libraries">再生ライブラリ</string>
   <string name="color_picker_field">カラーピッカー</string>
   <string name="color_picker_sliders">スライダー</string>
   <string name="color_picker_field_description">彩度と明るさ。細かく調整するにはスライダーを使用してください。</string>
@@ -2616,15 +2597,12 @@
   <string name="app_icon_custom_background">カスタム背景</string>
   <string name="app_icon_custom_background_hint">色を選択します。アプリ一覧ではAndroidが最も近い標準アイコンを使用します。指定した色はホーム画面のアイコンとして保存でき、最近使ったアプリにも使用できます。</string>
   <string name="app_icon_custom_logo_hint">カスタム背景に重ねるロゴを選択します。</string>
-  <string name="app_icon_shortcut_preview">ホーム画面ショートカットのプレビュー</string>
   <string name="app_icon_custom_requested">あなたのデザイン</string>
   <string name="app_icon_custom_native_match">実際のランチャーアイコン</string>
   <string name="app_icon_use_wallpaper_colors">代わりに壁紙の色を使用</string>
-  <string name="app_icon_shortcut_apply">ショートカットを追加または更新</string>
   <string name="app_icon_shortcut_requested">リクエストを送信しました。ランチャーで確認してショートカットを追加してください。</string>
   <string name="app_icon_shortcut_updated">ホーム画面のショートカットを更新しました</string>
   <string name="app_icon_shortcut_unsupported">このランチャーはホーム画面へのショートカット追加に対応していません。</string>
-  <string name="app_icon_shortcut_failed">ショートカットを保存できませんでした。もう一度お試しください。</string>
   <string name="color_picker_wheel">カラーホイール</string>
   <string name="color_picker_brightness">明るさ</string>
     <string name="only_for_video_list">動画リストのみに適用</string>
@@ -2744,6 +2722,8 @@
   <string name="ui_update_channels_summary">安定版、ナイトリープレビュー、実験的な CI ビルド。</string>
   <string name="update_experimental_build_format">実験版 r%1$d</string>
   <string name="tv_nav_settings">設定</string>
+  <string name="tv_move_up">上へ移動</string>
+  <string name="tv_move_down">下へ移動</string>
   <string name="tv_player_play_pause">再生または一時停止</string>
   <string name="tv_player_subtitles">字幕</string>
   <string name="tv_player_audio">音声トラック</string>
@@ -2781,4 +2761,89 @@
   <string name="jellyfin_more_like_this">おすすめの類似作品</string>
   <string name="jellyfin_watched">視聴済み</string>
   <string name="jellyfin_search_hint">映画、番組、エピソードを検索…</string>
+  <string name="pref_filter_short_videos">短い動画を除外</string>
+  <string name="pref_filter_short_videos_summary">スキャン時に指定時間より短い動画を除外</string>
+  <string name="pref_filter_small_files">小さいファイルを除外</string>
+  <string name="pref_filter_small_files_summary">スキャン時に指定サイズより小さいファイルを除外</string>
+  <string name="pref_filter_no_limit">制限なし</string>
+  <string name="pref_storage_exclusions">ストレージと除外設定</string>
+  <string name="pref_blacklist_title">ブラックリスト</string>
+  <string name="pref_whitelist_title">ホワイトリスト</string>
+  <string name="pref_whitelist_enable">ホワイトリストを有効化</string>
+  <string name="pref_whitelist_empty">許可済みフォルダーなし</string>
+  <string name="pref_whitelist_count">許可済みフォルダー %1$d 個</string>
+  <string name="pref_whitelist_add">ホワイトリストにフォルダーを追加</string>
+  <string name="pref_library_maintenance">ライブラリのメンテナンス</string>
+  <string name="pref_library_force_rescan">ライブラリを再スキャン</string>
+  <string name="pref_library_force_rescan_summary">内部ストレージと許可済みフォルダーを再インデックス</string>
+  <string name="pref_library_rescan_done">再スキャンが完了しました</string>
+  <string name="pref_library_action_failed">ライブラリ操作に失敗しました</string>
+  <string name="pref_library_clear_cache">メタデータキャッシュを削除</string>
+  <string name="pref_library_clear_cache_summary">保存済みメタデータ、寸法、サムネイルを削除</string>
+  <string name="pref_library_clear_cache_confirm">キャッシュ済みメタデータとサムネイルを削除しますか？必要時に再生成されます。</string>
+  <string name="pref_library_cache_cleared">メタデータとサムネイルのキャッシュを削除しました</string>
+  <string name="pref_persistent_status_title">常時表示ステータスバー</string>
+  <string name="pref_persistent_status_summary">時刻、電池、再生進行状況を常時表示するHUD</string>
+  <string name="pref_persistent_status_enable">常時表示ステータスバーを有効化</string>
+  <string name="pref_persistent_status_enable_summary">HUDの位置と内容を設定</string>
+  <string name="pref_persistent_status_preview">ライブプレビュー</string>
+  <string name="pref_persistent_status_controls">操作</string>
+  <string name="pref_persistent_status_position_section">位置</string>
+  <string name="pref_persistent_status_display">表示</string>
+  <string name="pref_persistent_status_position">位置</string>
+  <string name="pref_persistent_status_top">上</string>
+  <string name="pref_persistent_status_bottom">下</string>
+  <string name="pref_persistent_status_left">左スロット</string>
+  <string name="pref_persistent_status_center">中央スロット</string>
+  <string name="pref_persistent_status_right">右スロット</string>
+  <string name="pref_persistent_status_none">なし（非表示）</string>
+  <string name="pref_persistent_status_progress">再生進行状況</string>
+  <string name="pref_persistent_status_clock">現在時刻</string>
+  <string name="pref_persistent_status_battery">バッテリー残量</string>
+  <string name="pref_persistent_status_extras">追加オプション</string>
+  <string name="pref_persistent_status_finish_time">推定終了時刻を優先</string>
+  <string name="pref_persistent_status_finish_summary">再生速度に基づき残り時間を計算</string>
+  <string name="pref_persistent_status_speed">1.0倍速以外で速度を表示</string>
+  <string name="pref_persistent_status_micro_battery">小さな電池アイコンを表示</string>
+  <string name="pref_persistent_status_est_prefix">予想</string>
+  <string name="pref_persistent_status_time_unknown">—</string>
+
+  <!-- Folder filters and clip export tracks -->
+  <string name="clip_audio_track">音声トラック</string>
+  <string name="clip_subtitle_track">字幕トラック</string>
+  <string name="clip_include_subtitles">動画に字幕を含める</string>
+  <string name="clip_subtitle_read_failed">選択した字幕を読み込めません。</string>
+  <string name="clip_subtitle_unsupported">この字幕形式は動画に含めることができません。</string>
+  <string name="clip_subtitle_too_large">字幕ファイルが大きすぎるため、クリップに含めることができません。</string>
+  <string name="clip_track_auto_off">自動 / オフ</string>
+  <string name="pref_blacklist_count">除外フォルダー %1$d 個</string>
+  <string name="pref_whitelist_disabled">ホワイトリストは無効です</string>
+  <string name="pref_blacklist_summary">このリストのフォルダーはメディアから非表示になります。フォルダーごとに、動画、音声、または両方を非表示にするかを選べます。</string>
+  <string name="pref_whitelist_summary">ホワイトリストが有効な場合、これらのフォルダーとそのサブフォルダーのみをスキャンします。フォルダーを追加していない場合は何も制限されません。</string>
+  <string name="pref_whitelist_empty_message">下のボタンをタップして、スキャンするフォルダーを追加します</string>
+  <string name="clip_section_range">範囲</string>
+  <string name="clip_section_output">出力</string>
+  <string name="clip_set_start_here">開始を現在の位置に設定</string>
+  <string name="clip_set_end_here">終了を現在の位置に設定</string>
+  <string name="clip_length">クリップの長さ</string>
+  <string name="clip_preview">クリップをプレビュー</string>
+  <string name="clip_nudge_back">0.1 秒前へ</string>
+  <string name="clip_nudge_forward">0.1 秒後へ</string>
+  <string name="clip_quick_length">長さのクイック選択</string>
+  <string name="clip_length_seconds">%1$d秒</string>
+  <string name="clip_crop_reset">フレーム全体を使用</string>
+  <string name="pref_layout_center_seekbar_above">中央再生・操作ボタンの上にシークバー</string>
+  <string name="pref_layout_center_seekbar_below">中央再生・操作ボタンの下にシークバー</string>
+  <string name="pref_layout_playback_above">シークバーの上に再生と操作ボタン</string>
+  <string name="pref_layout_playback_below">シークバーの下に再生と操作ボタン</string>
+  <string name="player_layout_preset_title">再生操作の配置</string>
+  <string name="player_layout_preview_hint">表示はサンプルです。変更はすぐに保存されます。</string>
+  <string name="player_layout_shared_landscape_hint">横向き画面のすべての操作領域で共通です。</string>
+  <string name="pref_ignore_audio_focus_title">オーディオフォーカスを無視</string>
+  <string name="pref_ignore_audio_focus_summary">他のアプリと同時に音声や動画を再生し、一時停止や音量の低下を防ぎます</string>
+  <string name="pref_audio_spatial_title">空間オーディオ</string>
+  <string name="pref_audio_spatial_summary">ステレオ音源の音場を広げ、より臨場感のあるサウンドにします</string>
+  <string name="pref_measure_enabled_title">Measure に診断情報を送信</string>
+  <string name="pref_measure_enabled_summary">クラッシュ、ANR、パフォーマンス指標、セッション操作を Measure に送信します。初期設定はオフです。</string>
+  <string name="pref_measure_not_configured">診断を利用できません。このビルドに Measure API キーがありません。</string>
 </resources>

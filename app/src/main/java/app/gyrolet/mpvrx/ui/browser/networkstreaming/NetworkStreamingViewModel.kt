@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -113,6 +114,10 @@ class NetworkStreamingViewModel(
   val recentLinks: StateFlow<List<NetworkStreamEntryEntity>> =
     streamEntryRepository
       .observeRecentNormalEntries()
+      .map { entries ->
+        if (app.gyrolet.mpvrx.BuildConfig.ENABLE_YTDLP) entries else
+          entries.filterNot { HttpUtils.isYouTubeUrl(it.canonicalSourceUri) }
+      }
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -120,8 +125,11 @@ class NetworkStreamingViewModel(
       )
 
   val torrentFiles: StateFlow<List<NetworkStreamEntryEntity>> =
-    streamEntryRepository
-      .observeTorrentFileEntries()
+    (if (app.gyrolet.mpvrx.BuildConfig.ENABLE_TORRENT) {
+      streamEntryRepository.observeTorrentFileEntries()
+    } else {
+      flowOf(emptyList<NetworkStreamEntryEntity>())
+    })
       .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),

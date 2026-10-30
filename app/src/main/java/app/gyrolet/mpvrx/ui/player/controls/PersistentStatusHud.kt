@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.text.format.DateFormat
 import android.text.format.DateUtils
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
@@ -18,11 +17,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
@@ -52,10 +51,13 @@ import androidx.compose.ui.unit.sp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.PersistentStatusPosition
 import app.gyrolet.mpvrx.preferences.PersistentStatusSlot
+import app.gyrolet.mpvrx.preferences.PlayerClockFormat
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
-import java.util.Date
+import app.gyrolet.mpvrx.ui.tv.isTelevision
+import app.gyrolet.mpvrx.ui.tv.tvOverscanPadding
+import app.gyrolet.mpvrx.ui.player.controls.components.formatSpeed
 import kotlinx.coroutines.delay
 
 /**
@@ -68,7 +70,6 @@ internal fun PersistentStatusHud(
   preferences: PlayerPreferences,
   durationSeconds: Float,
   playbackSpeed: Float,
-  controlsShown: Boolean,
   modifier: Modifier = Modifier,
 ) {
   val enabled by preferences.persistentStatusEnabled.collectAsState()
@@ -81,14 +82,14 @@ internal fun PersistentStatusHud(
   val preferFinishTime by preferences.persistentStatusPreferFinishTime.collectAsState()
   val showSpeed by preferences.persistentStatusShowSpeed.collectAsState()
   val microBattery by preferences.persistentStatusMicroBattery.collectAsState()
-  val playbackPosition by viewModel.precisePosition.collectAsState()
-  val battery = rememberHudBatteryLevel()
-  val now by produceState(System.currentTimeMillis()) {
-    while (true) {
-      delay(30_000L) // Coarse clock cadence; no frame-by-frame wakeups.
-      value = System.currentTimeMillis()
-    }
-  }
+  val clockFormat by preferences.clockFormat.collectAsState()
+  val television = isTelevision()
+  val slots = listOf(left, center, right)
+  val needsProgress = !television || PersistentStatusSlot.PlaybackProgress in slots
+  val playbackPosition = if (needsProgress) viewModel.precisePosition.collectAsState().value else 0f
+  val battery = if (television) 0 else rememberHudBatteryLevel()
+  val needsClock = !television || PersistentStatusSlot.CurrentTime in slots || (needsProgress && preferFinishTime)
+  val now = if (needsClock) rememberHudClock() else 0L
 
   Box(modifier.fillMaxSize()) {
     val isTop = position == PersistentStatusPosition.Top
@@ -104,21 +105,32 @@ internal fun PersistentStatusHud(
       playbackSpeed = playbackSpeed,
       batteryLevel = battery,
       nowMillis = now,
+      clockFormat = clockFormat,
+      // Only the cutout is avoided: system-bar insets change when the controls show their bars.
       modifier = Modifier
         .align(if (isTop) Alignment.TopCenter else Alignment.BottomCenter)
+        .tvOverscanPadding(top = isTop, bottom = !isTop)
         .windowInsetsPadding(
-          WindowInsets.safeDrawing.only(
+          WindowInsets.displayCutout.only(
             WindowInsetsSides.Horizontal +
               if (isTop) WindowInsetsSides.Top else WindowInsetsSides.Bottom,
           ),
         )
-        // The normal toolbar/seekbar takes priority while visible; the HUD stays persistent.
-        .padding(
-          top = if (isTop) (if (controlsShown) 56.dp else 8.dp) else 0.dp,
-          bottom = if (!isTop) (if (controlsShown) 92.dp else 8.dp) else 0.dp,
-        ),
+        .padding(vertical = 8.dp),
     )
   }
+}
+
+/** Wall-clock time that ticks on each minute boundary, the finest unit the HUD shows. */
+@Composable
+internal fun rememberHudClock(): Long {
+  val now by produceState(System.currentTimeMillis()) {
+    while (true) {
+      delay(60_000L - System.currentTimeMillis() % 60_000L)
+      value = System.currentTimeMillis()
+    }
+  }
+  return now
 }
 
 @Composable
@@ -155,11 +167,11 @@ internal fun PersistentStatusHudRow(
   playbackSpeed: Float,
   batteryLevel: Int,
   nowMillis: Long,
+  clockFormat: PlayerClockFormat,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
-  val clockFormat = remember(context) { DateFormat.getTimeFormat(context) }
-  val wallTime = remember(nowMillis) { clockFormat.format(Date(nowMillis)) }
+  val wallTime = remember(nowMillis, clockFormat) { formatClock(context, clockFormat, nowMillis) }
   val validDuration = durationSeconds.isFinite() && durationSeconds > 0f
   val remainingSeconds =
     if (validDuration && positionSeconds.isFinite()) {
@@ -173,14 +185,15 @@ internal fun PersistentStatusHudRow(
       val extraMillis = ((remainingSeconds / playbackSpeed) * 1000.0).toLong()
         .coerceIn(0L, 30L * 24 * 60 * 60 * 1000)
       context.getString(R.string.pref_persistent_status_est_prefix) +
-        " " + clockFormat.format(Date(nowMillis + extraMillis))
+        " " + formatClock(context, clockFormat, nowMillis + extraMillis)
     } else {
       DateUtils.formatElapsedTime(positionSeconds.coerceAtLeast(0f).toLong()) +
         " / " + DateUtils.formatElapsedTime(durationSeconds.toLong())
     }
   val speedTag = if (showSpeed && validSpeed && kotlin.math.abs(playbackSpeed - 1f) > 0.005f) {
-    " " + ((playbackSpeed * 100f).toInt() / 100f).toString() + "x"
+    " ${playbackSpeed.formatSpeed()}x"
   } else ""
+  val statusText = progressText + speedTag
   val style = TextStyle(
     color = Color.White,
     fontFamily = FontFamily.Monospace,
@@ -192,12 +205,13 @@ internal fun PersistentStatusHudRow(
     modifier = modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
-    StatusSlotContent(leftSlot, wallTime, progressText + speedTag, batteryLevel, microBattery, style,
-      Alignment.CenterStart, TextAlign.Start, Modifier.weight(1f))
-    StatusSlotContent(centerSlot, wallTime, progressText + speedTag, batteryLevel, microBattery, style,
-      Alignment.Center, TextAlign.Center, Modifier.weight(1f))
-    StatusSlotContent(rightSlot, wallTime, progressText + speedTag, batteryLevel, microBattery, style,
-      Alignment.CenterEnd, TextAlign.End, Modifier.weight(1f))
+    listOf(
+      Triple(leftSlot, Alignment.CenterStart, TextAlign.Start),
+      Triple(centerSlot, Alignment.Center, TextAlign.Center),
+      Triple(rightSlot, Alignment.CenterEnd, TextAlign.End),
+    ).forEach { (slot, alignment, textAlign) ->
+      StatusSlotContent(slot, wallTime, statusText, batteryLevel, microBattery, style, alignment, textAlign, Modifier.weight(1f))
+    }
   }
 }
 
@@ -213,8 +227,10 @@ private fun StatusSlotContent(
   textAlignment: TextAlign,
   modifier: Modifier = Modifier,
 ) {
+  val displayedSlot =
+    if (slot == PersistentStatusSlot.BatteryStatus && isTelevision()) PersistentStatusSlot.None else slot
   Box(modifier = modifier, contentAlignment = alignment) {
-    when (slot) {
+    when (displayedSlot) {
       PersistentStatusSlot.None -> Unit
       PersistentStatusSlot.CurrentTime -> Text(wallTime, style = style, maxLines = 1,
         overflow = TextOverflow.Ellipsis, textAlign = textAlignment)

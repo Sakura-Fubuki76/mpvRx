@@ -12,7 +12,7 @@ package app.gyrolet.mpvrx.ui.browser.folderlist
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -63,6 +63,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -79,7 +80,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -142,6 +142,7 @@ import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.calculateResponsiveGridSpans
+import app.gyrolet.mpvrx.ui.tv.focusableWhen
 import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
 import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.MediaSearchEngine
@@ -196,6 +197,7 @@ object FolderListScreen : Screen {
     searchQuery: String = "",
   ) {
     val context = LocalContext.current
+    val isTelevision = app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(context)
     val backstack = LocalBackStack.current
     val coroutineScope = rememberCoroutineScope()
     val folderDeletionMutex = remember { Mutex() }
@@ -215,13 +217,13 @@ object FolderListScreen : Screen {
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
 
     // State collection
-    val videoFolders by viewModel.videoFolders.collectAsState()
-    val foldersWithNewCount by viewModel.foldersWithNewCount.collectAsState()
-    val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-    val scanStatus by viewModel.scanStatus.collectAsState()
-    val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsState()
-    val foldersWereDeleted by viewModel.foldersWereDeleted.collectAsState()
+    val videoFolders by viewModel.videoFolders.collectAsStateWithLifecycle()
+    val foldersWithNewCount by viewModel.foldersWithNewCount.collectAsStateWithLifecycle()
+    val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsStateWithLifecycle()
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val scanStatus by viewModel.scanStatus.collectAsStateWithLifecycle()
+    val hasCompletedInitialLoad by viewModel.hasCompletedInitialLoad.collectAsStateWithLifecycle()
+    val foldersWereDeleted by viewModel.foldersWereDeleted.collectAsStateWithLifecycle()
 
     // Preferences
     val mediaLayoutMode by browserPreferences.folderViewFolderLayoutMode.collectAsState()
@@ -511,6 +513,7 @@ object FolderListScreen : Screen {
             .getVideosForBuckets(context, selectedIds, includeAudioOverride = if (audioOnly) true else null)
         if (allVideos.isNotEmpty()) {
           val result = secureFolderRepository.moveIn(context, allVideos)
+          moveToSecureProgressOpen.value = false
           result
             .onSuccess { batch ->
               val message =
@@ -520,12 +523,15 @@ object FolderListScreen : Screen {
                   context.getString(R.string.secure_folder_moved_partial, batch.succeededIds.size, batch.failedIds.size)
                 }
               Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-            }.onFailure {
-              Toast.makeText(context, context.getString(R.string.secure_folder_move_failed), Toast.LENGTH_SHORT).show()
+            }.onFailure { error ->
+              Toast.error(context, context.getString(
+                R.string.secure_folder_move_failed_details,
+                error.localizedMessage ?: context.getString(R.string.generic_unknown_error),
+              ))
             }
+          if (result.isSuccess) selectionManager.clear()
         }
         moveToSecureProgressOpen.value = false
-        selectionManager.clear()
         viewModel.refresh()
       }
     }
@@ -588,6 +594,13 @@ object FolderListScreen : Screen {
     app.gyrolet.mpvrx.ui.browser.NavigationBarSelectionEffect(selectionManager.isInSelectionMode)
 
     val isNavigationPageActive = app.gyrolet.mpvrx.ui.utils.LocalNavigationPageActive.current
+    // Measure a usable library (including empty/error/permission screens), not just first compose.
+    // An offscreen pager page must not delay another destination's fully-drawn report.
+    androidx.activity.compose.ReportDrawnWhen {
+      !isNavigationPageActive || !isPermissionSetupCompleted ||
+        (permissionState.status != PermissionStatus.Granted && !canBrowseSelectedFolders) ||
+        hasCompletedInitialLoad
+    }
     // The Folder tab owns its hidden-folder refresh; visiting Library must never be required
     // to notice a .nomedia marker added or removed by an external file manager.
     androidx.lifecycle.compose.LifecycleResumeEffect(viewModel, isNavigationPageActive) {
@@ -762,11 +775,11 @@ object FolderListScreen : Screen {
                   foldersPreferences.addBlacklistedFolders(paths, scope)
                   selectionManager.clear()
                   viewModel.refresh()
-                  android.widget.Toast
+                  app.gyrolet.mpvrx.ui.components.AppToast
                     .makeText(
                       context,
                       foldersBlacklistedMessage,
-                      android.widget.Toast.LENGTH_SHORT,
+                      app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                     ).show()
                 }
               },
@@ -823,7 +836,7 @@ object FolderListScreen : Screen {
                     Modifier.animateFloatingActionButton(
                       visible = isFabShouldBeVisible,
                       alignment = Alignment.BottomEnd,
-                    ),
+                    ).focusableWhen(isFabShouldBeVisible),
                   checked = isFabExpanded.value && !quickPlayFabDirect,
                   onCheckedChange = {
                     if (quickPlayFabDirect) {
@@ -865,7 +878,7 @@ object FolderListScreen : Screen {
               FloatingActionButtonMenuItem(
                 onClick = {
                   isFabExpanded.value = false
-                  filePicker.launch(if (audioOnly) arrayOf("audio/*") else arrayOf("video/*"))
+                  filePicker.launch(if (audioOnly) arrayOf("audio/*") else FileTypeUtils.videoPickerMimeTypes())
                 },
                 icon = { Icon(Icons.RoundedFilled.FileOpen, contentDescription = null) },
                 text = {
@@ -1112,7 +1125,52 @@ object FolderListScreen : Screen {
     }
   }
 
-    if (isDualPaneActive && selectedFolderBucketId != null) {
+    // On TV, replacing FoldersPane with a new Row removes the focused card and can send
+    // focus to the navigation rail. Keep the folder pane at a stable composition position.
+    @Composable
+    fun SelectedFolderContent() {
+      val bucketId = selectedFolderBucketId ?: return
+      key(bucketId) {
+        CompositionLocalProvider(
+          LocalNavigationBarHeight provides
+            if (app.gyrolet.mpvrx.ui.browser.NavigationBarState.isDualPaneLayout) {
+              app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance
+            } else {
+              LocalNavigationBarHeight.current
+            },
+        ) {
+          VideoListScreen(
+            bucketId = bucketId,
+            folderName = selectedFolderName.orEmpty(),
+            isDualPane = true,
+            isAudio = audioOnly,
+            onBack = {
+              selectedFolderBucketId = null
+              selectedFolderName = null
+            },
+          ).Content()
+        }
+      }
+    }
+
+    if (isTelevision && isDualPaneActive) {
+      Row(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.weight(if (selectedFolderBucketId != null) 0.4f else 1f)) {
+          FoldersPane()
+        }
+        if (selectedFolderBucketId != null) {
+          VerticalDivider(
+            modifier = Modifier.fillMaxHeight(),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+            thickness = 1.dp,
+          )
+          Box(modifier = Modifier.weight(0.6f)) {
+            SelectedFolderContent()
+          }
+        }
+      }
+    } else if (isDualPaneActive && selectedFolderBucketId != null) {
+      // Non-TV tablet split-pane remains unchanged.
       Row(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.weight(0.4f)) {
           FoldersPane()
@@ -1123,27 +1181,7 @@ object FolderListScreen : Screen {
           thickness = 1.dp,
         )
         Box(modifier = Modifier.weight(0.6f)) {
-          key(selectedFolderBucketId) {
-            CompositionLocalProvider(
-              LocalNavigationBarHeight provides
-                if (app.gyrolet.mpvrx.ui.browser.NavigationBarState.isDualPaneLayout) {
-                  app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance
-                } else {
-                  LocalNavigationBarHeight.current
-                },
-            ) {
-              VideoListScreen(
-                bucketId = selectedFolderBucketId!!,
-                folderName = selectedFolderName.orEmpty(),
-                isDualPane = true,
-                isAudio = audioOnly,
-                onBack = {
-                  selectedFolderBucketId = null
-                  selectedFolderName = null
-                },
-              ).Content()
-            }
-          }
+          SelectedFolderContent()
         }
       }
     } else {
@@ -1262,11 +1300,11 @@ object FolderListScreen : Screen {
             coroutineScope.launch {
               val ok = viewModel.renameFolder(folder, newName)
               if (!ok) {
-                android.widget.Toast
+                app.gyrolet.mpvrx.ui.components.AppToast
                   .makeText(
                     context,
                     context.getString(app.gyrolet.mpvrx.R.string.ui_rename_failed),
-                    android.widget.Toast.LENGTH_SHORT,
+                    app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                   ).show()
               }
               selectionManager.clear()
@@ -1307,18 +1345,18 @@ object FolderListScreen : Screen {
                 restoreSelectedFolderAfterFailure(selectedFolder)
               }
               if (result.deleted > 0) {
-                android.widget.Toast
+                app.gyrolet.mpvrx.ui.components.AppToast
                   .makeText(
                     context,
                     context.getString(app.gyrolet.mpvrx.R.string.ui_deleted_successfully),
-                    android.widget.Toast.LENGTH_SHORT,
+                    app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                   ).show()
               } else if (result.failed > 0) {
-                android.widget.Toast
+                app.gyrolet.mpvrx.ui.components.AppToast
                   .makeText(
                     context,
                     context.getString(app.gyrolet.mpvrx.R.string.ui_failed_to_delete),
-                    android.widget.Toast.LENGTH_SHORT,
+                    app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                   ).show()
               }
             } catch (cancellation: CancellationException) {
@@ -1328,14 +1366,14 @@ object FolderListScreen : Screen {
             } catch (error: Exception) {
               viewModel.finishFolderDeletion(foldersToDelete, foldersToDelete)
               restoreSelectedFolderAfterFailure(selectedFolder)
-              android.widget.Toast
+              app.gyrolet.mpvrx.ui.components.AppToast
                 .makeText(
                   context,
                   context.getString(
                     R.string.toast_failed_to_delete_reason,
                     error.message ?: context.getString(R.string.generic_unknown_error),
                   ),
-                  android.widget.Toast.LENGTH_SHORT,
+                  app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                 ).show()
             } finally {
               viewModel.refresh()
@@ -1495,6 +1533,8 @@ private fun GridContent(
     val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
     val isDualPaneActive = isTablet && dualPaneForTablet
     val isDualPane = isDualPaneActive && selectedFolderBucketId != null
+    val focusGutter =
+      if (app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(LocalContext.current)) 20.dp else 8.dp
 
     val spansInfo = calculateResponsiveGridSpans(maxWidth = maxWidth, isDualPane = isDualPane)
     val computedColumns = spansInfo.spans / spansInfo.folderSpan
@@ -1510,8 +1550,8 @@ private fun GridContent(
       modifier = Modifier.fillMaxSize(),
       contentPadding =
         PaddingValues(
-          start = 8.dp,
-          end = 8.dp,
+          start = focusGutter,
+          end = focusGutter,
           top = 8.dp,
           bottom = navigationBarHeight + 8.dp,
         ),
@@ -1616,6 +1656,8 @@ private fun ListContent(
   val browserPreferences = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
   val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
   val isDualPaneActive = isTablet && dualPaneForTablet
+  val focusGutter =
+    if (app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(LocalContext.current)) 20.dp else 8.dp
   val newCountByBucketId =
     remember(foldersWithNewCount) {
       foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
@@ -1629,8 +1671,8 @@ private fun ListContent(
       verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap),
       contentPadding =
         PaddingValues(
-          start = 8.dp,
-          end = 8.dp,
+          start = focusGutter,
+          end = focusGutter,
           top = 4.dp,
           bottom = navigationBarHeight,
         ),
@@ -1946,15 +1988,6 @@ private fun SearchResultsContent(
   }
 }
 
-/**
- * Searches for folders and videos matching the query
- * Returns FileSystemItem results containing matching folders and videos
- */
-
-object SearchManager {
-  val engine = MediaSearchEngine
-}
-
 /** Indexes the folders already on screen, so hidden (dot/.nomedia) folders stay searchable. */
 private suspend fun buildSearchIndex(
   context: Context,
@@ -1971,7 +2004,7 @@ private suspend fun buildSearchIndex(
             includeAudioOverride = if (audioOnly) true else null,
           )
     }
-  SearchManager.engine.buildIndex(folders, videosByFolder)
+  MediaSearchEngine.buildIndex(folders, videosByFolder)
 }
 
 private suspend fun searchFoldersAndVideos(
@@ -1983,7 +2016,7 @@ private suspend fun searchFoldersAndVideos(
     Log.d("FolderListScreen", "Searching for: $query")
 
     // Get all search matches from the optimized engine
-    val matches = SearchManager.engine.search(query, limit = 50)
+    val matches = MediaSearchEngine.search(query, limit = 50)
 
     for (item in matches) {
       when (item) {

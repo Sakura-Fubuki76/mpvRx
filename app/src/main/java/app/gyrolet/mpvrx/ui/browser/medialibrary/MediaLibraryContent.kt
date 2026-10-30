@@ -11,13 +11,12 @@ package app.gyrolet.mpvrx.ui.browser.medialibrary
 
 import android.content.Intent
 import android.os.Environment
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import app.gyrolet.mpvrx.ui.theme.AppMotion
@@ -31,7 +30,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.Icon
@@ -70,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import app.gyrolet.mpvrx.database.repository.SecureFolderRepository
 import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
@@ -79,7 +78,6 @@ import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.browser.MainScreen
 import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
-import app.gyrolet.mpvrx.ui.browser.NavigationBarState
 import app.gyrolet.mpvrx.presentation.components.captureLiquidGlassBackdrop
 import app.gyrolet.mpvrx.ui.browser.components.BrowserBottomBar
 import app.gyrolet.mpvrx.ui.browser.components.rememberBrowserBottomBarBackdrop
@@ -109,6 +107,7 @@ import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.securefolder.SecureFolderGateScreen
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
+import app.gyrolet.mpvrx.ui.tv.focusableWhen
 import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
 import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.MediaUtils
@@ -247,7 +246,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
     coroutineScope.launch {
       val result = secureFolderRepository.moveIn(context, selectedVideos)
       moveToSecureProgressOpen.value = false
-      selectionManager.clear()
+      if (result.isSuccess) selectionManager.clear()
       viewModel.refresh()
       result
         .onSuccess { batch ->
@@ -258,8 +257,11 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
               context.getString(R.string.secure_folder_moved_partial, batch.succeededIds.size, batch.failedIds.size)
             }
           Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-        }.onFailure {
-          Toast.makeText(context, context.getString(R.string.secure_folder_move_failed), Toast.LENGTH_SHORT).show()
+        }.onFailure { error ->
+          Toast.error(context, context.getString(
+            R.string.secure_folder_move_failed_details,
+            error.localizedMessage ?: context.getString(R.string.generic_unknown_error),
+          ))
         }
     }
   }
@@ -520,7 +522,7 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
                 Modifier.animateFloatingActionButton(
                   visible = isFabShouldBeVisible,
                   alignment = Alignment.BottomEnd,
-                ),
+                ).focusableWhen(isFabShouldBeVisible),
               checked = isFabExpanded.value && !quickPlayFabDirect,
                 onCheckedChange = {
                   if (quickPlayFabDirect) {
@@ -559,7 +561,9 @@ fun MediaLibraryContent(forceAudio: Boolean = false) {
             FloatingActionButtonMenuItem(
               onClick = {
                 isFabExpanded.value = false
-                filePicker.launch(arrayOf(if (mediaType == MediaLibraryType.Audio) "audio/*" else "video/*"))
+                filePicker.launch(
+                  if (mediaType == MediaLibraryType.Audio) arrayOf("audio/*") else FileTypeUtils.videoPickerMimeTypes(),
+                )
               },
               icon = { Icon(Icons.RoundedFilled.FileOpen, contentDescription = null) },
               text = {

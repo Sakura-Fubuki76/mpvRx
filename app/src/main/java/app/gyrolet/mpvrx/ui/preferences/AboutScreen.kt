@@ -15,7 +15,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.ImageView
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -1128,4 +1128,10 @@ internal val OPEN_SOURCE_LIBRARIES =
       license = "MIT",
       url = "https://github.com/natural-harmonia-gropius/hdr-toys",
     ),
-  ).sortedBy { library -> library.name.lowercase(Locale.ROOT) }
+  ).filter { library ->
+    when (library.name) {
+      "libtorrent4j" -> BuildConfig.ENABLE_TORRENT
+      "Python", "yt-dlp" -> BuildConfig.ENABLE_YTDLP
+      else -> true
+    }
+  }.sortedBy { library -> library.name.lowercase(Locale.ROOT) }

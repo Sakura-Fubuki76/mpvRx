@@ -11,7 +11,7 @@ package app.gyrolet.mpvrx.ui.preferences
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.annotation.StringRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -41,7 +41,7 @@ import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.SuggestionChipDefaults
 import androidx.compose.material3.Text
 import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
-import androidx.compose.material3.TextField
+import app.gyrolet.mpvrx.presentation.components.AppTextField as TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState as collectFlowAsState
@@ -97,9 +97,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
-import me.zhanghai.compose.preference.Preference
-import me.zhanghai.compose.preference.TextFieldPreference
+import app.gyrolet.mpvrx.ui.preferences.components.AppListPreference as ListPreference
+import app.gyrolet.mpvrx.ui.preferences.components.AppPreference as Preference
+import app.gyrolet.mpvrx.ui.preferences.components.AppTextFieldPreference as TextFieldPreference
 import org.koin.compose.koinInject
 
 @Serializable
@@ -109,6 +109,7 @@ object SubtitlesPreferencesScreen : Screen {
   override fun Content() {
     val context = LocalContext.current
     val backstack = LocalBackStack.current
+    val playerPanel = LocalPlayerSettingsPanel.current
     val preferences = koinInject<SubtitlesPreferences>()
     val appearancePreferences = koinInject<AppearancePreferences>()
     val googleFontsRepository = koinInject<GoogleFontsRepository>()
@@ -163,6 +164,7 @@ object SubtitlesPreferencesScreen : Screen {
       }
 
     Scaffold(
+      contentWindowInsets = settingsContentWindowInsets(),
       topBar = {
         SettingsTopAppBar(
           title = stringResource(R.string.pref_subtitles),
@@ -436,6 +438,7 @@ object SubtitlesPreferencesScreen : Screen {
           }
 
           // === FONT SECTION ===
+          if (!playerPanel) {
           item {
             PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_section_subtitle_fonts))
           }
@@ -585,6 +588,7 @@ object SubtitlesPreferencesScreen : Screen {
             }
           }
 
+          }
           // === ONLINE SUBTITLE SECTION ===
           item {
             PreferenceSectionHeader(position = PreferenceSectionPosition.Last, 
@@ -1162,23 +1166,23 @@ object SubtitlesPreferencesScreen : Screen {
                             val folder = resolveSubtitleStorageDirectory(context, uri.toString())
                             folder?.listFiles()?.forEach { it.delete() }
                             withContext(Dispatchers.Main) {
-                              android.widget.Toast
+                              app.gyrolet.mpvrx.ui.components.AppToast
                                 .makeText(
                                   context,
                                   R.string.toast_subtitles_cleared,
-                                  android.widget.Toast.LENGTH_SHORT,
+                                  app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                                 ).show()
                             }
                           }.onFailure { e ->
                             withContext(Dispatchers.Main) {
-                              android.widget.Toast
+                              app.gyrolet.mpvrx.ui.components.AppToast
                                 .makeText(
                                   context,
                                   context.getString(
                                     R.string.pref_subtitle_search_error,
                                     e.message ?: context.getString(R.string.generic_unknown_error),
                                   ),
-                                  android.widget.Toast.LENGTH_SHORT,
+                                  app.gyrolet.mpvrx.ui.components.AppToast.LENGTH_SHORT,
                                 ).show()
                             }
                           }
@@ -1378,7 +1382,7 @@ private fun SubtitleApiKeyPreference(
 
   ExpressivePreferenceItem {
   TextFieldPreference(
-    modifier = modifier,
+    modifier = modifier.settingsSearchTarget(spec.titleRes),
     value = spec.value,
     onValueChange = spec.onValueChange,
     textToValue = { it.trim() },

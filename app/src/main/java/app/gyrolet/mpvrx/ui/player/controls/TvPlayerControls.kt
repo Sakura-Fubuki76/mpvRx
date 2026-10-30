@@ -66,7 +66,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -79,6 +78,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.icons.AppIcon
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
@@ -87,8 +88,7 @@ import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.controls.components.AnimatedPlayPauseIcon
 import kotlinx.coroutines.delay
-import java.text.DateFormat
-import java.util.Date
+import org.koin.compose.koinInject
 import kotlin.math.abs
 
 private object TvPlayerDefaults {
@@ -128,6 +128,7 @@ internal fun TvPlayerControls(
   chapterTitle: String?,
   durationSeconds: Float,
   chapterStarts: List<Float>,
+  showBufferedRange: Boolean,
   hasSubtitles: Boolean,
   hasAudioTracks: Boolean,
   hasChapters: Boolean,
@@ -234,6 +235,7 @@ internal fun TvPlayerControls(
             positionState = positionState,
             durationSeconds = durationSeconds,
             chapterStarts = chapterStarts,
+            showBufferedRange = showBufferedRange,
             onSeekBy = { seconds ->
               markInteraction()
               viewModel.seekBy(seconds)
@@ -361,11 +363,12 @@ private fun TvPlayerTopBar(
 ) {
   var clock by remember { mutableStateOf("") }
   val context = LocalContext.current
-  LaunchedEffect(Unit) {
-    val format: DateFormat = android.text.format.DateFormat.getTimeFormat(context)
+  val preferences = koinInject<PlayerPreferences>()
+  val clockFormat by preferences.clockFormat.collectAsState()
+  LaunchedEffect(context, clockFormat) {
     while (true) {
-      clock = format.format(Date())
-      delay(15_000L)
+      clock = formatClock(context, clockFormat)
+      delay(60_000L - System.currentTimeMillis() % 60_000L)
     }
   }
   Row(
@@ -395,6 +398,7 @@ private fun TvSeekBar(
   positionState: State<Float>,
   durationSeconds: Float,
   chapterStarts: List<Float>,
+  showBufferedRange: Boolean,
   onSeekBy: (Int) -> Unit,
   onTogglePlayback: () -> Unit,
   onHideControls: () -> Unit,
@@ -414,6 +418,11 @@ private fun TvSeekBar(
   )
   val accent = MaterialTheme.colorScheme.primary
   val description = stringResource(R.string.tv_player_seek_bar)
+  // This is observed only while the seekbar is composed. Read its value in draw, not in the
+  // full player composition, so cache updates do not wake the controls while they are hidden.
+  val cacheTime =
+    if (showBufferedRange) remember { PlaybackSession.propDouble["demuxer-cache-time"] }.collectAsState()
+    else null
 
   Canvas(
     modifier =
@@ -427,7 +436,7 @@ private fun TvSeekBar(
             return@onKeyEvent event.key == Key.DirectionLeft ||
               event.key == Key.DirectionRight ||
               event.key == Key.DirectionCenter ||
-              event.key == Key.Enter
+              event.key == Key.Enter || event.key == Key.NumPadEnter
           }
           val repeat = event.nativeKeyEvent.repeatCount
           when (event.key) {
@@ -458,6 +467,12 @@ private fun TvSeekBar(
       if (durationSeconds > 0f) (positionState.value / durationSeconds).coerceIn(0f, 1f) else 0f
 
     drawRoundRect(trackColor, topLeft = Offset(0f, top), size = Size(size.width, h), cornerRadius = radius)
+    val buffered = cacheTime?.value?.toFloat()?.takeIf { it.isFinite() && it > 0f }
+    if (buffered != null && durationSeconds > 0f) {
+      val bufferedFraction = (buffered / durationSeconds).coerceIn(0f, 1f)
+      drawRoundRect(Color.White.copy(alpha = 0.5f), topLeft = Offset(0f, top),
+        size = Size(size.width * bufferedFraction, h), cornerRadius = radius)
+    }
     if (fraction > 0f) {
       drawRoundRect(accent, topLeft = Offset(0f, top), size = Size(size.width * fraction, h), cornerRadius = radius)
     }

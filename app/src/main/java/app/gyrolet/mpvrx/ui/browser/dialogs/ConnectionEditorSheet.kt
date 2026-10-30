@@ -27,17 +27,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.ExposedDropdownMenu
-import androidx.compose.material3.ExposedDropdownMenuAnchorType
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
+import app.gyrolet.mpvrx.presentation.components.AppTextField as OutlinedTextField
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +60,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.components.AppComboBox
 import app.gyrolet.mpvrx.data.network.ServerSuggestion
 import app.gyrolet.mpvrx.domain.network.NetworkAddress
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
@@ -99,7 +95,6 @@ internal fun ConnectionEditorSheet(
   var password by remember(initialConnection) { mutableStateOf("") }
   var passwordVisible by remember(initialConnection) { mutableStateOf(false) }
   var clearPassword by remember(initialConnection) { mutableStateOf(false) }
-  var protocolMenuExpanded by remember { mutableStateOf(false) }
 
   val focusManager = LocalFocusManager.current
   val hostFocusRequester = remember { FocusRequester() }
@@ -191,41 +186,18 @@ internal fun ConnectionEditorSheet(
         keyboardActions = KeyboardActions(onNext = { hostFocusRequester.requestFocus() }),
       )
 
-      ExposedDropdownMenuBox(
-        expanded = protocolMenuExpanded,
-        onExpandedChange = { protocolMenuExpanded = it },
+      AppComboBox(
+        options = allowedProtocols,
+        selected = protocol,
+        onSelect = { selectedProtocol ->
+          protocol = selectedProtocol
+          port = selectedProtocol.defaultPort.toString()
+          if (selectedProtocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)) useHttps = false
+        },
+        optionLabel = { it.displayName },
+        label = stringResource(R.string.ui_protocol),
         modifier = Modifier.fillMaxWidth(),
-      ) {
-        OutlinedTextField(
-          value = protocol.displayName,
-          onValueChange = {},
-          readOnly = true,
-          label = { FieldLabel(R.string.ui_protocol) },
-          trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = protocolMenuExpanded) },
-          modifier =
-            Modifier
-              .fillMaxWidth()
-              .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
-        )
-        ExposedDropdownMenu(
-      shape = androidx.compose.material3.MaterialTheme.shapes.extraLargeIncreased,
-      containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
-      expanded = protocolMenuExpanded,
-          onDismissRequest = { protocolMenuExpanded = false },
-        ) {
-          allowedProtocols.forEach { selectedProtocol ->
-            DropdownMenuItem(
-              text = { Text(selectedProtocol.displayName) },
-              onClick = {
-                protocol = selectedProtocol
-                port = selectedProtocol.defaultPort.toString()
-                if (selectedProtocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)) useHttps = false
-                protocolMenuExpanded = false
-              },
-            )
-          }
-        }
-      }
+      )
 
       NetworkServerField(
         value = host,

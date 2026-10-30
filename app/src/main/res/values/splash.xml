@@ -6,8 +6,6 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="postSplashScreenTheme">@style/Theme.mpvrx</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <style name="Theme.mpvrx.PurpleSplash" parent="Theme.SplashScreen">
@@ -15,8 +13,6 @@
         <item name="windowSplashScreenAnimationDuration">420</item>
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="postSplashScreenTheme">@style/Theme.mpvrx</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 
     <!-- Legacy launcher icon is preserved; both animations occupy matched safe-area bounds. -->
@@ -24,7 +20,5 @@
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash</item>
         <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="postSplashScreenTheme">@style/Theme.mpvrx</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

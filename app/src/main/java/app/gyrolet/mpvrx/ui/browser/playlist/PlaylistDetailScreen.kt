@@ -11,7 +11,7 @@ package app.gyrolet.mpvrx.ui.browser.playlist
 
 import android.content.Intent
 import android.net.Uri
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.spring
@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -119,7 +118,6 @@ import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
-import app.gyrolet.mpvrx.utils.media.MediaInfoOps
 import app.gyrolet.mpvrx.utils.media.MediaUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -127,6 +125,8 @@ import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
+import app.gyrolet.mpvrx.ui.tv.TvReorderButtons
+import app.gyrolet.mpvrx.ui.tv.isTelevision
 
 /**
  * Playlist detail screen showing videos in a playlist.
@@ -271,11 +271,7 @@ data class PlaylistDetailScreen(
     // UI State
     val listState = rememberLazyListState()
     val deleteDialogOpen = rememberSaveable { mutableStateOf(false) }
-    val mediaInfoDialogOpen = rememberSaveable { mutableStateOf(false) }
     val selectedVideo = remember { mutableStateOf<Video?>(null) }
-    val mediaInfoData = remember { mutableStateOf<MediaInfoOps.MediaInfoData?>(null) }
-    val mediaInfoLoading = remember { mutableStateOf(false) }
-    val mediaInfoError = remember { mutableStateOf<String?>(null) }
     var showUrlDialog by rememberSaveable { mutableStateOf(false) }
     var urlDialogContent by remember { mutableStateOf("") }
     var videosForAddToPlaylist by remember { mutableStateOf<List<Video>>(emptyList()) }
@@ -1119,6 +1115,8 @@ private fun PlaylistVideoListContent(
 
       // Reorderable state
       val reorderFeedback = rememberReorderFeedback()
+      // TV: a remote cannot drag, so reorder mode shows Move up / Move down instead of a handle.
+      val isTelevision = isTelevision()
       val reorderableLazyListState =
         rememberReorderableLazyListState(listState) { from, to ->
           if (isReorderMode) {
@@ -1166,7 +1164,14 @@ private fun PlaylistVideoListContent(
               ) {
                 itemContent(item, false, 1, neighbors, Modifier.weight(1f))
 
-                if (isReorderMode) {
+                if (isReorderMode && isTelevision) {
+                  TvReorderButtons(
+                    canMoveUp = index > 0,
+                    canMoveDown = index < videoItems.lastIndex,
+                    onMoveUp = { onReorder(index, index - 1) },
+                    onMoveDown = { onReorder(index, index + 1) },
+                  )
+                } else if (isReorderMode) {
                   IconButton(
                     onClick = { },
                     modifier =
@@ -1413,20 +1418,6 @@ private fun RemoveFromPlaylistDialog(
     shape = MaterialTheme.shapes.extraLarge,
   )
 }
-
-private fun getFileNameFromUri(
-  context: android.content.Context,
-  uri: Uri,
-): String? =
-  try {
-    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-      val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-      cursor.moveToFirst()
-      cursor.getString(nameIndex)
-    } ?: uri.lastPathSegment
-  } catch (e: Exception) {
-    uri.lastPathSegment
-  }
 
 private const val M3U_FILTER_ALL = "__m3u_all__"
 

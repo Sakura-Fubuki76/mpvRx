@@ -16,7 +16,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -30,7 +29,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -1716,7 +1714,7 @@ private fun LiquidSeekbar(
   )
 
   val chapterStarts = remember(chapters) { chapters.map(Segment::start) }
-  val playerBackdrop = LocalKyantPlayerBackdrop.current ?: rememberLayerBackdrop()
+  val playerBackdrop = LocalKyantPlayerBackdrop.current
   val trackBackdrop = rememberLayerBackdrop()
   val density = LocalDensity.current
   val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
@@ -1831,6 +1829,19 @@ private fun LiquidSeekbar(
 
     // Kyant's liquid thumb, driven by the existing Seeker interaction layer.
     val thumbWidthDp = 40.dp
+    // The pressed thumb magnifies the track. It refracts the video as well once the player exposes
+    // a sampled video layer; until then (and in the settings preview) it refracts the track alone.
+    val trackLensBackdrop =
+      rememberBackdrop(trackBackdrop) { drawBackdrop ->
+        val progress = dampedDragAnimation.pressProgress
+        val scaleX = lerp(2f / 3f, 1f, progress)
+        val scaleY = lerp(0f, 1f, progress)
+        scale(scaleX, scaleY) {
+          drawBackdrop()
+        }
+      }
+    val thumbBackdrop =
+      if (playerBackdrop != null) rememberCombinedBackdrop(playerBackdrop, trackLensBackdrop) else trackLensBackdrop
     Box(
       modifier = Modifier
         .align(Alignment.CenterStart)
@@ -1842,17 +1853,7 @@ private fun LiquidSeekbar(
           translationX = (safeCenterPx - thumbWidthPx / 2f) * if (isLtr) 1f else -1f
         }
         .drawBackdrop(
-          backdrop = rememberCombinedBackdrop(
-            playerBackdrop,
-            rememberBackdrop(trackBackdrop) { drawBackdrop ->
-              val progress = dampedDragAnimation.pressProgress
-              val scaleX = lerp(2f / 3f, 1f, progress)
-              val scaleY = lerp(0f, 1f, progress)
-              scale(scaleX, scaleY) {
-                drawBackdrop()
-              }
-            }
-          ),
+          backdrop = thumbBackdrop,
           shape = { Capsule() },
           effects = {
             val progress = dampedDragAnimation.pressProgress

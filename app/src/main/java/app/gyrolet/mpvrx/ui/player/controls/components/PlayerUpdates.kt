@@ -66,7 +66,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.liquidglass.LiquidButton
 import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
 import app.gyrolet.mpvrx.ui.liquidglass.drawCapsuleTint
 import app.gyrolet.mpvrx.ui.liquidglass.liquidGlassEffects
@@ -411,7 +410,7 @@ private fun PreviewMultipleSpeedPlayerUpdate() {
   MultipleSpeedPlayerUpdate(currentSpeed = 2f)
 }
 
-private fun Float.formatSpeed(): String {
+internal fun Float.formatSpeed(): String {
   val rounded = (this * 100f).roundToInt() / 100f
   return if (rounded % 1f == 0f) {
     rounded.toInt().toString()

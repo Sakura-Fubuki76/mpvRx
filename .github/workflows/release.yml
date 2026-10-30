@@ -128,6 +128,7 @@ jobs:
             asset: no-vulkan
             package: apk
     env:
+      MEASURE_API_KEY: ${{ secrets.MEASURE_API_KEY }}
       VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
       GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
       APK_DIR: ${{ matrix.distribution.dir }}
@@ -263,6 +264,14 @@ jobs:
             sign_apk "$out_dir" "$base" "${APK_DIR} ${abi} release"
             cp "$out_dir/$base.apk" "release-assets/mpvRx-${ASSET_NAME:-$abi}-${VERSION_TAG}.apk"
           done
+
+      - name: Upload R8 diagnostics
+        uses: actions/upload-artifact@v7
+        with:
+          name: r8-${{ matrix.distribution.id }}-${{ github.sha }}
+          path: app/build/outputs/mapping/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7

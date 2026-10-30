@@ -271,6 +271,7 @@ class SettingsManager(
       if (key != BrowserPreferences.ONBOARDING_COMPLETED_KEY &&
         key != AdvancedPreferences.AUTO_BACKUP_ENABLED_KEY &&
         key != AdvancedPreferences.AUTO_BACKUP_FOLDER_URI_KEY &&
+        key != AdvancedPreferences.MEASURE_ENABLED_KEY &&
         value != null
       ) {
         writePreference(serializer, key, value)
@@ -442,7 +443,8 @@ class SettingsManager(
                 if (parents.size == 3 && parents[1] == TAG_PREFERENCES &&
                   key != BrowserPreferences.ONBOARDING_COMPLETED_KEY &&
                   key != AdvancedPreferences.AUTO_BACKUP_ENABLED_KEY &&
-                  key != AdvancedPreferences.AUTO_BACKUP_FOLDER_URI_KEY
+                  key != AdvancedPreferences.AUTO_BACKUP_FOLDER_URI_KEY &&
+                    key != AdvancedPreferences.MEASURE_ENABLED_KEY
                 ) {
                   try {
                     val (validKey, value) = readPreference(parser)

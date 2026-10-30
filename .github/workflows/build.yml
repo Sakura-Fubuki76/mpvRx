@@ -42,6 +42,7 @@ jobs:
             abis: universal
             package: apk
     env:
+      MEASURE_API_KEY: ${{ secrets.MEASURE_API_KEY }}
       DISTRIBUTION: ${{ matrix.distribution.id }}
       GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
       APK_DIR: ${{ matrix.distribution.dir }}
@@ -52,7 +53,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
-          # BuildConfig.GIT_COUNT and preview build identities rely on the real repository history.
+          # BuildConfig.GIT_COUNT, Play Store version codes and preview identities need full history.
           fetch-depth: 0
 
       - name: Generate build metadata
@@ -90,6 +91,23 @@ jobs:
         run: |
           set -euo pipefail
           ./gradlew "bundle${GRADLE_FLAVOR}Release" --stacktrace --no-daemon --max-workers=2
+
+      - name: Compile artwork regressions and performance capture
+        if: matrix.distribution.id == 'standard'
+        run: ./gradlew :app:compileStandardDebugAndroidTestKotlin :baselineprofile:compileStandardNonMinifiedReleaseKotlin -PtargetAbi=x86_64 --stacktrace --no-daemon --max-workers=2
+
+      - name: Report APK and bundle contents
+        run: |
+          python3 scripts/report_android_size.py --json size-report.json --markdown size-report.md
+          cat size-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload archive size report
+        uses: actions/upload-artifact@v7
+        with:
+          name: size-report-${{ matrix.distribution.id }}
+          path: |
+            size-report.json
+            size-report.md
 
       - name: Sign bundle when signing secrets are available
         if: ${{ matrix.distribution.package == 'aab' }}
@@ -233,6 +251,14 @@ jobs:
               fi
               ;;
           esac
+
+      - name: Upload R8 diagnostics
+        uses: actions/upload-artifact@v7
+        with:
+          name: r8-${{ matrix.distribution.id }}-${{ github.sha }}
+          path: app/build/outputs/mapping/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload arm64-v8a APK
         if: ${{ matrix.distribution.id == 'standard' }}

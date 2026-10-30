@@ -11,7 +11,7 @@ package app.gyrolet.mpvrx.ui.browser.videolist
 
 import android.content.Intent
 import android.os.Environment
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedVisibility
@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.IconButton
@@ -76,7 +75,6 @@ import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.GesturePreferences
 import app.gyrolet.mpvrx.preferences.MediaLayoutMode
-import app.gyrolet.mpvrx.preferences.SortOrder
 import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
@@ -121,6 +119,7 @@ import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.popSafely
+import app.gyrolet.mpvrx.ui.tv.focusableWhen
 import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
 import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.MediaUtils
@@ -313,7 +312,7 @@ data class VideoListScreen(
       coroutineScope.launch {
         val result = secureFolderRepository.moveIn(context, selectedVideos)
         moveToSecureProgressOpen.value = false
-        selectionManager.clear()
+        if (result.isSuccess) selectionManager.clear()
         viewModel.refresh()
         result
           .onSuccess { batch ->
@@ -324,8 +323,11 @@ data class VideoListScreen(
                 context.getString(R.string.secure_folder_moved_partial, batch.succeededIds.size, batch.failedIds.size)
               }
             Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-          }.onFailure {
-            Toast.makeText(context, context.getString(R.string.secure_folder_move_failed), Toast.LENGTH_SHORT).show()
+          }.onFailure { error ->
+            Toast.error(context, context.getString(
+              R.string.secure_folder_move_failed_details,
+              error.localizedMessage ?: context.getString(R.string.generic_unknown_error),
+            ))
           }
       }
     }
@@ -467,7 +469,7 @@ data class VideoListScreen(
                   .animateFloatingActionButton(
                     visible = isFabShouldBeVisible,
                     alignment = Alignment.BottomEnd,
-                  ),
+                  ).focusableWhen(isFabShouldBeVisible),
               onClick = {
                 coroutineScope.launch {
                   if (scopedFolder) {
@@ -956,7 +958,9 @@ internal fun VideoListContent(
       BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isLandscape = configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
         val videoGridColumnsPref = if (isLandscape) videoGridColumnsLandscape else videoGridColumnsPortrait
-        val contentHorizontalPadding = 8.dp
+        // Focused TV cards scale beyond their bounds; keep the border inside each pane.
+        val contentHorizontalPadding =
+          if (app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(LocalContext.current)) 20.dp else 8.dp
         val itemSpacing = 2.dp
         val usableWidth = maxWidth - (contentHorizontalPadding * 2) - itemSpacing
         val videoMinWidth =
@@ -1124,8 +1128,8 @@ internal fun VideoListContent(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding =
                   PaddingValues(
-                    start = 8.dp,
-                    end = 8.dp,
+                    start = contentHorizontalPadding,
+                    end = contentHorizontalPadding,
                     top = 8.dp,
                     bottom = bottomPadding + 8.dp,
                   ),
@@ -1198,8 +1202,8 @@ internal fun VideoListContent(
                 verticalArrangement = Arrangement.spacedBy(MediaSelectionListGap),
                 contentPadding =
                   PaddingValues(
-                    start = 8.dp,
-                    end = 8.dp,
+                    start = contentHorizontalPadding,
+                    end = contentHorizontalPadding,
                     top = 4.dp,
                     bottom = bottomPadding,
                   ),

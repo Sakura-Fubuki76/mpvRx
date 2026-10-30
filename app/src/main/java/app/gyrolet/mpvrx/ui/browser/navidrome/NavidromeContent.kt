@@ -36,6 +36,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import app.gyrolet.mpvrx.ui.tv.TvRefreshContainer
+import app.gyrolet.mpvrx.ui.tv.isTelevision
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -59,7 +61,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.navidrome.NavidromeMusicTab
 import app.gyrolet.mpvrx.preferences.MediaServerPreferences
-import app.gyrolet.mpvrx.preferences.MusicSourceProvider
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.repository.JellyfinRepository
 import app.gyrolet.mpvrx.repository.NavidromeRepository
@@ -385,11 +386,7 @@ fun NavidromeContent(
         }
       }
     } else {
-      PullToRefreshBox(
-        isRefreshing = uiState.isLoading,
-        onRefresh = { viewModel.refresh() },
-        modifier = Modifier.fillMaxSize(),
-      ) {
+      val musicView: @Composable () -> Unit = {
         NavidromeMusicView(
           uiState = uiState,
           server = server,
@@ -405,6 +402,23 @@ fun NavidromeContent(
           onToggleFavorite = { song -> viewModel.toggleFavorite(song) },
           navigationBarHeight = navigationBarHeight,
         )
+      }
+      if (isTelevision()) {
+        TvRefreshContainer(
+          isRefreshing = uiState.isLoading,
+          onRefresh = { viewModel.refresh() },
+          modifier = Modifier.fillMaxSize(),
+        ) {
+          musicView()
+        }
+      } else {
+        PullToRefreshBox(
+          isRefreshing = uiState.isLoading,
+          onRefresh = { viewModel.refresh() },
+          modifier = Modifier.fillMaxSize(),
+        ) {
+          musicView()
+        }
       }
     }
 

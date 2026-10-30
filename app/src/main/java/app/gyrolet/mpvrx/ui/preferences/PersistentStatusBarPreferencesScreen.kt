@@ -18,7 +18,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,12 +33,14 @@ import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.player.controls.PersistentStatusHudRow
+import app.gyrolet.mpvrx.ui.player.controls.rememberHudClock
+import app.gyrolet.mpvrx.ui.tv.isTelevision
+import app.gyrolet.mpvrx.ui.tv.tvContentFocus
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
 import app.gyrolet.mpvrx.ui.utils.popSafely
-import kotlinx.coroutines.delay
 import kotlinx.serialization.Serializable
-import me.zhanghai.compose.preference.ListPreference
+import app.gyrolet.mpvrx.ui.preferences.components.AppListPreference as ListPreference
 import org.koin.compose.koinInject
 
 /**
@@ -61,14 +62,12 @@ object PersistentStatusBarPreferencesScreen : Screen {
     val preferFinishTime by prefs.persistentStatusPreferFinishTime.collectAsState()
     val showSpeed by prefs.persistentStatusShowSpeed.collectAsState()
     val microBattery by prefs.persistentStatusMicroBattery.collectAsState()
-    val now by produceState(System.currentTimeMillis()) {
-      while (true) {
-        delay(30_000L)
-        value = System.currentTimeMillis()
-      }
-    }
+    val clockFormat by prefs.clockFormat.collectAsState()
+    val now = rememberHudClock()
+    val embeddedInPlayer = LocalPlayerSettingsPanel.current
 
     Scaffold(
+      contentWindowInsets = settingsContentWindowInsets(),
       topBar = {
         SettingsTopAppBar(
           title = stringResource(R.string.pref_persistent_status_title),
@@ -78,9 +77,9 @@ object PersistentStatusBarPreferencesScreen : Screen {
     ) { padding ->
       ProvideExpressivePreferenceLocals {
         LazyColumn(
-          modifier = Modifier.fillMaxSize().padding(padding),
+          modifier = Modifier.fillMaxSize().padding(padding).tvContentFocus(),
         ) {
-          item {
+          if (!embeddedInPlayer) item {
             Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
               Box(
                 modifier = Modifier.fillMaxWidth()
@@ -103,7 +102,7 @@ object PersistentStatusBarPreferencesScreen : Screen {
                   leftSlot = left, centerSlot = center, rightSlot = right,
                   preferFinishTime = preferFinishTime, showSpeed = showSpeed,
                   microBattery = microBattery, positionSeconds = 1200f, durationSeconds = 3600f,
-                  playbackSpeed = 1.5f, batteryLevel = 88, nowMillis = now,
+                  playbackSpeed = 1.5f, batteryLevel = 88, nowMillis = now, clockFormat = clockFormat,
                   modifier = Modifier.align(
                     if (position == PersistentStatusPosition.Top) Alignment.TopCenter
                     else Alignment.BottomCenter,
@@ -199,12 +198,14 @@ object PersistentStatusBarPreferencesScreen : Screen {
                 onValueChange = prefs.persistentStatusShowSpeed::set,
                 title = { Text(stringResource(R.string.pref_persistent_status_speed)) },
               )
-              PreferenceDivider()
-              SwitchPreference(
-                value = microBattery,
-                onValueChange = prefs.persistentStatusMicroBattery::set,
-                title = { Text(stringResource(R.string.pref_persistent_status_micro_battery)) },
-              )
+              DevicePreference(R.string.pref_persistent_status_micro_battery) {
+                PreferenceDivider()
+                SwitchPreference(
+                  value = microBattery,
+                  onValueChange = prefs.persistentStatusMicroBattery::set,
+                  title = { Text(stringResource(R.string.pref_persistent_status_micro_battery)) },
+                )
+              }
             }
           }
           item { Box(Modifier.height(24.dp)) }
@@ -233,15 +234,18 @@ private fun StatusSlotPreference(
   onValueChange: (PersistentStatusSlot) -> Unit,
 ) {
   val resources = LocalResources.current
+  val television = isTelevision()
+  val slots = PersistentStatusSlot.entries.filter { !television || it != PersistentStatusSlot.BatteryStatus }
+  val displayedValue = value.takeIf { it in slots } ?: PersistentStatusSlot.None
   ExpressivePreferenceItem {
     ListPreference(
-      value = value,
+      value = displayedValue,
       onValueChange = onValueChange,
-      values = PersistentStatusSlot.entries,
+      values = slots,
       valueToText = { AnnotatedString(resources.getString(slotLabel(it))) },
       title = { Text(label, fontWeight = FontWeight.SemiBold) },
       summary = {
-        Text(resources.getString(slotLabel(value)), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(resources.getString(slotLabel(displayedValue)), color = MaterialTheme.colorScheme.onSurfaceVariant)
       },
     )
   }

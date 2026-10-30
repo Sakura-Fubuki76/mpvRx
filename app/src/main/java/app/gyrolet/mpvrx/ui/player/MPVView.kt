@@ -78,7 +78,9 @@ class MPVView(
   var isExiting = false
   private var lastRequestedFrameRate = Float.NaN
   var forceOpenGlFallback = false
-  private var renderCallbacksEnabled = true
+  // Android may create the Surface while the core is still initializing on IO. Do not let its
+  // main-thread callbacks wait on the native lock; attachSessionSurface enables them afterwards.
+  private var renderCallbacksEnabled = false
   private var surfaceRecovery: Runnable? = null
   private var pausedFrameRedraw: Runnable? = null
   private val surfaceReadiness = MutableStateFlow(false)
@@ -657,20 +659,20 @@ class MPVView(
     width: Int,
     height: Int,
   ) {
+    if (!renderCallbacksEnabled || isExiting) return
     if (!PlaybackSession.resizeSurface(width, height, owner = this)) ensureSurfaceAttached()
     applyFrameRate()
     redrawPausedFrame()
   }
 
   /**
-   * A paused mpv does not render onto a new or resized Surface by itself, leaving a black or
-   * stretched buffer. A zero-distance exact seek re-renders the current frame (as REX Player does).
+   * Repaint the retained video output onto a replacement presentation window while paused.
    */
   private fun redrawPausedFrame() {
     if (isExiting || !isSurfaceReady) return
     val state = PlaybackSession.state.value
     if (!state.paused || state.phase != PlaybackPhase.READY || !PlaybackSession.isSurfaceAttachedTo(this)) return
-    PlaybackSession.command("seek", "0", "relative+exact")
+    PlaybackSession.redrawVideoFrame()
   }
 
   override fun onRenderSurfaceAvailable(surface: Surface, width: Int, height: Int) {
@@ -719,7 +721,7 @@ class MPVView(
     surfaceAttachmentGeneration++
     isSurfaceReady = false
     lastRequestedFrameRate = Float.NaN
-    PlaybackSession.unbindSurface(this)
+    if (renderCallbacksEnabled) PlaybackSession.unbindSurface(this)
   }
 
   /**

@@ -28,7 +28,6 @@ import app.gyrolet.mpvrx.utils.media.MetadataRetrieval
 import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
 import app.gyrolet.mpvrx.utils.permission.PermissionUtils.StorageOps
 import app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner
-import app.gyrolet.mpvrx.utils.storage.FolderViewScanner
 import app.gyrolet.mpvrx.utils.storage.MediaStoreGenerationGuard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -100,8 +99,6 @@ class FolderListViewModel(
   private val _scanStatus = MutableStateFlow<String?>(null)
   val scanStatus: StateFlow<String?> = _scanStatus.asStateFlow()
 
-  private val _isEnriching = MutableStateFlow(false)
-  val isEnriching: StateFlow<Boolean> = _isEnriching.asStateFlow()
 
   // Track the current scan job to prevent concurrent scans
   private var currentScanJob: Job? = null
@@ -193,9 +190,15 @@ class FolderListViewModel(
     }
 
     viewModelScope.launch {
-      combine(_allVideoFolders, blacklistFlow, pendingFolderDeletionKeys) { folders, blacklist, pendingDeletions ->
+      combine(
+        _allVideoFolders,
+        blacklistFlow,
+        foldersPreferences.whitelistChanges(),
+        pendingFolderDeletionKeys,
+      ) { folders, blacklist, (whitelistEnabled, whitelist), pendingDeletions ->
         folders.filter { folder ->
           folderKey(folder) !in pendingDeletions &&
+            app.gyrolet.mpvrx.utils.storage.isWhitelistedMediaPath(folder.path, whitelistEnabled, whitelist) &&
             blacklist.none { blacklisted ->
               app.gyrolet.mpvrx.utils.storage.isMediaPathInFolder(folder.path, blacklisted)
             }
@@ -332,7 +335,8 @@ class FolderListViewModel(
       "_m${foldersPreferences.sharedScanMarkedFolders.get()}_d${foldersPreferences.sharedScanDotFolders.get()}" +
       "_markers${foldersPreferences.hiddenFolderMarkerNames.get().sorted().joinToString(",")}" +
       "_ignore${foldersPreferences.sharedIgnoredMarkers.get().sorted().joinToString(",")}" +
-      "_audio_${browserPreferences.includeAudioBrowser.get()}_${browserPreferences.minimumAudioDurationSeconds.get()}"
+      "_audio_${browserPreferences.includeAudioBrowser.get()}_${browserPreferences.minimumAudioDurationSeconds.get()}" +
+      "_${MediaFileRepository.currentScanOptions().mediaFilterKey}"
 
   private fun serializeFoldersToJson(folders: List<VideoFolder>): String {
     // Simple JSON serialization
@@ -709,7 +713,6 @@ class FolderListViewModel(
             listingReady.complete(Unit)
             if (isActive) {
               _isLoading.value = false
-              _isEnriching.value = false
               _scanStatus.value = null
             }
           }
@@ -860,7 +863,6 @@ class FolderListViewModel(
 
           val finalFolders = if (needsDurationEnrichment) {
             if (!silent) {
-              _isEnriching.value = true
               _scanStatus.value = "Processing metadata..."
             }
             val enrichedFolders =
@@ -886,7 +888,6 @@ class FolderListViewModel(
           }
 
           if (MetadataRetrieval.isFolderMetadataNeeded(browserPreferences)) {
-            _isEnriching.value = false
             _scanStatus.value = null
             enrichDeferredFolderDurations(finalFolders, hiddenFolderKeys)
           }
@@ -901,7 +902,6 @@ class FolderListViewModel(
           listingReady.complete(Unit)
           if (isActive) {
             _isLoading.value = false
-            _isEnriching.value = false
             _scanStatus.value = null
           }
         }

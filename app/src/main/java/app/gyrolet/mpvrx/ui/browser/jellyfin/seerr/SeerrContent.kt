@@ -9,7 +9,8 @@
 
 package app.gyrolet.mpvrx.ui.browser.jellyfin.seerr
 
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import app.gyrolet.mpvrx.ui.utils.NavigationBackHandler as BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -61,12 +62,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
-import app.gyrolet.mpvrx.domain.seerr.MediaType
 import app.gyrolet.mpvrx.presentation.components.pullrefresh.PullRefreshBox
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
 import app.gyrolet.mpvrx.ui.components.InlineSearchBar
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.tv.TvScreenFocusHost
+import app.gyrolet.mpvrx.ui.tv.tvContentFocus
+import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusGroup
+import app.gyrolet.mpvrx.ui.utils.LocalNavigationPageActive
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -143,6 +147,7 @@ fun SeerrContent(
             },
             trailingIcon = {
               IconButton(
+                modifier = Modifier.tvFocusHighlight(CircleShape, clipToShape = false),
                 onClick = {
                   if (uiState.searchQuery.isNotEmpty()) {
                     viewModel.clearSearch()
@@ -176,7 +181,7 @@ fun SeerrContent(
           additionalActions = {
             IconButton(
               onClick = { viewModel.openConnectionDialog() },
-              modifier = Modifier.padding(horizontal = 2.dp),
+              modifier = Modifier.padding(horizontal = 2.dp).tvFocusHighlight(CircleShape, clipToShape = false),
             ) {
               if (uiState.isConnected) {
                 val rawAvatar = uiState.currentUser?.avatar
@@ -189,6 +194,7 @@ fun SeerrContent(
 
                 if (avatarUrl != null) {
                   app.gyrolet.mpvrx.presentation.components.RemoteImage(
+                    maxDimensionPx = 256,
                     url = avatarUrl,
                     contentDescription = stringResource(R.string.seerr_connect_server),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
@@ -234,6 +240,12 @@ fun SeerrContent(
         .fillMaxSize()
         .weight(1f),
     ) {
+      TvScreenFocusHost(
+        scope = listOf("seerr", uiState.serverUrl, isSearching),
+        safeArea = false,
+        active = LocalNavigationPageActive.current && !isSearching && !uiState.isDetailSheetOpen && !uiState.isConnectionDialogOpen,
+        focusRequestKey = uiState.isConnected to uiState.isLoadingContent,
+      ) {
       if (!uiState.isConnected) {
         // Not Connected CTA
         Box(
@@ -291,7 +303,7 @@ fun SeerrContent(
                   contentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().tvFocusHighlight(RoundedCornerShape(12.dp), clipToShape = false),
               ) {
                 Icon(Icons.RoundedFilled.Link, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(8.dp))
@@ -320,7 +332,7 @@ fun SeerrContent(
             contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().tvContentFocus(),
           ) {
             items(uiState.searchResults, key = { "${it.mediaType}_${it.id}" }) { item ->
               SeerrMediaCard(
@@ -341,7 +353,7 @@ fun SeerrContent(
           LazyColumn(
             contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp),
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().tvContentFocus(),
           ) {
             // 1. Recently Added Section on Top
             if (uiState.recentlyAdded.isNotEmpty()) {
@@ -363,7 +375,7 @@ fun SeerrContent(
                   LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().tvFocusGroup(),
                   ) {
                     items(combinedRequests, key = { it.id }) { req ->
                       SeerrRequestCard(
@@ -438,6 +450,8 @@ fun SeerrContent(
           }
         }
       }
+    }
+
     }
 
     // Detail Bottom Sheet

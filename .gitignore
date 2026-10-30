@@ -155,7 +155,6 @@ lint/tmp/
 # Profiling
 # =========================
 *.hprof
-
 # Legacy graft-map cache. Trail's current cache is ignored by .trail/.gitignore.
 graft/
 # Local development notes are not release sources.

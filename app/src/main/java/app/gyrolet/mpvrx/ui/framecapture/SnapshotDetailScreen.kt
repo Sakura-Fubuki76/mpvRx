@@ -10,7 +10,7 @@
 package app.gyrolet.mpvrx.ui.framecapture
 
 import android.app.Application
-import android.widget.Toast
+import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -38,6 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -58,6 +59,9 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.domain.framecapture.VideoAvailability
 import app.gyrolet.mpvrx.domain.framecapture.VideoSource
 import app.gyrolet.mpvrx.presentation.Screen
+import app.gyrolet.mpvrx.ui.tv.TvEdgeToEdgeScreen
+import app.gyrolet.mpvrx.ui.tv.TvPagerFocusArea
+import app.gyrolet.mpvrx.ui.tv.tvOverscanPadding
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.imageviewer.ZoomableImage
@@ -72,7 +76,7 @@ import kotlinx.serialization.Serializable
 data class SnapshotDetailScreen(
   val captures: List<SnapshotDetailItem>,
   val initialIndex: Int = 0,
-) : Screen {
+) : Screen, TvEdgeToEdgeScreen {
 
   @Composable
   override fun Content() {
@@ -94,6 +98,11 @@ data class SnapshotDetailScreen(
             initialIndex,
           ),
       )
+
+    DisposableEffect(viewModel) {
+      viewModel.onViewerOpened()
+      onDispose { viewModel.onViewerClosed() }
+    }
 
     val currentIndex by viewModel.currentIndex.collectAsState()
     val images by viewModel.images.collectAsState()
@@ -117,7 +126,11 @@ data class SnapshotDetailScreen(
       rememberPagerState(initialPage = initialIndex.coerceIn(0, visibleItems.lastIndex)) {
         visibleItems.size
       }
-    LaunchedEffect(pagerState.currentPage) { viewModel.setCurrentIndex(pagerState.currentPage) }
+    LaunchedEffect(pagerState.currentPage, visibleItems) {
+      val page = pagerState.currentPage.coerceIn(0, visibleItems.lastIndex)
+      viewModel.setCurrentIndex(page)
+      if (page != pagerState.currentPage) pagerState.scrollToPage(page)
+    }
 
     // §6: a snapshot whose gallery file the user deleted should say so and offer to drop the record,
     // rather than showing a broken image forever.
@@ -161,6 +174,9 @@ data class SnapshotDetailScreen(
           modifier = Modifier.fillMaxSize(),
         )
       }
+
+      // TV: Left/Right turn pages; Up and Down reach the top bar and the actions below.
+      TvPagerFocusArea(pagerState)
 
       SnapshotDetailOverlay(
         item = currentItem,
@@ -301,6 +317,7 @@ private fun SnapshotDetailOverlay(
             .fillMaxWidth()
             .background(topScrim)
             .windowInsetsPadding(WindowInsets.statusBars)
+            .tvOverscanPadding(bottom = false)
             .padding(start = 4.dp, end = 8.dp, top = 4.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
@@ -348,6 +365,7 @@ private fun SnapshotDetailOverlay(
             .fillMaxWidth()
             .background(bottomScrim)
             .windowInsetsPadding(WindowInsets.navigationBars)
+            .tvOverscanPadding(top = false)
             .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {

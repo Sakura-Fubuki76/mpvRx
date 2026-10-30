@@ -70,6 +70,7 @@ import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.controls.components.tvContextMenu
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
+import app.gyrolet.mpvrx.ui.tv.tvFocusMemory
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
 import java.io.File
@@ -268,7 +269,7 @@ fun PlaylistCard(
       onLongClick = onLongClick,
       onRenameClick = if (isFavorites) null else onRenameClick,
       onDeleteClick = if (isFavorites) null else onDeleteClick,
-      modifier = modifier,
+      modifier = modifier.tvFocusMemory("playlist:${playlist.id}"),
     )
     return
   }
@@ -452,6 +453,8 @@ private fun YouTubePlaylistGridCard(
     modifier =
       modifier
         .fillMaxWidth()
+        // On the card itself: the thumbnail has no focus of its own, so a highlight there never lit.
+        .tvFocusHighlight(cardShape, focusedScale = 1.03f)
         .clip(cardShape)
         .background(selectionColor)
         .semantics { selected = isSelected }
@@ -505,8 +508,7 @@ private fun YouTubePlaylistGridCard(
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .clip(AppShapeScale.medium)
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .tvFocusHighlight(AppShapeScale.medium, focusedScale = 1.025f),
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
       ) {
         if (thumbnail != null) {
