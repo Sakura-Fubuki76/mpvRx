@@ -1393,6 +1393,14 @@ class ThumbnailRepository(
     return rotated
   }
 
+  private fun rotateBitmapIfNeeded(bitmap: Bitmap, rotation: Int): Bitmap {
+    if (rotation == 0) return bitmap
+    val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (rotated !== bitmap) bitmap.recycle()
+    return rotated
+  }
+
   private fun networkVideoHeaders(): Map<String, String> =
     mapOf(
       // Some servers refuse requests without a UA. MediaMetadataRetriever handles the rest.
@@ -1712,8 +1720,9 @@ class ThumbnailRepository(
         if (clip != null) {
           try {
             for (position in listOf(0.0, 2.0, 5.0, 10.0, 20.0)) {
-              val bitmap = FastThumbnails.generateAsync(clip.path, position,
+              val rawBitmap = FastThumbnails.generateAsync(clip.path, position,
                 maxOf(targetWidth, targetHeight, MAX_THUMBNAIL_SIZE).coerceAtMost(1080), useHwDec = false)
+              val bitmap = rawBitmap?.let { rotateBitmapIfNeeded(it, layout.rotation) }
               acceptFrame(bitmap, "fragment-$position")?.let { return it }
             }
           } finally {

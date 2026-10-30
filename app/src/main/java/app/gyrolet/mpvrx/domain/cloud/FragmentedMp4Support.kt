@@ -8,10 +8,17 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import kotlin.math.atan2
+import kotlin.math.roundToInt
 
 /** Bounded container inspection; no frame decoding and no credentials in cache identities. */
 internal object FragmentedMp4Support {
-  internal data class Layout(val fragmented: Boolean, val videoTrack: Int = 0, val timescale: Int = 0)
+  internal data class Layout(
+    val fragmented: Boolean,
+    val videoTrack: Int = 0,
+    val timescale: Int = 0,
+    val rotation: Int = 0,
+  )
   private const val MAX_PREFIX = 16 * 1024 * 1024
   /** Cover enough of the opening for the blank-frame retry without downloading more than needed. */
   private const val CLIP_TARGET_SPAN_MS = 6_000.0
@@ -23,8 +30,10 @@ internal object FragmentedMp4Support {
     val key = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray())
       .joinToString("") { "%02x".format(it) }
     val prefs = context.getSharedPreferences("cloud_mp4_layout_v1", Context.MODE_PRIVATE)
-    if (prefs.contains(key)) {
-      return prefs.getInt(key, -1).let { Layout(it > 0, it.coerceAtLeast(0), prefs.getInt("$key:timescale", 0)) }
+    if (prefs.contains(key) && prefs.contains("$key:rotation")) {
+      return prefs.getInt(key, -1).let {
+        Layout(it > 0, it.coerceAtLeast(0), prefs.getInt("$key:timescale", 0), prefs.getInt("$key:rotation", 0))
+      }
     }
     return try {
       probeHttp.newCall(Request.Builder().url(url).header("Range", "bytes=0-65535")
@@ -35,6 +44,7 @@ internal object FragmentedMp4Support {
           prefs.edit()
             .putInt(key, if (layout.fragmented) layout.videoTrack else -1)
             .putInt("$key:timescale", layout.timescale)
+            .putInt("$key:rotation", layout.rotation)
             .apply()
         }
         layout
@@ -141,10 +151,24 @@ internal object FragmentedMp4Support {
           val offset = mdhd.start + if (bytes[mdhd.start].toInt() == 1) 20 else 12
           if (offset + 4 <= mdhd.end) uint32(bytes, offset).toInt() else 0
         } ?: 0
+      val rotation = tkhdRotation(bytes, tkhd)
       val idOffset = tkhd.start + if (bytes[tkhd.start].toInt() == 1) 20 else 12
-      if (idOffset + 4 <= tkhd.end) return Layout(true, uint32(bytes, idOffset).toInt(), timescale)
+      if (idOffset + 4 <= tkhd.end) {
+        return Layout(true, uint32(bytes, idOffset).toInt(), timescale, rotation)
+      }
     }
     return Layout(true)
+  }
+
+  private fun tkhdRotation(bytes: ByteArray, tkhd: Box): Int {
+    if (tkhd.end - tkhd.start < 4) return 0
+    val version = bytes[tkhd.start].toInt() and 0xff
+    val matrixOffset = tkhd.start + if (version == 1) 52 else 40
+    if (matrixOffset + 20 > tkhd.end) return 0
+    val a = uint32(bytes, matrixOffset).toInt()
+    val b = uint32(bytes, matrixOffset + 4).toInt()
+    if (a == 0 && b == 0) return 0
+    return ((Math.toDegrees(atan2(b.toDouble(), a.toDouble())).roundToInt() % 360) + 360) % 360
   }
 
   /** Base media decode time of this fragment's video track, when it carries one. */
