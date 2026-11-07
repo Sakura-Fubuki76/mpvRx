@@ -98,7 +98,7 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build ${{ matrix.distribution.name }} release ${{ matrix.distribution.package == 'aab' && 'bundle' || 'APKs' }}
+    name: Build ${{ matrix.distribution.name }} release APKs
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -112,21 +112,18 @@ jobs:
             dir: standard
             abis: universal arm64-v8a armeabi-v7a x86 x86_64
             asset: ''
-            package: apk
           - id: fongmi
             name: FongMi
             gradle: Fongmi
             dir: fongmi
             abis: universal
             asset: fongmi
-            package: apk
           - id: no_vulkan
             name: No Vulkan
             gradle: NoVulkan
             dir: noVulkan
             abis: universal
             asset: no-vulkan
-            package: apk
     env:
       MEASURE_API_KEY: ${{ secrets.MEASURE_API_KEY }}
       VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
@@ -154,54 +151,12 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build release APKs
-        if: ${{ matrix.distribution.package == 'apk' }}
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew "assemble${GRADLE_FLAVOR}Release" --stacktrace --no-daemon --max-workers=2
 
-      - name: Build release bundle
-        if: ${{ matrix.distribution.package == 'aab' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./gradlew "bundle${GRADLE_FLAVOR}Release" --stacktrace --no-daemon --max-workers=2
-
-      - name: Sign and stage release bundle
-        if: ${{ matrix.distribution.package == 'aab' }}
-        shell: bash
-        env:
-          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
-          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$SIGNING_KEYSTORE" || -z "$SIGNING_KEY_ALIAS" || -z "$SIGNING_STORE_PASSWORD" || -z "$KEY_PASSWORD" ]]; then
-            echo "Stable releases require all signing secrets."
-            exit 1
-          fi
-
-          bundle="app/build/outputs/bundle/${APK_DIR}Release/app-${APK_DIR}-release.aab"
-          test -f "$bundle"
-
-          printf '%s' "$SIGNING_KEYSTORE" | base64 --decode > release.keystore
-          trap 'rm -f release.keystore' EXIT
-
-          # App bundles are signed with jarsigner; apksigner only handles APKs.
-          jarsigner \
-            -keystore release.keystore \
-            -storepass "$SIGNING_STORE_PASSWORD" \
-            -keypass "$KEY_PASSWORD" \
-            "$bundle" \
-            "$SIGNING_KEY_ALIAS"
-          jarsigner -verify "$bundle"
-
-          mkdir -p release-assets
-          cp "$bundle" "release-assets/mpvRx-${ASSET_NAME}-${VERSION_TAG}.aab"
-
       - name: Sign and stage release APKs
-        if: ${{ matrix.distribution.package == 'apk' }}
         shell: bash
         env:
           SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
@@ -281,18 +236,6 @@ jobs:
           path: app/build/outputs/mapping/
           if-no-files-found: error
           retention-days: 30
-
-      - name: Stage Play Store native debug symbols
-        if: ${{ matrix.distribution.package == 'aab' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          symbols="app/build/outputs/native-debug-symbols/${APK_DIR}Release/native-debug-symbols.zip"
-          if [[ -f "$symbols" ]]; then
-            cp "$symbols" "release-assets/mpvRx-${ASSET_NAME}-${VERSION_TAG}-native-debug-symbols.zip"
-          else
-            echo "::warning::Native dependencies contain no extractable symbols. Rebuild mpvlib with symbol-preserving packaging; an app setting cannot restore stripped symbols."
-          fi
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7

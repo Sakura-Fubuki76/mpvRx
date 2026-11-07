@@ -289,6 +289,7 @@ jobs:
     steps:
       - name: Checkout preview source
         uses: actions/checkout@v7
+        with:
           submodules: recursive
 
       - name: Restore live GitHub Pages site
