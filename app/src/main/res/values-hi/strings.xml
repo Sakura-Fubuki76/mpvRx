@@ -198,8 +198,6 @@
   <string name="pref_player_gestures_volume">वॉल्यूम जेस्चर</string>
   <string name="pref_player_gestures_pinch_to_zoom">पिंच टू ज़ूम</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">सबटाइटल पिंच टू ज़ूम</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe">स्पीड के लिए दो उंगलियों से स्वाइप</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe_summary">प्लेबैक स्पीड 0.25x बदलने के लिए दो उंगलियों से ऊपर या नीचे स्वाइप करें, 0.5x से 4x तक</string>
   <string name="pref_subtitles_secondary_pinch_zoom">पिंच से द्वितीयक सबटाइटल ज़ूम करें</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">प्राथमिक सबटाइटल को पिंच करने पर द्वितीयक सबटाइटल का आकार भी बदलेगा</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">सबटाइटल स्वाइप से सीक डायलॉग</string>
@@ -959,6 +957,9 @@
   <string name="player_horizontal_flip_off">हॉरिजॉन्टल फ्लिप ऑफ</string>
   <string name="player_vertical_flip_on">वर्टिकल फ्लिप ऑन</string>
   <string name="player_vertical_flip_off">वर्टिकल फ्लिप ऑफ</string>
+  <string name="player_hwplus_unsupported">%1$s HW+ मोड में सपोर्टेड नहीं है। इसे इस्तेमाल करने के लिए HW या SW डिकोडिंग पर स्विच करें।</string>
+  <string name="player_hwplus_use_hw">HW इस्तेमाल करें</string>
+  <string name="player_hwplus_cpu_deband">CPU डीबैंडिंग</string>
   <string name="btn_label_back">बैक एरो</string>
   <string name="btn_label_title">वीडियो टाइटल</string>
   <string name="btn_label_bookmarks">चैप्टर / बुकमार्क</string>
@@ -1352,8 +1353,6 @@
   <string name="ui_no_storage_location_configured">कोई स्टोरेज लोकेशन कॉन्फ़िगर नहीं है</string>
   <string name="ui_script_file_not_found">स्क्रिप्ट फाइल नहीं मिली</string>
   <string name="ui_search_models">मॉडल खोजें...</string>
-  <string name="ui_portrait_playback_buttons">पोर्ट्रेट प्लेबैक बटन</string>
-  <string name="ui_landscape_playback_buttons">लैंडस्केप प्लेबैक बटन</string>
   <string name="ui_portrait_seekbar_position">पोर्ट्रेट सीकबार की स्थिति</string>
   <string name="ui_landscape_seekbar_position">लैंडस्केप सीकबार की स्थिति</string>
   <string name="pref_player_buttons_opacity">प्लेयर बटन पृष्ठभूमि की अपारदर्शिता</string>
@@ -1414,7 +1413,6 @@
   <string name="oss_androidx_documentfile_description">डॉक्यूमेंट स्टोरेज एक्सेस के लिए एब्स्ट्रैक्शन लेयर।</string>
   <string name="oss_androidx_media_description">Android मीडिया सेशन और प्लेबैक API।</string>
   <string name="oss_androidx_palette_description">तस्वीरों से प्रमुख और जीवंत रंग पैलेट निकालता है।</string>
-  <string name="oss_androidx_profile_installer_description">तेज़ ऐप स्टार्टअप के लिए क्लास और मेथड पहले से लोड करता है।</string>
   <string name="oss_google_material_description">Material Design कंपोनेंट और थीमिंग लाइब्रेरी।</string>
   <string name="oss_google_cast_description">मीडिया कास्टिंग के लिए Chromecast फ्रेमवर्क।</string>
   <string name="oss_material_symbols_description">Compose के लिए Material Symbols आइकन सेट।</string>
@@ -2242,7 +2240,10 @@
     <item quantity="one">%1$s से सेटिंग्स बहाल हुईं। %2$d खराब प्रविष्टि छोड़ दी गई। डाउनलोड Configuration/Downloads का उपयोग करेंगे।</item>
     <item quantity="other">%1$s से सेटिंग्स बहाल हुईं। %2$d खराब प्रविष्टियाँ छोड़ दी गईं। डाउनलोड Configuration/Downloads का उपयोग करेंगे।</item>
   </plurals>
-  <string name="settings_restore_reverted">%1$s से बहाल की गई सेटिंग्स के कारण ऐप क्रैश हुआ, इसलिए उन्हें वापस ले लिया गया।</string>
+  <plurals name="pref_import_skipped_invalid">
+    <item quantity="one">%1$d अमान्य सेटिंग छोड़ी गई</item>
+    <item quantity="other">%1$d अमान्य सेटिंग्स छोड़ी गईं</item>
+  </plurals>
   <string name="onboarding_configuration_restore_failed">फ़ोल्डर सेटअप पूरा नहीं हुआ: %1$s</string>
   <string name="navbar_glow_title">ग्लास की चमक</string>
   <string name="navbar_glow_summary">नेविगेशन बार की किनारे की रोशनी और स्पर्श चमक दिखाएं</string>
@@ -2661,6 +2662,9 @@
   <string name="jellyfin_details">जानकारी</string>
   <string name="jellyfin_trailer">ट्रेलर</string>
   <string name="jellyfin_open_trailer_error">ट्रेलर खोलने के लिए कोई ऐप उपलब्ध नहीं है।</string>
+  <string name="no_app_for_action">इस डिवाइस पर कोई ऐप इसे नहीं खोल सकता।</string>
+  <string name="tv_picker_file_exists">इस नाम की फ़ाइल पहले से मौजूद है।</string>
+  <string name="tv_picker_no_access">mpvRx इस स्थान तक नहीं पहुँच सकता।</string>
   <string name="jellyfin_libraries">लाइब्रेरी</string>
   <string name="jellyfin_continue_watching">देखना जारी रखें</string>
   <string name="jellyfin_latest_movies">नई फ़िल्में</string>
@@ -2752,10 +2756,8 @@
   <string name="clip_quick_length">झटपट लंबाई</string>
   <string name="clip_length_seconds">%1$d से॰</string>
   <string name="clip_crop_reset">पूरा फ़्रेम इस्तेमाल करें</string>
-  <string name="pref_layout_center_seekbar_above">बीच में प्लेबैक · बटनों के ऊपर सीक बार</string>
-  <string name="pref_layout_center_seekbar_below">बीच में प्लेबैक · बटनों के नीचे सीक बार</string>
-  <string name="pref_layout_playback_above">सीक बार के ऊपर प्लेबैक और बटन</string>
-  <string name="pref_layout_playback_below">सीक बार के नीचे प्लेबैक और बटन</string>
+  <string name="pref_layout_seekbar_above">सीकबार ऊपर</string>
+  <string name="pref_layout_seekbar_below">सीकबार नीचे</string>
   <string name="player_layout_preset_title">प्लेबैक लेआउट</string>
   <string name="player_layout_preview_hint">सिर्फ़ नमूना। बदलाव तुरंत सहेजे जाते हैं।</string>
   <string name="player_layout_shared_landscape_hint">लैंडस्केप की सभी जगहों पर लागू होता है।</string>
@@ -2766,4 +2768,9 @@
   <string name="pref_measure_enabled_title">Measure के साथ निदान साझा करें</string>
   <string name="pref_measure_enabled_summary">क्रैश, ANR, प्रदर्शन आँकड़े और सत्र गतिविधि Measure को भेजने के लिए सहमति दें। डिफ़ॉल्ट रूप से बंद।</string>
   <string name="pref_measure_not_configured">निदान उपलब्ध नहीं: इस बिल्ड में Measure API कुंजी नहीं है।</string>
+  <string name="pref_layout_portrait_playback_position">पोर्ट्रेट प्लेबैक नियंत्रण</string>
+  <string name="pref_layout_landscape_playback_position">लैंडस्केप प्लेबैक नियंत्रण</string>
+  <string name="pref_layout_playback_center">स्क्रीन के बीच में</string>
+  <string name="pref_layout_playback_above_seekbar">सीकबार के ऊपर</string>
+  <string name="pref_layout_playback_below_seekbar">सीकबार के नीचे</string>
 </resources>

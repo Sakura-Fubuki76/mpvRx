@@ -98,6 +98,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import app.gyrolet.mpvrx.ui.preferences.components.AppListPreference as ListPreference
+import app.gyrolet.mpvrx.ui.preferences.components.PreferenceAction
 import app.gyrolet.mpvrx.ui.preferences.components.AppPreference as Preference
 import app.gyrolet.mpvrx.ui.preferences.components.AppTextFieldPreference as TextFieldPreference
 import org.koin.compose.koinInject
@@ -552,6 +553,7 @@ object SubtitlesPreferencesScreen : Screen {
                 },
                 enabled = fontsFolder.isNotBlank(),
                 onClick = { reloadFontsFrom(fontsFolder) },
+                action = PreferenceAction.None,
               )
               }
 
@@ -702,6 +704,7 @@ object SubtitlesPreferencesScreen : Screen {
                   Text(summaryText, color = MaterialTheme.colorScheme.outline)
                 },
                 onClick = { showSourcesDialog = true },
+                action = PreferenceAction.Dialog,
               )
               }
 
@@ -1147,6 +1150,7 @@ object SubtitlesPreferencesScreen : Screen {
                 },
                 summary = { Text(stringResource(R.string.pref_subtitles_clear_downloads_summary)) },
                 onClick = { showClearDialog = true },
+                action = PreferenceAction.Dialog,
                 enabled = subtitleSaveFolder.isNotBlank(),
               )
               }
@@ -1257,6 +1261,7 @@ fun MultiChoicePreference(
     title = title,
     summary = summary,
     onClick = { showDialog = true },
+    action = PreferenceAction.Dialog,
   )
   }
 

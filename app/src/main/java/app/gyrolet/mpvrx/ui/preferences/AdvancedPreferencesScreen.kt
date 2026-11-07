@@ -85,6 +85,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import app.gyrolet.mpvrx.ui.preferences.components.AppListPreference as ListPreference
+import app.gyrolet.mpvrx.ui.preferences.components.PreferenceAction
 import app.gyrolet.mpvrx.ui.preferences.components.AppPreference as Preference
 import app.gyrolet.mpvrx.ui.preferences.components.AppSliderPreference as SliderPreference
 import org.koin.compose.koinInject
@@ -202,6 +203,15 @@ object AdvancedPreferencesScreen : Screen {
               onSuccess = { stats ->
                 importStats = stats
                 showImportDialog = true
+                if (stats.failed > 0) {
+                  val text =
+                    context.resources.getQuantityString(
+                      R.plurals.pref_import_skipped_invalid,
+                      stats.failed,
+                      stats.failed,
+                    )
+                  Toast.warning(context, text)
+                }
               },
               onFailure = { error ->
                 Toast
@@ -797,6 +807,7 @@ object AdvancedPreferencesScreen : Screen {
                   }
                 },
                 onClick = { isConfirmDialogShown = true },
+                action = PreferenceAction.Dialog,
               )
               }
 
@@ -974,6 +985,7 @@ object AdvancedPreferencesScreen : Screen {
                   }
                 },
                 onClick = { isClearThumbsConfirmShown = true },
+                action = PreferenceAction.Dialog,
               )
               }
 

@@ -325,7 +325,7 @@ class ClipOverlayView @JvmOverloads constructor(
         externalFile = external?.let { viewModel?.clipSubtitleSource(it) ?: it },
         isExternal = isExternal,
         codec = PlaybackSession.getPropertyString("track-list/$index/codec").orEmpty().lowercase(),
-        demuxId = PlaybackSession.getPropertyInt("track-list/$index/demux-id"),
+        demuxId = PlaybackSession.getPropertyInt("track-list/$index/src-id"),
       )
     }
   }
@@ -1437,7 +1437,7 @@ private fun ClipCropControls(
 
   Surface(
     shape = CircleShape,
-    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+    color = MaterialTheme.colorScheme.surfaceContainerHigh,
     contentColor = MaterialTheme.colorScheme.onSurface,
     tonalElevation = 6.dp,
     shadowElevation = 8.dp,

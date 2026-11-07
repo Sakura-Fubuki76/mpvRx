@@ -3,7 +3,6 @@ package app.gyrolet.mpvrx.ui.player.controls
 
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -40,9 +39,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.paneTitle
@@ -183,11 +184,6 @@ internal fun PlayerSettingsPanel(
         scrollContent = false,
         portraitHeightFraction = 0.94f,
         maxPanelWidth = 520.dp,
-        shape = MaterialTheme.shapes.extraLargeIncreased,
-        containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f),
-        tonalElevation = 2.dp,
-        shadowElevation = 10.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         header = {
           val current = backStack.lastOrNull()
           val title = when {
@@ -219,19 +215,28 @@ internal fun PlayerSettingsPanel(
                 .padding(bottom = 12.dp)
                 .clipToBounds(),
             ) {
-              ScreenNavDisplay(backStack = backStack, onBack = back) { screen ->
-                when (screen) {
-                  PlayerSettingsHome -> SettingsPanelHome(categories, query, { query = it }, backStack) {
-                    query = ""
-                    keyboard?.hide()
-                  }
-                  else -> screen.Content()
-                }
-              }
               // Keep the current page mounted beneath search, preserving its scroll position
               // and any expanded sections when search is dismissed without choosing a result.
+              // Hiding it instead of covering it keeps search on the panel's own single background.
+              Box(
+                if (searchMode) {
+                  Modifier.fillMaxSize().graphicsLayer { alpha = 0f }.clearAndSetSemantics {}
+                } else {
+                  Modifier.fillMaxSize()
+                },
+              ) {
+                ScreenNavDisplay(backStack = backStack, onBack = back) { screen ->
+                  when (screen) {
+                    PlayerSettingsHome -> SettingsPanelHome(categories, query, { query = it }, backStack) {
+                      query = ""
+                      keyboard?.hide()
+                    }
+                    else -> screen.Content()
+                  }
+                }
+              }
               if (searchMode) {
-                Surface(Modifier.fillMaxSize(), color = colors.surfaceContainer) {
+                Surface(Modifier.fillMaxSize(), color = Color.Transparent) {
                   SettingsPanelHome(categories, query, { query = it }, backStack, requestSearchFocus = true) {
                     searchMode = false
                     query = ""
@@ -418,8 +423,8 @@ private fun SettingsPanelHome(
 
 private fun SearchablePreference.favoriteKey(): String {
   val presetTarget = (targetRes ?: titleRes) in setOf(
-    R.string.ui_landscape_seekbar_position, R.string.ui_landscape_playback_buttons,
-    R.string.ui_portrait_seekbar_position, R.string.ui_portrait_playback_buttons,
+    R.string.ui_landscape_seekbar_position,
+    R.string.ui_portrait_seekbar_position,
   )
   // Keep existing pins when these settings move from the parent page into the region editors.
   val owner = if (screen is ControlLayoutEditorScreen && presetTarget) PlayerControlsPreferencesScreen else screen

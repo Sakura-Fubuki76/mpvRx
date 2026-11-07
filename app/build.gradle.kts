@@ -61,7 +61,6 @@ val previewVersionCode =
 
 plugins {
   alias(libs.plugins.android.application)
-  alias(libs.plugins.baselineprofile)
   alias(libs.plugins.kotlin.compose.compiler)
   alias(libs.plugins.kotlinx.serialization)
   alias(libs.plugins.ksp)
@@ -79,6 +78,9 @@ if (measureApiKey.isNotBlank()) {
 
 androidComponents {
   onVariants(selector().all()) { variant ->
+    // Measure 0.14 only rewrites OkHttp through 5.3.2. Attach its public SDK hooks
+    // to our clients instead, preserving OkHttp 5.5 and avoiding duplicate instrumentation.
+    variant.instrumentation.excludes.add("okhttp3/OkHttpClient")
     variant.instrumentation.transformClassesWith(
       SmbRpcExceptionCompatibility::class.java,
       InstrumentationScope.ALL,
@@ -137,6 +139,8 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      // FongMi's mpv ships the GPU motion interpolation core.
+      buildConfigField("boolean", "MPV_SUPPORTS_MOTION_INTERPOLATION", "false")
     }
 
     create("playstore") {
@@ -147,6 +151,8 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      // FongMi's mpv ships the GPU motion interpolation core.
+      buildConfigField("boolean", "MPV_SUPPORTS_MOTION_INTERPOLATION", "false")
     }
 
     create("noVulkan") {
@@ -157,6 +163,8 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "false")
+      // FongMi's mpv ships the GPU motion interpolation core.
+      buildConfigField("boolean", "MPV_SUPPORTS_MOTION_INTERPOLATION", "false")
     }
 
     create("fongmi") {
@@ -167,6 +175,8 @@ android {
       buildConfigField("boolean", "SCOPED_STORAGE_ONLY", "false")
       buildConfigField("boolean", "MPV_SUPPORTS_VULKAN", "true")
       buildConfigField("boolean", "MPV_SUPPORTS_MEDIACODEC_VULKAN", "true")
+      // FongMi's mpv ships the GPU motion interpolation core.
+      buildConfigField("boolean", "MPV_SUPPORTS_MOTION_INTERPOLATION", "true")
     }
 
     configureEach {
@@ -222,7 +232,7 @@ android {
       ndk {
         // Include native symbol tables in Play Store app bundles for crash/ANR diagnosis.
         // Keep the smaller symbol-table level instead of bundling full DWARF info.
-        debugSymbolLevel = "symbol_table"
+        debugSymbolLevel = "SYMBOL_TABLE"
       }
     }
 
@@ -375,15 +385,18 @@ room {
   schemaDirectory("$projectDir/schemas")
 }
 
-baselineProfile {
-  // Ordinary release/preview builds must not require an emulator or launch instrumentation tests.
-  automaticGenerationDuringBuild = false
-  saveInSrc = true
+// Ship no ART profiles: AGP otherwise compiles the AndroidX libraries' own profiles into each release.
+tasks.configureEach {
+  if (name.startsWith("compile") && name.endsWith("ArtProfile")) enabled = false
+}
+
+configurations.configureEach {
+  // AndroidX pulls ProfileInstaller in only to install those profiles.
+  exclude(group = "androidx.profileinstaller", module = "profileinstaller")
 }
 
 dependencies {
   implementation("sh.measure:measure-android:0.22.0")
-  baselineProfile(project(":baselineprofile"))
   androidTestImplementation(libs.androidx.test.runner)
   androidTestImplementation(libs.androidx.test.ext.junit)
   implementation(libs.androidx.activity.compose)
@@ -443,7 +456,6 @@ dependencies {
   implementation(libs.truetype.parser)
   implementation(libs.fsaf)
   implementation(libs.mediainfo.lib)
-  implementation(libs.androidx.profileinstaller)
   implementation(libs.google.cast.framework)
 
   "standardImplementation"(variantOf(libs.mpvlib.standard) { artifactType("aar") })
@@ -471,7 +483,6 @@ dependencies {
   implementation(libs.androidx.biometric)
   implementation(libs.telephoto.zoomable)
   implementation(libs.haze.blur)
-  implementation(libs.sonner)
   implementation(libs.kyant.backdrop)
   implementation(libs.kyant.shapes)
 

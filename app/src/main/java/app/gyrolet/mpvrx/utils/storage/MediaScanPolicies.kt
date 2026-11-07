@@ -11,6 +11,7 @@ package app.gyrolet.mpvrx.utils.storage
 
 import android.net.Uri
 import android.provider.DocumentsContract
+import app.gyrolet.mpvrx.utils.media.isPathBasedDocumentAuthority
 import java.io.File
 import java.util.Locale
 
@@ -105,8 +106,7 @@ internal fun isMediaPathInFolder(path: String, folderPath: String): Boolean {
   val folderId = DocumentsContract.getDocumentId(folder)
   val itemId = DocumentsContract.getDocumentId(item)
   if (itemId == folderId) return true
-  // Only the external-storage provider defines document IDs as volume-relative paths.
-  return item.authority == "com.android.externalstorage.documents" &&
+  return isPathBasedDocumentAuthority(item.authority) &&
     itemId.startsWith("$folderId/")
 }
 

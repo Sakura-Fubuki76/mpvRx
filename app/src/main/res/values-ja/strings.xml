@@ -204,8 +204,6 @@
   <string name="pref_player_gestures_volume">音量ジェスチャー</string>
   <string name="pref_player_gestures_pinch_to_zoom">ピンチでズーム</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">ピンチで字幕を拡大</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe">2本指スワイプで速度変更</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe_summary">2本指で上下にスワイプすると、再生速度を0.25xずつ0.5xから4xの範囲で変更します</string>
   <string name="pref_subtitles_secondary_pinch_zoom">ピンチで第2字幕も拡大</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">プライマリ字幕をピンチするとセカンダリ字幕も拡大されます</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">字幕をスワイプしてシーク画面を開く</string>
@@ -1041,6 +1039,9 @@
   <string name="player_horizontal_flip_off">左右反転オフ</string>
   <string name="player_vertical_flip_on">上下反転オン</string>
   <string name="player_vertical_flip_off">上下反転オフ</string>
+  <string name="player_hwplus_unsupported">%1$s は HW+ モードでは使用できません。使用するには HW または SW デコードに切り替えてください。</string>
+  <string name="player_hwplus_use_hw">HW を使用</string>
+  <string name="player_hwplus_cpu_deband">CPU バンディング除去</string>
   <string name="btn_label_back">戻る矢印</string>
   <string name="btn_label_title">動画タイトル</string>
   <string name="btn_label_bookmarks">チャプター／ブックマーク</string>
@@ -1433,8 +1434,6 @@
   <string name="ui_no_storage_location_configured">保存場所が設定されていません</string>
   <string name="ui_script_file_not_found">スクリプトファイルが見つかりません</string>
   <string name="ui_search_models">モデルを検索...</string>
-  <string name="ui_portrait_playback_buttons">縦向き再生ボタン</string>
-  <string name="ui_landscape_playback_buttons">横向き再生ボタン</string>
   <string name="ui_portrait_seekbar_position">縦向きのシークバーの位置</string>
   <string name="ui_landscape_seekbar_position">横向きのシークバーの位置</string>
   <string name="pref_player_buttons_opacity">プレーヤーボタンの背景の不透明度</string>
@@ -1496,7 +1495,6 @@
   <string name="oss_androidx_documentfile_description">ドキュメントストレージアクセスの抽象化レイヤー。</string>
   <string name="oss_androidx_media_description">Androidのメディアセッションおよび再生API。</string>
   <string name="oss_androidx_palette_description">画像から支配的で鮮やかなカラーパレットを抽出します。</string>
-  <string name="oss_androidx_profile_installer_description">アプリ起動を高速化するためクラスとメソッドを事前取得します。</string>
   <string name="oss_google_material_description">Material Designコンポーネントとテーマライブラリ。</string>
   <string name="oss_google_cast_description">メディアキャスト向けChromecastフレームワーク。</string>
   <string name="oss_material_symbols_description">Compose向けMaterial Symbolsアイコンセット。</string>
@@ -2326,7 +2324,9 @@
   <plurals name="onboarding_configuration_restored_partial">
     <item quantity="other">%1$s から設定を復元しました。破損した %2$d 件の項目をスキップしました。ダウンロードは Configuration/Downloads を使用します。</item>
   </plurals>
-  <string name="settings_restore_reverted">%1$s から復元した設定が原因でクラッシュしたため、元に戻しました。</string>
+  <plurals name="pref_import_skipped_invalid">
+    <item quantity="other">無効な設定を %1$d 件スキップしました</item>
+  </plurals>
   <string name="onboarding_configuration_restore_failed">フォルダーの設定を完了できませんでした: %1$s</string>
   <string name="navbar_glow_title">ガラスの輝き</string>
   <string name="navbar_glow_summary">ナビゲーションバーの縁の光とタッチ時の輝きを表示</string>
@@ -2741,6 +2741,9 @@
   <string name="jellyfin_details">詳細</string>
   <string name="jellyfin_trailer">予告編</string>
   <string name="jellyfin_open_trailer_error">予告編を開くアプリがありません。</string>
+  <string name="no_app_for_action">このデバイスにはこれを開けるアプリがありません。</string>
+  <string name="tv_picker_file_exists">同じ名前のファイルがすでに存在します。</string>
+  <string name="tv_picker_no_access">mpvRx はこの場所にアクセスできません。</string>
   <string name="jellyfin_libraries">ライブラリ</string>
   <string name="jellyfin_continue_watching">視聴を続ける</string>
   <string name="jellyfin_latest_movies">新着映画</string>
@@ -2832,10 +2835,8 @@
   <string name="clip_quick_length">長さのクイック選択</string>
   <string name="clip_length_seconds">%1$d秒</string>
   <string name="clip_crop_reset">フレーム全体を使用</string>
-  <string name="pref_layout_center_seekbar_above">中央再生・操作ボタンの上にシークバー</string>
-  <string name="pref_layout_center_seekbar_below">中央再生・操作ボタンの下にシークバー</string>
-  <string name="pref_layout_playback_above">シークバーの上に再生と操作ボタン</string>
-  <string name="pref_layout_playback_below">シークバーの下に再生と操作ボタン</string>
+  <string name="pref_layout_seekbar_above">シークバーを上に</string>
+  <string name="pref_layout_seekbar_below">シークバーを下に</string>
   <string name="player_layout_preset_title">再生操作の配置</string>
   <string name="player_layout_preview_hint">表示はサンプルです。変更はすぐに保存されます。</string>
   <string name="player_layout_shared_landscape_hint">横向き画面のすべての操作領域で共通です。</string>
@@ -2846,4 +2847,9 @@
   <string name="pref_measure_enabled_title">Measure に診断情報を送信</string>
   <string name="pref_measure_enabled_summary">クラッシュ、ANR、パフォーマンス指標、セッション操作を Measure に送信します。初期設定はオフです。</string>
   <string name="pref_measure_not_configured">診断を利用できません。このビルドに Measure API キーがありません。</string>
+  <string name="pref_layout_portrait_playback_position">縦向きの再生コントロール</string>
+  <string name="pref_layout_landscape_playback_position">横向きの再生コントロール</string>
+  <string name="pref_layout_playback_center">画面中央</string>
+  <string name="pref_layout_playback_above_seekbar">シークバーの上</string>
+  <string name="pref_layout_playback_below_seekbar">シークバーの下</string>
 </resources>

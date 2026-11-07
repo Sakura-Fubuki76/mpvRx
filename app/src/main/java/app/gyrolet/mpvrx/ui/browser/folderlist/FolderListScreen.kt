@@ -894,8 +894,7 @@ object FolderListScreen : Screen {
                 onClick = {
                   isFabExpanded.value = false
                   coroutineScope.launch {
-                    val recentlyPlayedVideos = RecentlyPlayedOps.getRecentlyPlayed(limit = 1)
-                    val lastPlayed = recentlyPlayedVideos.firstOrNull()
+                    val lastPlayed = RecentlyPlayedOps.getLastPlayedEntity()
                     if (lastPlayed != null) {
                       MediaUtils.playFile(lastPlayed.filePath, context, "recently_played_button")
                     }
@@ -1523,7 +1522,13 @@ private fun GridContent(
     remember(foldersWithNewCount) {
       foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
     }
-  val recentlyPlayedParent = remember(recentlyPlayedFilePath) { recentlyPlayedFilePath?.let(::File)?.parent }
+  val recentlyPlayedPath =
+    remember(recentlyPlayedFilePath) {
+      recentlyPlayedFilePath?.let {
+        app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner.localPathOf(android.net.Uri.parse(it)) ?: it
+      }
+    }
+  val recentlyPlayedParent = remember(recentlyPlayedPath) { recentlyPlayedPath?.let(::File)?.parent }
 
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
     val browserPreferences = org.koin.compose.koinInject<app.gyrolet.mpvrx.preferences.BrowserPreferences>()
@@ -1565,7 +1570,10 @@ private fun GridContent(
       ) { index ->
         val folder = folders[index]
         val archiveFolder = ZipArchiveMedia.isBrowserPath(folder.path)
-        val isRecentlyPlayed = recentlyPlayedParent == folder.path
+        val folderPath =
+          app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner.localPathOf(android.net.Uri.parse(folder.path))
+            ?: folder.path
+        val isRecentlyPlayed = recentlyPlayedParent == folderPath
         val newCount = newCountByBucketId[folder.bucketId] ?: 0
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
@@ -1662,7 +1670,13 @@ private fun ListContent(
     remember(foldersWithNewCount) {
       foldersWithNewCount.associate { it.folder.bucketId to it.newVideoCount }
     }
-  val recentlyPlayedParent = remember(recentlyPlayedFilePath) { recentlyPlayedFilePath?.let(::File)?.parent }
+  val recentlyPlayedPath =
+    remember(recentlyPlayedFilePath) {
+      recentlyPlayedFilePath?.let {
+        app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner.localPathOf(android.net.Uri.parse(it)) ?: it
+      }
+    }
+  val recentlyPlayedParent = remember(recentlyPlayedPath) { recentlyPlayedPath?.let(::File)?.parent }
 
   Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -1684,7 +1698,10 @@ private fun ListContent(
       ) { index ->
         val folder = folders[index]
         val archiveFolder = ZipArchiveMedia.isBrowserPath(folder.path)
-        val isRecentlyPlayed = recentlyPlayedParent == folder.path
+        val folderPath =
+          app.gyrolet.mpvrx.utils.media.ScopedHiddenFolderScanner.localPathOf(android.net.Uri.parse(folder.path))
+            ?: folder.path
+        val isRecentlyPlayed = recentlyPlayedParent == folderPath
         val newCount = newCountByBucketId[folder.bucketId] ?: 0
 
         val isActive = isDualPaneActive && folder.bucketId == selectedFolderBucketId
@@ -1798,6 +1815,7 @@ private fun SearchResultsContent(
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
+  val grayscaleWatchedThumbnails by browserPreferences.grayscaleWatchedThumbnails.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showSubtitleIndicator by browserPreferences.showSubtitleIndicator.collectAsState()
@@ -1820,6 +1838,7 @@ private fun SearchResultsContent(
       showFramerateInResolution,
       showCodecSupportIndicator,
       showProgressBar,
+      grayscaleWatchedThumbnails,
       showDateChip,
       showUnplayedOldVideoLabel,
       unplayedOldVideoDays,
@@ -1839,6 +1858,7 @@ private fun SearchResultsContent(
         showFramerateInResolution = showFramerateInResolution,
         showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
+        grayscaleWatchedThumbnails = grayscaleWatchedThumbnails,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
         unplayedOldVideoDays = unplayedOldVideoDays,
@@ -1906,7 +1926,6 @@ private fun SearchResultsContent(
             span = { GridItemSpan(spansInfo.videoSpan) },
           ) { index ->
             val video = videos[index]
-            val archiveEntry = ZipArchiveMedia.isPlaybackUri(video.uri.toString())
             VideoCard(
               video = video,
               isWatched = swipePlaybackInfo[video.path]?.isWatched == true,
@@ -1917,8 +1936,6 @@ private fun SearchResultsContent(
               onThumbClick = { onVideoClick(video) },
               isGridMode = true,
               showSubtitleIndicator = showSubtitleIndicator,
-              allowThumbnailGeneration = !archiveEntry,
-              allowThumbnailLoading = !archiveEntry,
               uiConfig = videoCardUiConfig,
             )
           }
@@ -1976,8 +1993,6 @@ private fun SearchResultsContent(
             isWatched = swipePlaybackInfo[video.path]?.isWatched == true,
             isOldAndUnplayed = swipePlaybackInfo[video.path]?.isOldAndUnplayed == true,
             showSubtitleIndicator = showSubtitleIndicator,
-            allowThumbnailGeneration = !archiveEntry,
-            allowThumbnailLoading = !archiveEntry,
             uiConfig = videoCardUiConfig,
             thumbnailWidthPx = if (video.isAudio) audioCoverArtSizePx else null,
             thumbnailHeightPx = if (video.isAudio) audioCoverArtSizePx else null,

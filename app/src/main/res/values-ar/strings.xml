@@ -204,8 +204,6 @@
   <string name="pref_player_gestures_volume">إيماءات مستوى الصوت</string>
   <string name="pref_player_gestures_pinch_to_zoom">الضم للتكبير</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">الضم لتكبير الترجمة</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe">السحب بإصبعين لتغيير السرعة</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe_summary">اسحب بإصبعين لأعلى أو لأسفل لتغيير سرعة التشغيل بمقدار 0.25x، من 0.5x إلى 4x</string>
   <string name="pref_subtitles_secondary_pinch_zoom">الضم يكبّر الترجمة الثانوية</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">عند ضم الترجمة الأساسية، يتم أيضًا تغيير حجم الترجمة الثانوية</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">سحب الترجمة لفتح مربع التقديم</string>
@@ -1057,6 +1055,9 @@
   <string name="player_horizontal_flip_off">الانعكاس الأفقي متوقف</string>
   <string name="player_vertical_flip_on">الانعكاس العمودي مفعّل</string>
   <string name="player_vertical_flip_off">الانعكاس العمودي متوقف</string>
+  <string name="player_hwplus_unsupported">%1$s غير مدعوم في وضع HW+. بدّل إلى فك الترميز HW أو SW لاستخدام هذه الميزة.</string>
+  <string name="player_hwplus_use_hw">استخدام HW</string>
+  <string name="player_hwplus_cpu_deband">إزالة التدرجات عبر CPU</string>
   <string name="btn_label_back">سهم الرجوع</string>
   <string name="btn_label_title">عنوان الفيديو</string>
   <string name="btn_label_bookmarks">الفصول / الإشارات المرجعية</string>
@@ -1464,8 +1465,6 @@
   <string name="ui_no_storage_location_configured">لم يتم إعداد موقع تخزين</string>
   <string name="ui_script_file_not_found">لم يتم العثور على ملف البرنامج النصي</string>
   <string name="ui_search_models">البحث عن نماذج...</string>
-  <string name="ui_portrait_playback_buttons">أزرار تشغيل الوضع العمودي</string>
-  <string name="ui_landscape_playback_buttons">أزرار تشغيل الوضع الأفقي</string>
   <string name="ui_portrait_seekbar_position">موضع شريط التقديم في الوضع العمودي</string>
   <string name="ui_landscape_seekbar_position">موضع شريط التقديم في الوضع الأفقي</string>
   <string name="pref_player_buttons_opacity">شفافية خلفية أزرار المشغل</string>
@@ -1527,7 +1526,6 @@
   <string name="oss_androidx_documentfile_description">طبقة تجريد للوصول إلى تخزين المستندات.</string>
   <string name="oss_androidx_media_description">واجهات جلسات الوسائط والتشغيل في Android.</string>
   <string name="oss_androidx_palette_description">يستخرج لوحات ألوان مهيمنة ونابضة بالحياة من الصور.</string>
-  <string name="oss_androidx_profile_installer_description">يجلب الفئات والطرائق مسبقًا لتسريع بدء تشغيل التطبيق.</string>
   <string name="oss_google_material_description">مكوّنات Material Design ومكتبة السمات.</string>
   <string name="oss_google_cast_description">إطار Chromecast لبث الوسائط.</string>
   <string name="oss_material_symbols_description">مجموعة أيقونات Material Symbols لـ Compose.</string>
@@ -2364,7 +2362,14 @@
     <item quantity="many">تمت استعادة الإعدادات من %1$s. تم تخطي %2$d إدخالًا تالفًا. ستستخدم التنزيلات Configuration/Downloads.</item>
     <item quantity="other">تمت استعادة الإعدادات من %1$s. تم تخطي %2$d إدخال تالف. ستستخدم التنزيلات Configuration/Downloads.</item>
   </plurals>
-  <string name="settings_restore_reverted">تسببت الإعدادات المستعادة من %1$s في تعطل التطبيق، لذا تم التراجع عنها.</string>
+  <plurals name="pref_import_skipped_invalid">
+    <item quantity="zero">تم تخطي %1$d إعداد غير صالح</item>
+    <item quantity="one">تم تخطي إعداد واحد غير صالح (%1$d)</item>
+    <item quantity="two">تم تخطي إعدادين غير صالحين (%1$d)</item>
+    <item quantity="few">تم تخطي %1$d إعدادات غير صالحة</item>
+    <item quantity="many">تم تخطي %1$d إعدادًا غير صالح</item>
+    <item quantity="other">تم تخطي %1$d إعداد غير صالح</item>
+  </plurals>
   <string name="onboarding_configuration_restore_failed">تعذر إكمال إعداد المجلد: %1$s</string>
   <string name="navbar_glow_title">توهج الزجاج</string>
   <string name="navbar_glow_summary">إظهار إضاءة حافة شريط التنقل وتوهج اللمس</string>
@@ -2819,6 +2824,9 @@
   <string name="jellyfin_details">التفاصيل</string>
   <string name="jellyfin_trailer">المقطع الدعائي</string>
   <string name="jellyfin_open_trailer_error">لا يوجد تطبيق لفتح المقاطع الدعائية.</string>
+  <string name="no_app_for_action">لا يوجد تطبيق على هذا الجهاز يمكنه فتح هذا.</string>
+  <string name="tv_picker_file_exists">يوجد ملف بهذا الاسم بالفعل.</string>
+  <string name="tv_picker_no_access">لا يمكن لـ mpvRx الوصول إلى هذا الموقع.</string>
   <string name="jellyfin_libraries">المكتبات</string>
   <string name="jellyfin_continue_watching">متابعة المشاهدة</string>
   <string name="jellyfin_latest_movies">أحدث الأفلام</string>
@@ -2910,10 +2918,8 @@
   <string name="clip_quick_length">مدة سريعة</string>
   <string name="clip_length_seconds">%1$d ث</string>
   <string name="clip_crop_reset">استخدام الإطار الكامل</string>
-  <string name="pref_layout_center_seekbar_above">تشغيل بالوسط · شريط فوق الأزرار</string>
-  <string name="pref_layout_center_seekbar_below">تشغيل بالوسط · شريط تحت الأزرار</string>
-  <string name="pref_layout_playback_above">التشغيل والأزرار فوق الشريط</string>
-  <string name="pref_layout_playback_below">التشغيل والأزرار تحت الشريط</string>
+  <string name="pref_layout_seekbar_above">شريط التقديم بالأعلى</string>
+  <string name="pref_layout_seekbar_below">شريط التقديم بالأسفل</string>
   <string name="player_layout_preset_title">تخطيط التشغيل</string>
   <string name="player_layout_preview_hint">معاينة فقط. تُحفظ التغييرات فورًا.</string>
   <string name="player_layout_shared_landscape_hint">مشترك بين جميع مناطق الوضع الأفقي.</string>
@@ -2924,4 +2930,9 @@
   <string name="pref_measure_enabled_title">مشاركة بيانات التشخيص مع Measure</string>
   <string name="pref_measure_enabled_summary">اشترك لإرسال الأعطال وعدم الاستجابة ومقاييس الأداء ونشاط الجلسة إلى Measure. معطل افتراضيًا.</string>
   <string name="pref_measure_not_configured">التشخيص غير متاح: لا يحتوي هذا الإصدار على مفتاح Measure.</string>
+  <string name="pref_layout_portrait_playback_position">عناصر التحكم في التشغيل العمودي</string>
+  <string name="pref_layout_landscape_playback_position">عناصر التحكم في التشغيل الأفقي</string>
+  <string name="pref_layout_playback_center">وسط الشاشة</string>
+  <string name="pref_layout_playback_above_seekbar">فوق شريط التقدم</string>
+  <string name="pref_layout_playback_below_seekbar">تحت شريط التقدم</string>
 </resources>

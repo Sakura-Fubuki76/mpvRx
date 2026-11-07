@@ -382,7 +382,7 @@ object MediaUtils {
     context.startActivity(intent)
   }
 
-  private fun playbackIdentity(video: Video): String =
+  internal fun playbackIdentity(video: Video): String =
     app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(video.path)?.let {
       PlaybackIdentity.forNetwork(it.connectionId, it.path.value)
     } ?: if (app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY && video.uri.scheme == "content") {

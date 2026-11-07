@@ -473,12 +473,8 @@ data class VideoListScreen(
               onClick = {
                 coroutineScope.launch {
                   if (scopedFolder) {
-                    val folderPaths = sortedVideos.mapTo(hashSetOf()) { it.path }
-                    val lastPlayed =
-                      RecentlyPlayedOps.getRecentlyPlayed(limit = 100)
-                        .firstOrNull { it.filePath in folderPaths }
-                    val startIndex =
-                      sortedVideos.indexOfFirst { it.path == lastPlayed?.filePath }.coerceAtLeast(0)
+                    val lastPlayed = RecentlyPlayedOps.lastPlayedOf(sortedVideos)
+                    val startIndex = lastPlayed?.let(sortedVideos::indexOf)?.coerceAtLeast(0) ?: 0
                     if (playerPreferences.shouldBuildAutomaticQueue(sortedVideos[startIndex].isAudio)) {
                       MediaUtils.playFiles(sortedVideos, context, startIndex, "video_list")
                     } else {
@@ -486,22 +482,12 @@ data class VideoListScreen(
                     }
                     return@launch
                   }
-                  val folderPath =
-                    sortedVideosWithInfo
-                      .firstOrNull()
-                      ?.video
-                      ?.path
-                      ?.let { File(it).parent } ?: ""
-                  val recentlyPlayedVideos = RecentlyPlayedOps.getRecentlyPlayed(limit = 100)
-                  val lastPlayedInFolder =
-                    recentlyPlayedVideos.firstOrNull {
-                      File(it.filePath).parent == folderPath
-                    }
+                  val lastPlayedInFolder = RecentlyPlayedOps.lastPlayedOf(sortedVideos)
 
                   if (archiveFolder) {
                     MediaUtils.playFiles(sortedVideos, context, launchSource = "zip_folder")
                   } else if (lastPlayedInFolder != null) {
-                    MediaUtils.playFile(lastPlayedInFolder.filePath, context, "recently_played_button")
+                    MediaUtils.playFile(lastPlayedInFolder, context, "recently_played_button")
                   } else {
                     MediaUtils.playFile(sortedVideosWithInfo.first().video, context, "first_video_button")
                   }
@@ -857,11 +843,9 @@ internal fun VideoListContent(
   val configuration = androidx.compose.ui.platform.LocalConfiguration.current
   val density = LocalDensity.current
   val navigationBarHeight = app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight.current
-  val miniPlayerClearance = app.gyrolet.mpvrx.ui.browser.NavigationBarState.miniPlayerClearance
   val bottomPadding =
     maxOf(
       navigationBarHeight,
-      miniPlayerClearance,
       if (showFloatingBottomBar) app.gyrolet.mpvrx.ui.browser.NavigationBarState.selectionBarClearance else 0.dp,
     )
   val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
@@ -872,6 +856,7 @@ internal fun VideoListContent(
   val showResolutionChip by browserPreferences.showResolutionChip.collectAsState()
   val showFramerateInResolution by browserPreferences.showFramerateInResolution.collectAsState()
   val showProgressBar by browserPreferences.showProgressBar.collectAsState()
+  val grayscaleWatchedThumbnails by browserPreferences.grayscaleWatchedThumbnails.collectAsState()
   val showDateChip by browserPreferences.showDateChip.collectAsState()
   val showCodecSupportIndicator by browserPreferences.showCodecSupportIndicator.collectAsState()
   val showUnplayedOldVideoLabel by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
@@ -899,6 +884,7 @@ internal fun VideoListContent(
       showFramerateInResolution,
       showCodecSupportIndicator,
       showProgressBar,
+      grayscaleWatchedThumbnails,
       showDateChip,
       showUnplayedOldVideoLabel,
       unplayedOldVideoDays,
@@ -918,6 +904,7 @@ internal fun VideoListContent(
         showFramerateInResolution = showFramerateInResolution,
         showCodecSupportIndicator = showCodecSupportIndicator,
         showProgressBar = showProgressBar,
+        grayscaleWatchedThumbnails = grayscaleWatchedThumbnails,
         showDateChip = showDateChip,
         showUnplayedOldVideoLabel = showUnplayedOldVideoLabel,
         unplayedOldVideoDays = unplayedOldVideoDays,
@@ -1010,7 +997,7 @@ internal fun VideoListContent(
           remember(folderId, autoScrollToLastPlayed, recentlyPlayedFilePath) {
             if (autoScrollToLastPlayed && recentlyPlayedFilePath != null) {
               videosWithInfo
-                .indexOfFirst { it.video.path == recentlyPlayedFilePath }
+                .indexOfFirst { RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, it.video) }
                 .coerceAtLeast(0)
             } else {
               0
@@ -1057,7 +1044,7 @@ internal fun VideoListContent(
         ) {
           val generationId = "$folderId:${mediaLayoutMode.name}"
           try {
-            if (showVideoThumbnails && !archiveFolder && latestVideosWithInfo.isNotEmpty()) {
+            if (showVideoThumbnails && latestVideosWithInfo.isNotEmpty()) {
               snapshotFlow {
                 if (mediaLayoutMode == MediaLayoutMode.LIST) listState.isScrollInProgress
                 else gridState.isScrollInProgress
@@ -1142,7 +1129,7 @@ internal fun VideoListContent(
                   contentType = { "video_item" },
                 ) { index ->
                   val videoWithInfo = videosWithInfo[index]
-                  val isRecentlyPlayed = recentlyPlayedFilePath?.let { videoWithInfo.video.path == it } ?: false
+                  val isRecentlyPlayed = RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, videoWithInfo.video)
 
                   VideoCard(
                       video = videoWithInfo.video,
@@ -1169,8 +1156,6 @@ internal fun VideoListContent(
                       thumbnailWidthPx = thumbWidthPx,
                       thumbnailHeightPx = thumbHeightPx,
                       showSubtitleIndicator = showSubtitleIndicator,
-                      allowThumbnailGeneration = !archiveFolder,
-                      allowThumbnailLoading = !archiveFolder,
                       uiConfig = videoCardUiConfig,
                   )
                 }
@@ -1214,7 +1199,7 @@ internal fun VideoListContent(
                   contentType = { "video_item" },
                 ) { index ->
                   val videoWithInfo = videosWithInfo[index]
-                  val isRecentlyPlayed = recentlyPlayedFilePath?.let { videoWithInfo.video.path == it } ?: false
+                  val isRecentlyPlayed = RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, videoWithInfo.video)
 
                   VideoCard(
                       video = videoWithInfo.video,
@@ -1239,8 +1224,6 @@ internal fun VideoListContent(
                       isGridMode = false,
                       onSwipeAction = swipeActions.video.takeUnless { archiveFolder || selectionManager.isInSelectionMode },
                       showSubtitleIndicator = showSubtitleIndicator,
-                      allowThumbnailGeneration = !archiveFolder,
-                      allowThumbnailLoading = !archiveFolder,
                       uiConfig = videoCardUiConfig,
                       thumbnailWidthPx = if (isAudio || videoWithInfo.video.isAudio) with(density) { musicCoverArtSize.dp.roundToPx() } else null,
                       thumbnailHeightPx = if (isAudio || videoWithInfo.video.isAudio) with(density) { musicCoverArtSize.dp.roundToPx() } else null,

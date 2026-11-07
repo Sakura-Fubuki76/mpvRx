@@ -57,6 +57,10 @@ class MPVPipHelper(
   private val playerPreferences: PlayerPreferences by inject()
   private var pipReceiver: BroadcastReceiver? = null
 
+  fun onStart() {
+    onPictureInPictureModeChanged(activity.isInPictureInPictureMode)
+  }
+
   fun onPictureInPictureModeChanged(isInPipMode: Boolean) {
     if (isInPipMode) {
       registerPipReceiver()
@@ -67,6 +71,7 @@ class MPVPipHelper(
 
   @Suppress("UnspecifiedRegisterReceiverFlag")
   private fun registerPipReceiver() {
+    if (pipReceiver != null || activity.isFinishing || activity.isDestroyed) return
     pipReceiver =
       object : BroadcastReceiver() {
         override fun onReceive(
@@ -112,7 +117,10 @@ class MPVPipHelper(
       .apply {
         getVideoAspectRatio()?.let { aspectRatio ->
           setAspectRatio(aspectRatio)
-          calculateSourceRect(aspectRatio)?.let { sourceRect -> setSourceRectHint(sourceRect) }
+          // In PiP the view reports PiP-window bounds; keep the full-screen hint for the expand animation.
+          if (!activity.isInPictureInPictureMode) {
+            calculateSourceRect(aspectRatio)?.let { sourceRect -> setSourceRectHint(sourceRect) }
+          }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

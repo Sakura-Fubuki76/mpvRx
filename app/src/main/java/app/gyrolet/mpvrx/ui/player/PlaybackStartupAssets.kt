@@ -38,6 +38,7 @@ object PlaybackStartupAssets : KoinComponent {
   private const val TAG = "PlaybackStartupAssets"
   private const val MPV_ASSET_SYNC_PREFERENCES = "mpv_asset_sync"
   private const val USER_MPV_ASSET_SELECTION = "user_mpv_asset_selection_v1"
+  private const val USER_MPV_ASSET_SCRIPTS = "user_mpv_asset_scripts_v1"
 
   /** Serializes startup and deferred user-asset synchronization across Activity instances. */
   private val assetLock = Any()
@@ -115,17 +116,21 @@ object PlaybackStartupAssets : KoinComponent {
     app.gyrolet.mpvrx.domain.fonts.SubtitleFontCache.migrateLegacyBank(context)
     File(filesDir, "font-bank").mkdirs()
     ensureConfigCacheForStartup()
+    removeDisabledCachedScripts()
     val syncPreferences = assetSyncPreferences
     val currentSelection = currentUserMpvAssetSelection()
     val storedSelection = syncPreferences.getString(USER_MPV_ASSET_SELECTION, null)
     val cacheReady = hasLaunchReadyUserMpvAssetCache()
+    val expectedScripts =
+      if (storedSelection == currentSelection) syncPreferences.getStringSet(USER_MPV_ASSET_SCRIPTS, null) else null
+    val scriptsReady = cachedScriptsMatchSelection(expectedScripts)
     val canAdoptExistingCache =
       storedSelection == null &&
         cacheReady &&
         cachedConfigsMatchPreferences() &&
-        cachedScriptsMatchSelection()
+        scriptsReady
 
-    if (cacheReady && cachedScriptsMatchSelection() && (storedSelection == currentSelection || canAdoptExistingCache)) {
+    if (cacheReady && scriptsReady && (storedSelection == currentSelection || canAdoptExistingCache)) {
       if (canAdoptExistingCache) rememberUserMpvAssetSelection(syncPreferences)
       Log.d(TAG, "Using cached MPV user assets for startup")
       return
@@ -182,17 +187,13 @@ object PlaybackStartupAssets : KoinComponent {
   ): Boolean =
     runCatching { File(filesDir, fileName).readText() == preferenceContent }.getOrDefault(false)
 
-  private fun cachedScriptsMatchSelection(): Boolean {
-    val cachedScripts =
-      File(filesDir, "scripts")
-        .listFiles()
-        ?.asSequence()
-        ?.filter { file -> file.isFile && file.extension.lowercase() in setOf("lua", "js") }
-        ?.map(File::getName)
-        ?.toSet()
-        .orEmpty()
+  private fun cachedScriptsMatchSelection(syncedScripts: Set<String>? = null): Boolean {
+    val cachedScripts = MpvScriptAssets.userScriptNames(filesDir)
     return if (advancedPreferences.enableLuaScripts.get()) {
-      cachedScripts == advancedPreferences.selectedLuaScripts.get()
+      val selectedScripts = advancedPreferences.selectedLuaScripts.get()
+      // A selected file may be absent from the provider. Remember a successful sync's actual
+      // inventory so that absence does not force the same SAF scan on every subsequent open.
+      cachedScripts == (syncedScripts ?: selectedScripts) && cachedScripts.all { it in selectedScripts }
     } else {
       cachedScripts.isEmpty()
     }
@@ -203,7 +204,10 @@ object PlaybackStartupAssets : KoinComponent {
   }
 
   internal fun rememberUserMpvAssetSelection(syncPreferences: android.content.SharedPreferences) {
-    syncPreferences.edit().putString(USER_MPV_ASSET_SELECTION, currentUserMpvAssetSelection()).apply()
+    syncPreferences.edit()
+      .putString(USER_MPV_ASSET_SELECTION, currentUserMpvAssetSelection())
+      .putStringSet(USER_MPV_ASSET_SCRIPTS, MpvScriptAssets.userScriptNames(filesDir))
+      .apply()
   }
   internal fun syncFromUserMpvDirectory(includeFonts: Boolean = true) {
     synchronized(assetLock) {
@@ -335,14 +339,14 @@ object PlaybackStartupAssets : KoinComponent {
       return 0
     }
 
-    clearDirectoryContents(internalModulesDir)
-
     var copiedCount = 0
+    val expectedDirectories = mutableSetOf<String>()
 
     if (scriptsSubdir != null) {
       listTreeFilesSafely(scriptsSubdir).forEach { document ->
         val name = document.name?.takeIf { isSafeDocumentFileName(it) } ?: return@forEach
         if (!document.isDirectory) return@forEach
+        expectedDirectories += name
 
         copiedCount +=
           syncRecursiveDocumentDirectory(
@@ -351,17 +355,10 @@ object PlaybackStartupAssets : KoinComponent {
             includeFile = { true },
             deleteMissing = true,
           )
-
-        copiedCount +=
-          syncRecursiveDocumentDirectory(
-            sourceDir = document,
-            destinationDir = File(internalModulesDir, name),
-            includeFile = { fileName -> fileName.endsWith(".lua", ignoreCase = true) },
-            deleteMissing = true,
-          )
       }
     }
 
+    copiedCount += MpvScriptAssets.syncLuaModules(internalScriptsDir, internalModulesDir, expectedDirectories)
     return copiedCount
   }
 

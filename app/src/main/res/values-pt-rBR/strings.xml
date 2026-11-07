@@ -204,8 +204,6 @@
   <string name="pref_player_gestures_volume">Gestos de volume</string>
   <string name="pref_player_gestures_pinch_to_zoom">Pinçar para ampliar</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">Pinçar para ampliar legendas</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe">Deslizar com dois dedos para a velocidade</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe_summary">Deslize para cima ou para baixo com dois dedos para mudar a velocidade em 0,25x, de 0,5x a 4x</string>
   <string name="pref_subtitles_secondary_pinch_zoom">Pinçar amplia a legenda secundária</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">Ao pinçar a legenda principal, a secundária também é redimensionada</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">Deslizar legendas para abrir a caixa de busca</string>
@@ -1045,6 +1043,9 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="player_horizontal_flip_off">Inversão horizontal desativada</string>
   <string name="player_vertical_flip_on">Inversão vertical ativada</string>
   <string name="player_vertical_flip_off">Inversão vertical desativada</string>
+  <string name="player_hwplus_unsupported">%1$s não é compatível com o modo HW+. Mude para a decodificação HW ou SW para usar.</string>
+  <string name="player_hwplus_use_hw">Usar HW</string>
+  <string name="player_hwplus_cpu_deband">Remoção de faixas por CPU</string>
   <string name="btn_label_back">Seta de voltar</string>
   <string name="btn_label_title">Título do vídeo</string>
   <string name="btn_label_bookmarks">Capítulos / Favoritos</string>
@@ -1440,8 +1441,6 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="ui_no_storage_location_configured">Nenhum local de armazenamento configurado</string>
   <string name="ui_script_file_not_found">Arquivo de script não encontrado</string>
   <string name="ui_search_models">Pesquisar modelos...</string>
-  <string name="ui_portrait_playback_buttons">Botões de reprodução em retrato</string>
-  <string name="ui_landscape_playback_buttons">Botões de reprodução em paisagem</string>
   <string name="ui_portrait_seekbar_position">Posição da barra de progresso em retrato</string>
   <string name="ui_landscape_seekbar_position">Posição da barra de progresso em paisagem</string>
   <string name="pref_player_buttons_opacity">Opacidade do fundo dos botões do player</string>
@@ -1503,7 +1502,6 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="oss_androidx_documentfile_description">Camada de abstração para acesso ao armazenamento de documentos.</string>
   <string name="oss_androidx_media_description">APIs do Android para sessão de mídia e reprodução.</string>
   <string name="oss_androidx_palette_description">Extrai paletas de cores dominantes e vibrantes das imagens.</string>
-  <string name="oss_androidx_profile_installer_description">Pré-carrega classes e métodos para iniciar o app mais rapidamente.</string>
   <string name="oss_google_material_description">Componentes do Material Design e biblioteca de temas.</string>
   <string name="oss_google_cast_description">Framework Chromecast para transmissão de mídia.</string>
   <string name="oss_material_symbols_description">Conjunto de ícones Material Symbols para Compose.</string>
@@ -2334,7 +2332,10 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
     <item quantity="one">Ajustes restaurados de %1$s. %2$d entrada danificada foi ignorada. Os downloads usarão Configuration/Downloads.</item>
     <item quantity="other">Ajustes restaurados de %1$s. %2$d entradas danificadas foram ignoradas. Os downloads usarão Configuration/Downloads.</item>
   </plurals>
-  <string name="settings_restore_reverted">Os ajustes restaurados de %1$s causaram uma falha, por isso foram revertidos.</string>
+  <plurals name="pref_import_skipped_invalid">
+    <item quantity="one">%1$d ajuste inválido ignorado</item>
+    <item quantity="other">%1$d ajustes inválidos ignorados</item>
+  </plurals>
   <string name="onboarding_configuration_restore_failed">Não foi possível concluir a configuração da pasta: %1$s</string>
   <string name="navbar_glow_title">Brilho do vidro</string>
   <string name="navbar_glow_summary">Mostrar iluminação da borda e brilho ao tocar na barra de navegação</string>
@@ -2757,6 +2758,9 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="jellyfin_details">Detalhes</string>
   <string name="jellyfin_trailer">Trailer</string>
   <string name="jellyfin_open_trailer_error">Nenhum aplicativo disponível para abrir trailers.</string>
+  <string name="no_app_for_action">Nenhum aplicativo neste dispositivo consegue abrir isto.</string>
+  <string name="tv_picker_file_exists">Já existe um arquivo com este nome.</string>
+  <string name="tv_picker_no_access">O mpvRx não pode acessar este local.</string>
   <string name="jellyfin_libraries">Bibliotecas</string>
   <string name="jellyfin_continue_watching">Continuar assistindo</string>
   <string name="jellyfin_latest_movies">Filmes recentes</string>
@@ -2848,10 +2852,8 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="clip_quick_length">Duração rápida</string>
   <string name="clip_length_seconds">%1$d s</string>
   <string name="clip_crop_reset">Usar quadro inteiro</string>
-  <string name="pref_layout_center_seekbar_above">Centralizado · barra acima das ações</string>
-  <string name="pref_layout_center_seekbar_below">Centralizado · barra abaixo das ações</string>
-  <string name="pref_layout_playback_above">Reprodução e ações acima da barra</string>
-  <string name="pref_layout_playback_below">Reprodução e ações abaixo da barra</string>
+  <string name="pref_layout_seekbar_above">Barra de progresso acima</string>
+  <string name="pref_layout_seekbar_below">Barra de progresso abaixo</string>
   <string name="player_layout_preset_title">Layout de reprodução</string>
   <string name="player_layout_preview_hint">Apenas prévia. Alterações salvas na hora.</string>
   <string name="player_layout_shared_landscape_hint">Compartilhado por todas as áreas em paisagem.</string>
@@ -2862,4 +2864,9 @@ Reinicie o aplicativo para que todas as alterações entrem em vigor.</string>
   <string name="pref_measure_enabled_title">Compartilhar diagnósticos com Measure</string>
   <string name="pref_measure_enabled_summary">Permita o envio de falhas, ANRs, métricas de desempenho e atividade da sessão ao Measure. Desativado por padrão.</string>
   <string name="pref_measure_not_configured">Diagnóstico indisponível: esta compilação não tem chave da API Measure.</string>
+  <string name="pref_layout_portrait_playback_position">Controles de reprodução em modo retrato</string>
+  <string name="pref_layout_landscape_playback_position">Controles de reprodução em modo paisagem</string>
+  <string name="pref_layout_playback_center">Centro da tela</string>
+  <string name="pref_layout_playback_above_seekbar">Acima da barra de progresso</string>
+  <string name="pref_layout_playback_below_seekbar">Abaixo da barra de progresso</string>
 </resources>

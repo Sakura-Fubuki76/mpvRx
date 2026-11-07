@@ -26,6 +26,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -34,6 +35,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
@@ -56,9 +58,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
@@ -84,6 +88,7 @@ import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
 import app.gyrolet.mpvrx.ui.player.controls.components.CurrentChapter
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonBorderColor
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColor
+import app.gyrolet.mpvrx.ui.player.controls.components.formatSpeed
 import app.gyrolet.mpvrx.ui.theme.controlColor as defaultControlColor
 import app.gyrolet.mpvrx.ui.theme.spacing
 import app.gyrolet.mpvrx.ui.theme.AppMotion
@@ -95,6 +100,15 @@ import org.koin.compose.koinInject
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import app.gyrolet.mpvrx.ui.icons.Icon as AppSymbolIcon
+
+@Composable
+internal fun playerTitleHeight(minHeight: Dp, lineHeight: TextUnit): Dp =
+  with(LocalDensity.current) { maxOf(minHeight, lineHeight.toDp() + 8.dp) }
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun Modifier.playerTitleMarquee(): Modifier =
+  if (AppMotion.playerReducedMotion()) this else basicMarquee(iterations = Int.MAX_VALUE)
 
 @Composable
 fun RenderPlayerButton(
@@ -144,6 +158,7 @@ fun RenderPlayerButton(
 
     PlayerButton.VIDEO_TITLE -> {
       val playlistModeEnabled = viewModel.hasPlaylistSupport()
+      val titleHeight = playerTitleHeight(buttonSize, MaterialTheme.typography.bodyMedium.lineHeight)
 
       if (enableLiquidGlass) {
         LiquidPillButton(
@@ -154,7 +169,7 @@ fun RenderPlayerButton(
             }
           },
           isInteractive = playlistModeEnabled,
-          height = buttonSize,
+          height = titleHeight,
           horizontalPadding = 12.dp,
         ) {
           Text(
@@ -162,7 +177,7 @@ fun RenderPlayerButton(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f, fill = false).playerTitleMarquee(),
           )
           viewModel.getPlaylistInfo()?.let { playlistInfo ->
             Text(
@@ -198,7 +213,7 @@ fun RenderPlayerButton(
             },
           modifier =
             Modifier
-              .height(buttonSize)
+              .heightIn(min = titleHeight)
               .clip(CircleShape)
               .clickable(
                 interactionSource = titleInteractionSource,
@@ -217,9 +232,10 @@ fun RenderPlayerButton(
             verticalAlignment = Alignment.CenterVertically,
             modifier =
               Modifier
+                .heightIn(min = titleHeight)
                 .padding(
                   horizontal = MaterialTheme.spacing.extraSmall,
-                  vertical = MaterialTheme.spacing.small,
+                  vertical = 4.dp,
                 ),
           ) {
             Text(
@@ -227,7 +243,7 @@ fun RenderPlayerButton(
               maxLines = 1,
               overflow = TextOverflow.Ellipsis,
               style = MaterialTheme.typography.bodyMedium,
-              modifier = Modifier.weight(1f, fill = false),
+              modifier = Modifier.weight(1f, fill = false).playerTitleMarquee(),
             )
             viewModel.getPlaylistInfo()?.let { playlistInfo ->
               Text(
@@ -240,6 +256,16 @@ fun RenderPlayerButton(
           }
         }
       }
+    }
+
+    PlayerButton.PLAYLIST -> {
+      ControlsButton(
+        icon = Icons.RoundedFilled.PlaylistPlay,
+        onClick = { onOpenSheet(Sheets.Playlist) },
+        enabled = viewModel.hasPlaylistSupport(),
+        title = stringResource(R.string.ui_playlist),
+        modifier = Modifier.size(buttonSize),
+      )
     }
 
     PlayerButton.BOOKMARKS_CHAPTERS -> {
@@ -257,7 +283,7 @@ fun RenderPlayerButton(
     PlayerButton.PLAYBACK_SPEED -> {
       val configOwned = isMpvOptionOwnedByConfig("speed")
       val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-      if (isSpeedNonOne && !compact) {
+      if (isSpeedNonOne) {
         if (enableLiquidGlass) {
           LiquidPillButton(
             onClick = {
@@ -278,7 +304,7 @@ fun RenderPlayerButton(
               tint = if (configOwned) disabledColor else MaterialTheme.colorScheme.primary,
               modifier = Modifier.size(20.dp),
             )
-            val speedText = String.format("%.2fx", playbackSpeed)
+            val speedText = "${playbackSpeed.formatSpeed()}x"
             Text(
               text = speedText,
               maxLines = 1,
@@ -339,7 +365,7 @@ fun RenderPlayerButton(
                 tint = if (configOwned) disabledColor else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(20.dp),
               )
-              val speedText = String.format("%.2fx", playbackSpeed)
+              val speedText = "${playbackSpeed.formatSpeed()}x"
               Text(
                 text = speedText,
                 maxLines = 1,
@@ -997,6 +1023,33 @@ fun RenderPlayerButton(
             controlColor
           } else {
             MaterialTheme.colorScheme.onSurface
+          },
+        modifier = Modifier.size(buttonSize),
+      )
+    }
+
+    PlayerButton.MOTION_INTERPOLATION -> {
+      val motionState by viewModel.motionInterpolation.state.collectAsState()
+      val motionEnabled = motionState.config.enabled
+      val blocked = !motionEnabled && motionState.availability.blocksEnabling
+      ControlsButton(
+        icon = Icons.RoundedFilled.MotionInterpolation,
+        onClick = {
+          viewModel.motionInterpolation.toggle()
+          // A missing requirement (GPU Next + Vulkan) is explained in the sheet.
+          if (blocked) onOpenSheet(Sheets.MotionInterpolation)
+        },
+        onLongClick = { onOpenSheet(Sheets.MotionInterpolation) },
+        title = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.btn_label_motion_interpolation),
+        onLongClickLabel = androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.motion_configure),
+        color =
+          when {
+            motionState.running -> MaterialTheme.colorScheme.primary
+            // Enabled, but waiting for the player to meet a requirement.
+            motionEnabled -> MaterialTheme.colorScheme.tertiary
+            blocked -> (if (borderless) controlColor else MaterialTheme.colorScheme.onSurface).copy(alpha = 0.38f)
+            borderless -> controlColor
+            else -> MaterialTheme.colorScheme.onSurface
           },
         modifier = Modifier.size(buttonSize),
       )

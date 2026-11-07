@@ -36,6 +36,7 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.domain.motion.MotionInterpolation
 import app.gyrolet.mpvrx.data.network.client.NetworkMimeTypes
 import app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy
 import app.gyrolet.mpvrx.domain.anime4k.Anime4KManager
@@ -112,7 +113,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -2300,6 +2300,16 @@ fun restartFromBeginning() {
   private var ppDebounceJob: Job? = null
   @Volatile private var lastCompiledPpSpec: Pair<PostProcessingPreset, PostProcessingParams>? = null
 
+  // ==================== Motion Interpolation (FongMi) ======================
+  val motionInterpolation =
+    app.gyrolet.mpvrx.ui.player.motion.MotionInterpolationController(
+      context = appContext,
+      preferences = decoderPreferences,
+      scope = viewModelScope,
+      showText = { text -> playerUpdate.value = PlayerUpdates.ShowText(text) },
+      requireHdrOutput = ::ensureHdrForFrameGeneration,
+    )
+
   // ==================== Custom Buttons ====================
 
   data class CustomButtonState(
@@ -2731,6 +2741,7 @@ fun restartFromBeginning() {
     _isMpvCoreReady.value = true
     scheduleAmbientUpdate(0)
     startMpvStateCollectors()
+    motionInterpolation.refresh()
     isMpvReadyForCustomButtons = true
     setupCustomButtons()
     reloadCustomButtonsScript("mpv_core_initialized")
@@ -6129,20 +6140,26 @@ fun restartFromBeginning() {
       currentHost.hostRequestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
       return
     }
-    // Temporarily cycle orientation WITHOUT modifying preferences
-    // Preferences remain the single source of truth and will be reapplied on next video
-    currentHost.hostRequestedOrientation =
-      when (currentHost.hostRequestedOrientation) {
+    // Held until the next media launch without touching preferences; PlayerActivity re-applies it.
+    val landscape =
+      when (PlayerOrientationPolicy.manualOrientation ?: currentHost.hostRequestedOrientation) {
         ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
         ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
         ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE,
-        -> {
-          ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-        }
-        else -> {
-          ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        }
+        -> false
+        else -> true
       }
+    val target =
+      if (landscape) {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+      } else {
+        ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+      }
+    PlayerOrientationPolicy.manualOrientation = target
+    currentHost.hostRequestedOrientation = target
+    val label =
+      if (landscape) R.string.pref_player_orientation_landscape else R.string.pref_player_orientation_portrait
+    playerUpdate.value = PlayerUpdates.ShowText(appContext.getString(label))
   }
 
   // ==================== Lua Invocation Handling ====================
@@ -7252,6 +7269,7 @@ fun restartFromBeginning() {
 
   fun toggleMirroring() {
     val newMirrorState = !_transformState.value.isMirrored
+    if (newMirrorState && HwPlusGuard.blocks(appContext, R.string.btn_label_mirror, ::toggleMirroring)) return
     _transformState.update { it.copy(isMirrored = newMirrorState) }
 
     // Use labeled video filter for mirroring to avoid state desync
@@ -7270,6 +7288,7 @@ fun restartFromBeginning() {
 
   fun toggleVerticalFlip() {
     val newState = !_transformState.value.isVerticalFlipped
+    if (newState && HwPlusGuard.blocks(appContext, R.string.ui_vertical_flip, ::toggleVerticalFlip)) return
     _transformState.update { it.copy(isVerticalFlipped = newState) }
 
     // Use labeled video filter for vflip to avoid state desync
@@ -7304,6 +7323,10 @@ fun restartFromBeginning() {
 
   fun setHdrScreenMode(mode: HdrScreenMode) {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.HDR_OUTPUT)) return
+    if (mode == HdrScreenMode.OFF && MotionInterpolation.requiresHdr(decoderPreferences)) {
+      showToast(appContext.getString(R.string.motion_hdr_required))
+      return
+    }
     val resolvedMode =
       if (mode == HdrScreenMode.LINEAR && !isLinearHdrAvailable.value) {
         HdrScreenMode.defaultEnabledMode
@@ -7331,6 +7354,7 @@ fun restartFromBeginning() {
     mode != HdrScreenMode.LINEAR || isLinearHdrAvailable.value
 
   private fun initialHdrScreenMode(): HdrScreenMode {
+    MotionInterpolation.ensureHdrEnabled(decoderPreferences)
     if (!decoderPreferences.hdrScreenOutput.get()) {
       return HdrScreenMode.OFF
     }
@@ -7341,6 +7365,16 @@ fun restartFromBeginning() {
     return if (savedMode == HdrScreenMode.LINEAR &&
       !(decoderPreferences.gpuNext.get() && decoderPreferences.useVulkan.get())
     ) HdrScreenMode.defaultEnabledMode else savedMode
+  }
+
+  private fun ensureHdrForFrameGeneration(): Boolean {
+    if (!_isMpvCoreReady.value || !MotionInterpolation.requiresHdr(decoderPreferences)) return false
+    val mode = initialHdrScreenMode()
+    val modeChanged = _hdrScreenMode.value != mode
+    _hdrScreenMode.value = mode
+    applyHdrScreenOutput(mode)
+    if (modeChanged) restartAmbientIfActive()
+    return _isHdrScreenOutputEnabled.value
   }
 
   private fun reconcileHdrModeWithRenderer() {
@@ -7382,6 +7416,12 @@ fun restartFromBeginning() {
 
   fun selectAnime4KMode(mode: Anime4KManager.Mode) {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.ANIME4K)) return
+    // ArtCNN only hooks the LUMA plane, which HW+ frames don't have.
+    if (mode == Anime4KManager.Mode.ARTCNN &&
+      HwPlusGuard.blocks(appContext, R.string.anime4k_mode_artcnn) { selectAnime4KMode(mode) }
+    ) {
+      return
+    }
     decoderPreferences.anime4kMode.set(mode.name)
     viewModelScope.launch(Dispatchers.Default) {
       runCatching {

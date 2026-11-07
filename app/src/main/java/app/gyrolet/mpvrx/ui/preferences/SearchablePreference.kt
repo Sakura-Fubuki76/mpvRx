@@ -14,6 +14,7 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.background.BackgroundType
 import app.gyrolet.mpvrx.ui.background.RandomInterval
+import app.gyrolet.mpvrx.domain.motion.MotionInterpolation
 import app.gyrolet.mpvrx.ui.browser.music.MusicTab
 import app.gyrolet.mpvrx.ui.securefolder.SecureFolderSettingsScreen
 import java.text.Normalizer
@@ -1605,14 +1606,20 @@ object SearchablePreferences {
         screen = ControlLayoutEditorScreen(ControlRegion.BOTTOM_RIGHT),
         anchorItemIndex = 0,
         SearchEntrySpec(R.string.ui_landscape_seekbar_position, listOf("landscape", "seekbar", "position", "above", "below", "buttons")),
-        SearchEntrySpec(R.string.ui_landscape_playback_buttons, listOf("landscape", "playback", "play", "pause", "next", "previous", "position", "center")),
+        SearchEntrySpec(
+          R.string.pref_layout_landscape_playback_position,
+          listOf("landscape", "playback", "play", "pause", "previous", "next", "seekbar", "above", "below", "center", "position"),
+        ),
       )
       addSearchEntries(
         category = "Appearance",
         screen = ControlLayoutEditorScreen(ControlRegion.PORTRAIT_BOTTOM),
         anchorItemIndex = 0,
         SearchEntrySpec(R.string.ui_portrait_seekbar_position, listOf("portrait", "seekbar", "position", "above", "below", "buttons")),
-        SearchEntrySpec(R.string.ui_portrait_playback_buttons, listOf("portrait", "playback", "buttons", "position")),
+        SearchEntrySpec(
+          R.string.pref_layout_portrait_playback_position,
+          listOf("portrait", "playback", "play", "pause", "previous", "next", "seekbar", "above", "below", "center", "position"),
+        ),
       )
       addSearchEntries(
         category = "Appearance",
@@ -1693,7 +1700,6 @@ object SearchablePreferences {
         screen = GesturePreferencesScreen,
         anchorItemIndex = 1,
         SearchEntrySpec(R.string.pref_player_gestures_pinch_to_zoom_subtitles, listOf("pinch", "zoom", "subtitle", "gesture")),
-        SearchEntrySpec(R.string.pref_player_gestures_two_finger_speed_swipe, listOf("two finger", "swipe", "speed", "playback speed", "gesture")),
         SearchEntrySpec(R.string.pref_player_gestures_swipe_subtitles_to_seek_dialog, listOf("swipe", "subtitle", "seek", "dialog")),
         SearchEntrySpec(R.string.pref_player_gestures_swipe_subtitles_invert_direction, listOf("swipe", "subtitle", "invert", "direction")),
         SearchEntrySpec(R.string.pref_player_gestures_enable_center_swipe_up_gesture, listOf("swipe up", "center", "playlist", "gesture")),
@@ -1717,6 +1723,17 @@ object SearchablePreferences {
         SearchEntrySpec(R.string.pref_anime4k_thin_title, listOf("anime4k", "thin", "lines"), R.string.pref_anime4k_title),
         SearchEntrySpec(R.string.pref_anime4k_deblur_title, listOf("anime4k", "deblur", "sharp"), R.string.pref_anime4k_title),
       )
+      if (MotionInterpolation.isBuildSupported) {
+        addSearchEntries(
+          category = "Decoder",
+          screen = DecoderPreferencesScreen,
+          anchorItemIndex = 3,
+          SearchEntrySpec(R.string.motion_title, listOf("motion", "interpolation", "memc", "smooth", "fps", "60fps", "frame")),
+          SearchEntrySpec(R.string.motion_target_title, listOf("target", "fps", "auto", "refresh rate", "motion"), R.string.motion_title),
+          SearchEntrySpec(R.string.motion_target_fps_title, listOf("target", "fps", "custom", "motion"), R.string.motion_title),
+          SearchEntrySpec(R.string.motion_switch_display_title, listOf("refresh rate", "display", "hz", "motion"), R.string.motion_title),
+        )
+      }
 
       addSearchEntries(
         category = "Audio",

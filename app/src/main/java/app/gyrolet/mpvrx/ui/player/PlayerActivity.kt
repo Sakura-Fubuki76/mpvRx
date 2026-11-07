@@ -121,6 +121,7 @@ import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
 import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
 import app.gyrolet.mpvrx.ui.remote.RemotePairingPrompt
 import app.gyrolet.mpvrx.ui.torrent.torrentSelectionActivityClass
+import app.gyrolet.mpvrx.ui.tv.startForResultOrToast
 import app.gyrolet.mpvrx.utils.device.DeviceFormFactor
 import app.gyrolet.mpvrx.ui.player.controls.tvScrubStepSeconds
 import app.gyrolet.mpvrx.utils.device.VulkanCapabilities
@@ -407,7 +408,6 @@ class PlayerActivity :
   private var acceptedPreparedPlaybackLaunch: PreparedPlaybackLaunch? = null
   private var scriptRuntimeRestartPending = false
   private var coreRecoveryPending = false
-  private var subtitleAutoloadJob: Job? = null
 
   /**
    * Playlist ID for tracking play history (optional, only for custom playlists)
@@ -495,6 +495,7 @@ class PlayerActivity :
   private var systemBarsAutoHideJob: Job? = null
   private var videoParamRefreshJob: Job? = null
   private var intentSubtitleJob: Job? = null
+  private var subtitleAutoloadJob: Job? = null
   private var mediaLoadJob: Job? = null
   private var playbackLoadRetryJob: Job? = null
   private var playbackLoadWatchdogJob: Job? = null
@@ -684,13 +685,24 @@ class PlayerActivity :
       }
     }
 
+  @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+  override fun startActivityForResult(intent: Intent, requestCode: Int, options: Bundle?) =
+    startForResultOrToast(intent, requestCode) { target -> super.startActivityForResult(target, requestCode, options) }
+
   override fun onCreate(savedInstanceState: Bundle?) {
+    // A fresh launch drops the rotation picked for the previous session; re-entry keeps it.
+    if (savedInstanceState == null && intent.action != MediaPlaybackService.ACTION_OPEN_PLAYER) {
+      PlayerOrientationPolicy.manualOrientation = null
+    }
     applyInitialVideoOrientation(intent)
     if (intent.action == MediaPlaybackService.ACTION_OPEN_PLAYER) {
       applyLiveSessionOrientation(isAudioHint = intent.getBooleanExtra("is_audio", false))
     }
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R && !isKnownAudioLaunch(intent)) {
+      applyLegacySystemBars(showStatus = false, showNavigation = false, isAudio = false)
+    }
     // Kick the multi-MB asset copy and the user mpv.conf SAF walk off the main thread first, so
     // they run concurrently with everything below instead of being joined inside setupMPV().
     startMpvAssetPreparation()
@@ -920,6 +932,7 @@ class PlayerActivity :
     setupVideoAmbientBackground()
     setupPlayerControls()
     setupAudioPlayerViewObserver()
+    setupMotionInterpolationObserver()
     setupMediaSession()
     lifecycleScope.launch {
       thumbnailRepository.cacheRevision.drop(1).collect {
@@ -975,6 +988,8 @@ class PlayerActivity :
 
     lifecycleScope.launch {
       playerPreferences.orientation.changes().drop(1).collect {
+        // A preference picked in settings replaces the rotation-button choice.
+        PlayerOrientationPolicy.manualOrientation = null
         if (!isKnownAudioLaunch(intent) && !viewModel.isAudioOnly.value) setOrientation()
       }
     }
@@ -1578,6 +1593,18 @@ class PlayerActivity :
     applySubtitleBlendMode()
   }
 
+  /** Motion interpolation changes the rate the display should run at, so renegotiate it. */
+  private fun setupMotionInterpolationObserver() {
+    if (!app.gyrolet.mpvrx.domain.motion.MotionInterpolation.isBuildSupported) return
+    lifecycleScope.launch {
+      repeatOnLifecycle(Lifecycle.State.STARTED) {
+        viewModel.motionInterpolation.state.collect {
+          if (mpvInitialized && !player.isExiting && !isFinishing) player.updateFrameRate()
+        }
+      }
+    }
+  }
+
   private fun setupAudioPlayerViewObserver() {
     lifecycleScope.launch {
       repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -1934,6 +1961,7 @@ class PlayerActivity :
     // native command can restart MediaCodec after its output surface has already been detached.
     viewModel.prepareForPlayerTeardown()
     intentSubtitleJob?.cancel()
+    subtitleAutoloadJob?.cancel()
     videoParamRefreshJob?.cancel()
     backgroundServiceSyncJob?.cancel()
     backgroundHandoffJob?.cancel()
@@ -1942,7 +1970,6 @@ class PlayerActivity :
     mpvAssetPreparationJob?.cancel()
     mpvCorePreparationJob?.cancel()
     mediaLoadJob?.cancel()
-    subtitleAutoloadJob?.cancel()
     cancelPlaybackLoadRecovery()
     eofAdvanceJob?.cancel()
     resumeAfterUnlockJob?.cancel()
@@ -2500,6 +2527,7 @@ class PlayerActivity :
   override fun onStart() {
     super.onStart()
     playbackActivityStarted = true
+    if (::pipHelper.isInitialized && ownsPlaybackSession()) pipHelper.onStart()
     onPlaybackStarted()
   }
 
@@ -2696,27 +2724,44 @@ class PlayerActivity :
     val showNavigation = isAudio || (controlsVisible && playerPreferences.showSystemNavigationBar.get())
 
     try {
-      // WindowInsetsControllerCompat translates this into the legacy fullscreen/navigation flags
-      // on Android 8-10 and uses WindowInsetsController on Android 11+. Keep immersive behavior
-      // even when only one of the two system bars is hidden.
-      windowInsetsController.apply {
-        systemBarsBehavior =
-          if (isAudio) WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-          else WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        applyLegacySystemBars(showStatus, showNavigation, isAudio)
+      } else {
+        windowInsetsController.apply {
+          systemBarsBehavior =
+            if (isAudio) WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            else WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        if (showStatus) show(WindowInsetsCompat.Type.statusBars())
-        else hide(WindowInsetsCompat.Type.statusBars())
+          if (showStatus) show(WindowInsetsCompat.Type.statusBars())
+          else hide(WindowInsetsCompat.Type.statusBars())
 
-        if (showNavigation) show(WindowInsetsCompat.Type.navigationBars())
-        else hide(WindowInsetsCompat.Type.navigationBars())
+          if (showNavigation) show(WindowInsetsCompat.Type.navigationBars())
+          else hide(WindowInsetsCompat.Type.navigationBars())
 
-        isAppearanceLightStatusBars = false
-        isAppearanceLightNavigationBars = false
+          isAppearanceLightStatusBars = false
+          isAppearanceLightNavigationBars = false
+        }
       }
     } catch (e: Exception) {
       Log.e(TAG, "Failed to update player system bars", e)
     }
     updateStatusBarProtection()
+  }
+
+  @Suppress("DEPRECATION")
+  private fun applyLegacySystemBars(showStatus: Boolean, showNavigation: Boolean, isAudio: Boolean) {
+    val layoutFlags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+      View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+    val managedFlags = layoutFlags or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+      View.SYSTEM_UI_FLAG_IMMERSIVE or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+      View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+    var requestedFlags = layoutFlags
+    if (!showStatus) requestedFlags = requestedFlags or View.SYSTEM_UI_FLAG_FULLSCREEN
+    if (!showNavigation) requestedFlags = requestedFlags or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+    if (!isAudio) requestedFlags = requestedFlags or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+    window.decorView.apply {
+      systemUiVisibility = (systemUiVisibility and managedFlags.inv()) or requestedFlags
+    }
   }
 
   private fun setupSystemUI() {
@@ -2955,6 +3000,7 @@ class PlayerActivity :
   private fun beginMediaRequest(): Boolean =
     PlaybackActivityOwner.beginRequest(playbackOwnerToken) {
       lastExitBackPressAtMs = null
+      subtitleAutoloadJob?.cancel()
       mediaRequestGeneration++
     }
 
@@ -3909,6 +3955,7 @@ class PlayerActivity :
     if (!mpvInitialized) return
     updateOrientationForWindow()
     viewModel.onOrientationChanged()
+    applySubtitleWindowing(newConfig.orientation == Configuration.ORIENTATION_PORTRAIT)
     binding.root.post(::updateVideoAmbientPlayerBounds)
     if (isReady) {
       handleConfigurationChange()
@@ -4250,6 +4297,8 @@ class PlayerActivity :
           playWhenFileLoaded = false
         }
         viewModel.onVideoLoadCompleted()
+        // The renderer and GPU support are only known once a file has started.
+        viewModel.motionInterpolation.refresh()
         handleFileLoaded(loadGeneration)
         scheduleDeferredUserMpvAssetRefresh()
         if (isBackgroundPlaybackEnabled()) {
@@ -4502,7 +4551,8 @@ class PlayerActivity :
           )
         } else {
           // Regular file or direct network stream
-          // Use the confirmed item's URI rather than an Intent left over from another episode.
+          // The launch intent can still refer to the first episode after next/previous. Use
+          // the item that actually loaded, and keep all URI/provider work off the UI thread.
           val filePath = loadedPlaybackItem.playableUri.let { path ->
             if (path.startsWith('/')) path else Uri.parse(path).resolveUri(this@PlayerActivity, allowFdFallback = false)
           } ?: parsePathFromIntent(loadedIntent)
@@ -4689,10 +4739,6 @@ class PlayerActivity :
     val backgroundColor = subtitlesPreferences.backgroundColor.get().toColorHexString()
     val shadowColor = subtitlesPreferences.shadowColor.get().toColorHexString()
 
-    // Miscellaneous settings
-    val scaleByWindow = subtitlesPreferences.scaleByWindow.get()
-    val scaleValue = if (scaleByWindow) "yes" else "no"
-
     // Ambient Mode can change this property independently of subtitle preferences, so the helper
     // compares the effective mpv value instead of forcing a write on every preference refresh.
     applySubtitleBlendMode()
@@ -4711,8 +4757,7 @@ class PlayerActivity :
     PlaybackSession.setPropertyString("sub-border-color", borderColor)
     PlaybackSession.setPropertyString("sub-back-color", backgroundColor)
     PlaybackSession.setPropertyString("sub-shadow-color", shadowColor)
-    PlaybackSession.setPropertyString("sub-scale-by-window", scaleValue)
-    PlaybackSession.setPropertyString("sub-use-margins", scaleValue)
+    applySubtitleWindowing(resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT)
     applySubtitleScales()
 
     applySubtitleLayout(
@@ -5364,6 +5409,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     val previousItemWasReady = isReady
 
     setIntent(intent)
+    // A new media launch drops the rotation picked for the previous video.
+    PlayerOrientationPolicy.manualOrientation = null
     applyInitialVideoOrientation(intent)
     applyPlaybackBrightnessPolicy(isAudio = isCurrentMediaKnownAudio())
     if (!beginMediaRequest()) return
@@ -6182,8 +6229,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       pendingPipExitResolution = false
       wasInPipMode = true
       handledPipDismissal = false
+      // Android expands PiP into the requested orientation, so settle on the video's way round now.
+      setOrientation()
       ensurePipPlaybackNotification()
     } else if (wasInPipMode) {
+      // PiP showed the system bars; hide them before the expand animation draws the player.
+      if (!isFinishing) setupSystemUI()
       // Android reports the same PiP exit callback for expansion and close. Resolve it after
       // lifecycle delivery confirms whether the Activity resumed or the PiP task was dismissed.
       schedulePipExitResolution()
@@ -6286,12 +6337,25 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
 
   // ==================== Orientation Management ====================
 
+  /**
+   * Only a split-screen or freeform window hands orientation to the system: it cannot rotate the
+   * display, and a fixed request would letterbox the player inside it.
+   *
+   * Display size must never decide this (#959). Android 15 and earlier honor orientation requests on
+   * tablets and foldables exactly as on phones. From Android 16 the platform itself ignores fixed
+   * portrait/landscape requests on large screens, unless the user restores the app default in the
+   * system aspect-ratio settings, while `sensor` ("Free") is always honored. Replacing requests with
+   * unspecified on large screens made every mode follow the system rotation lock instead.
+   *
+   * PiP also reports multi-window but keeps the requested orientation, so Android expands straight
+   * back into the video's orientation.
+   */
   private fun usesAdaptiveOrientation(): Boolean =
-    !isTelevision && (isInMultiWindowMode || resources.configuration.smallestScreenWidthDp >= 600)
+    !isTelevision && isInMultiWindowMode && !isInPictureInPictureMode
 
   private fun updateOrientationForWindow() {
-    // Folding or entering split-screen can change whether a fixed orientation is appropriate.
-    // Do not reapply a phone preference on ordinary rotation: the rotation button overrides it.
+    // Entering split-screen or freeform hands orientation to the system; leaving it restores the
+    // player's. Do not reapply a preference on ordinary rotation: the rotation button overrides it.
     if (usesAdaptiveOrientation()) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     } else if (requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) {
@@ -6300,8 +6364,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   }
 
   override fun setRequestedOrientation(requestedOrientation: Int) {
-    // Android 16 ignores fixed orientations on large displays. Apply the same adaptive behavior
-    // consistently on tablets/foldables and in multi-window, including rotation-button requests.
+    // Preference, launch and rotation-button requests all follow the window rule above.
     val target =
       if (usesAdaptiveOrientation()) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else requestedOrientation
     if (super.getRequestedOrientation() != target) super.setRequestedOrientation(target)
@@ -6310,7 +6373,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   /**
    * Applies the orientation for the current media, per [PlayerOrientationPolicy].
    *
-   * Preferences remain the single source of truth; the rotation button overrides this temporarily
+   * Preferences remain the single source of truth; a rotation-button choice
+   * ([PlayerOrientationPolicy.manualOrientation]) outranks them for videos until the next launch
    * without changing them. Nothing is applied when the geometry needed to decide is not known yet,
    * so the launch orientation survives until mpv reports it.
    *
@@ -6323,9 +6387,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       return
     }
 
+    val manual = PlayerOrientationPolicy.manualOrientation
     val target =
       if (isCurrentMediaKnownAudio() || viewModel.isAudioOnly.value) {
         PlayerOrientationPolicy.forAudioPreference(audioPreferences.audioOrientation.get())
+      } else if (manual != null) {
+        manual
       } else {
         val preference = playerPreferences.orientation.get()
         // A saved custom ratio is re-applied to every file and is already part of mpv's reported
@@ -6372,9 +6439,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       if (isAudio) {
         PlayerOrientationPolicy.forAudioPreference(audioPreferences.audioOrientation.get())
       } else {
-        PlayerOrientationPolicy.forPreference(playerPreferences.orientation.get()) {
-          PlayerOrientationPolicy.rememberedVideoAspect(item?.stableId)
-        }
+        PlayerOrientationPolicy.manualOrientation
+          ?: PlayerOrientationPolicy.forPreference(playerPreferences.orientation.get()) {
+            PlayerOrientationPolicy.rememberedVideoAspect(item?.stableId)
+          }
       } ?: return
     if (requestedOrientation != target) requestedOrientation = target
   }
@@ -6402,6 +6470,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
     if (isTelevision) {
       requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+      return
+    }
+    val manual = PlayerOrientationPolicy.manualOrientation
+    if (manual != null && !isKnownAudioLaunch(sourceIntent)) {
+      // A restored or re-entered player keeps the rotation picked for this session.
+      requestedOrientation = manual
       return
     }
     if (playerPreferences.orientation.get() != PlayerOrientation.Video || isKnownAudioLaunch(sourceIntent)) return
@@ -6467,6 +6541,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         withContext(Dispatchers.IO) { runCatching { pending.get(LATE_GEOMETRY_WAIT_MS, TimeUnit.MILLISECONDS) }.getOrNull() }
           ?: return@launch
       if (decisionId != launchOrientationDecisionId || orientationFromPlayback || isFinishing) return@launch
+      if (PlayerOrientationPolicy.manualOrientation != null) return@launch
       val hasSize = width > 0 && height > 0
       val lateTarget =
         PlayerOrientationPolicy.forSourceGeometry(

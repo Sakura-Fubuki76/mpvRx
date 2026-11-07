@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -60,6 +61,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -71,6 +73,7 @@ import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.presentation.components.PlayerSheet
 import app.gyrolet.mpvrx.presentation.components.RemoteImage
 import app.gyrolet.mpvrx.ui.browser.dialogs.AddToPlaylistDialog
+import app.gyrolet.mpvrx.ui.liquidglass.LocalPlayerGlassSurfaceActive
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
 import app.gyrolet.mpvrx.ui.icons.Icon
@@ -255,6 +258,10 @@ private fun PlaylistThumbnail(
 private const val PLAYLIST_THUMBNAIL_WIDTH = 512
 private const val PLAYLIST_THUMBNAIL_HEIGHT = 288
 
+// Inset plus thumbnail radius equals the connected outer corner, so the end items round concentrically.
+private val PlaylistItemInset = 12.dp
+private val PlaylistThumbnailCorner = AppConnectedShapeTokens.outerCorner - PlaylistItemInset
+
 @Composable
 fun PlaylistSheet(
   playlist: ImmutableList<PlaylistItem>,
@@ -333,6 +340,12 @@ fun PlaylistSheet(
   PlayerSheet(
     onDismissRequest = onDismissRequest,
     modifier = Modifier.fillMaxWidth(),
+    customMaxWidth =
+      if (!isPortrait && !isListMode && configuration.smallestScreenWidthDp >= 600) {
+        (configuration.screenWidthDp.dp - 48.dp).coerceAtMost(1280.dp)
+      } else {
+        null
+      },
     customMaxHeight = if (isPortrait) configuration.screenHeightDp.dp * 0.55f else null,
     isSwipeActive = isSwipeActive,
     swipeOffset = swipeOffset,
@@ -519,29 +532,30 @@ fun PlaylistSheet(
             }
           }
         } else {
-          // Horizontal grid mode
-          LazyRow(
-            state = lazyListState,
-            modifier = Modifier.fillMaxWidth(),
-            contentPadding =
-              PaddingValues(
-                horizontal = if (isListMode) MaterialTheme.spacing.medium else 0.dp,
-                vertical = MaterialTheme.spacing.small,
-              ),
-            horizontalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing),
-          ) {
-            items(playlist.size, key = { playlist[it].queueEntryId }) { index ->
-              val item = playlist[index]
-              PlaylistTrackGridItem(
-                item = item,
-                shape = connectedShape(index, playlist.size, ConnectedLayout.Horizontal),
-                thumbnailRepository = thumbnailRepository,
-                onClick = {
-                  onItemClick(item)
-                },
-                skipThumbnail = false,
-                isAudioOnly = isAudioOnly,
-              )
+          BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val cardWidth = if (configuration.smallestScreenWidthDp >= 600) {
+              ((maxWidth - AppConnectedShapeTokens.spacing * 4) / 5 - 1.dp).coerceIn(140.dp, 200.dp)
+            } else {
+              200.dp
+            }
+            LazyRow(
+              state = lazyListState,
+              modifier = Modifier.fillMaxWidth(),
+              contentPadding = PaddingValues(vertical = MaterialTheme.spacing.small),
+              horizontalArrangement = Arrangement.spacedBy(AppConnectedShapeTokens.spacing),
+            ) {
+              items(playlist.size, key = { playlist[it].queueEntryId }) { index ->
+                val item = playlist[index]
+                PlaylistTrackGridItem(
+                  item = item,
+                  shape = connectedShape(index, playlist.size, ConnectedLayout.Horizontal),
+                  thumbnailRepository = thumbnailRepository,
+                  onClick = { onItemClick(item) },
+                  skipThumbnail = false,
+                  isAudioOnly = isAudioOnly,
+                  cardWidth = cardWidth,
+                )
+              }
             }
           }
         }
@@ -575,7 +589,7 @@ private fun DragHandle(
           .clip(RoundedCornerShape(14.dp))
           .background(
             if (isDragging) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceContainerHighest,
+            else playlistUnselectedRowColor(),
           )
           .draggableHandle(
             interactionSource = feedback.interactions,
@@ -632,7 +646,7 @@ fun PlaylistTrackListItem(
     color = if (effectiveItem.isPlaying) {
       animatedPlayerSheetSelectionColor(true, label = "playlistItemSelection")
     } else {
-      MaterialTheme.colorScheme.surfaceContainerLow
+      playlistUnselectedRowColor()
     },
     shape = shape,
   ) {
@@ -640,7 +654,7 @@ fun PlaylistTrackListItem(
       modifier =
         Modifier
           .fillMaxWidth()
-          .padding(MaterialTheme.spacing.smaller),
+          .padding(PlaylistItemInset),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.small),
     ) {
@@ -654,7 +668,7 @@ fun PlaylistTrackListItem(
               } else {
                 Modifier.width(100.dp).height(56.dp)
               },
-            ).clip(RoundedCornerShape(8.dp))
+            ).clip(RoundedCornerShape(PlaylistThumbnailCorner))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
       ) {
@@ -739,14 +753,7 @@ fun PlaylistTrackListItem(
           // Duration chip
           if (item.duration.isNotEmpty()) {
             Surface(
-              color =
-                if (item.isPlaying) {
-                  accentColor.copy(
-                    alpha = 0.15f,
-                  )
-                } else {
-                  MaterialTheme.colorScheme.surfaceContainerHighest
-                },
+              color = playlistChipColor(item.isPlaying),
               shape = RoundedCornerShape(4.dp),
             ) {
               Text(
@@ -766,14 +773,7 @@ fun PlaylistTrackListItem(
           // Resolution chip
           if (item.resolution.isNotEmpty()) {
             Surface(
-              color =
-                if (item.isPlaying) {
-                  accentColor.copy(
-                    alpha = 0.15f,
-                  )
-                } else {
-                  MaterialTheme.colorScheme.surfaceContainerHighest
-                },
+              color = playlistChipColor(item.isPlaying),
               shape = RoundedCornerShape(4.dp),
             ) {
               Text(
@@ -829,6 +829,7 @@ fun PlaylistTrackGridItem(
   isAudioOnly: Boolean = false,
   modifier: Modifier = Modifier,
   shape: Shape = RoundedCornerShape(12.dp),
+  cardWidth: Dp = 200.dp,
 ) {
   val isAudioItem = item.isAudio || isAudioOnly
   val effectiveItem =
@@ -842,18 +843,18 @@ fun PlaylistTrackGridItem(
   Surface(
     modifier =
       modifier
-        .width(200.dp)
+        .width(cardWidth)
         .clip(shape)
         .clickable(onClick = onClick),
     color = if (effectiveItem.isPlaying) {
       animatedPlayerSheetSelectionColor(true, label = "playlistItemSelection")
     } else {
-      MaterialTheme.colorScheme.surfaceContainerLow
+      playlistUnselectedRowColor()
     },
     shape = shape,
   ) {
     Column(
-      modifier = Modifier.padding(MaterialTheme.spacing.smaller),
+      modifier = Modifier.padding(PlaylistItemInset),
       verticalArrangement = Arrangement.spacedBy(MaterialTheme.spacing.smaller),
     ) {
       // Thumbnail with 1:1 aspect ratio for audio, fixed height for video
@@ -864,10 +865,12 @@ fun PlaylistTrackGridItem(
             .then(
               if (isAudioItem) {
                 Modifier.aspectRatio(1f)
+              } else if (cardWidth < 200.dp) {
+                Modifier.aspectRatio(16f / 9f)
               } else {
                 Modifier.height(112.dp)
               },
-            ).clip(RoundedCornerShape(8.dp))
+            ).clip(RoundedCornerShape(PlaylistThumbnailCorner))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
       ) {
@@ -1007,14 +1010,7 @@ fun PlaylistTrackGridItem(
           // Resolution chip
           if (item.resolution.isNotEmpty()) {
             Surface(
-              color =
-                if (item.isPlaying) {
-                  accentColor.copy(
-                    alpha = 0.15f,
-                  )
-                } else {
-                  MaterialTheme.colorScheme.surfaceContainerHighest
-                },
+              color = playlistChipColor(item.isPlaying),
               shape = RoundedCornerShape(4.dp),
             ) {
               Text(
@@ -1118,5 +1114,26 @@ private fun String.stripExtension(): String {
   val ext = substring(dotIndex + 1)
   return if (ext.length in 2..5 && ext.none { it.isWhitespace() }) substring(0, dotIndex) else this
 }
+
+/**
+ * Unselected playlist rows read the shared frosted palette on a liquid-glass sheet and
+ * keep their plain, non-glass container when the sheet is solid.
+ */
+@Composable
+private fun playlistUnselectedRowColor(): Color =
+  if (LocalPlayerGlassSurfaceActive.current) {
+    playerSheetSelectionColor(false)
+  } else {
+    MaterialTheme.colorScheme.surfaceContainerLow
+  }
+
+/** Small duration/resolution/status chips, translated the same way as the rows. */
+@Composable
+private fun playlistChipColor(isPlaying: Boolean): Color =
+  when {
+    isPlaying -> MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+    LocalPlayerGlassSurfaceActive.current -> playerSheetSelectionColor(false)
+    else -> MaterialTheme.colorScheme.surfaceContainerHighest
+  }
 
 private const val PLAYLIST_SCROLL_APPROACH_ITEMS = 6

@@ -204,8 +204,6 @@
   <string name="pref_player_gestures_volume">Жесты громкости</string>
   <string name="pref_player_gestures_pinch_to_zoom">Масштабирование щипком</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">Масштабирование субтитров щипком</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe">Скорость свайпом двумя пальцами</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe_summary">Проведите двумя пальцами вверх или вниз, чтобы менять скорость воспроизведения на 0,25x, от 0,5x до 4x</string>
   <string name="pref_subtitles_secondary_pinch_zoom">Масштабирование вторичных субтитров щипком</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">При масштабировании основных субтитров также масштабируются вторичные</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">Смахнуть субтитры для открытия окна перемотки</string>
@@ -1053,6 +1051,9 @@
   <string name="player_horizontal_flip_off">Отражение по горизонтали выключено</string>
   <string name="player_vertical_flip_on">Отражение по вертикали включено</string>
   <string name="player_vertical_flip_off">Отражение по вертикали выключено</string>
+  <string name="player_hwplus_unsupported">%1$s не поддерживается в режиме HW+. Переключитесь на декодирование HW или SW, чтобы использовать эту функцию.</string>
+  <string name="player_hwplus_use_hw">Включить HW</string>
+  <string name="player_hwplus_cpu_deband">Устранение полос (CPU)</string>
   <string name="btn_label_back">Стрелка «Назад»</string>
   <string name="btn_label_title">Название видео</string>
   <string name="btn_label_bookmarks">Главы / Закладки</string>
@@ -1454,8 +1455,6 @@
   <string name="ui_no_storage_location_configured">Место хранения не настроено</string>
   <string name="ui_script_file_not_found">Файл скрипта не найден</string>
   <string name="ui_search_models">Поиск моделей...</string>
-  <string name="ui_portrait_playback_buttons">Кнопки воспроизведения в портретном режиме</string>
-  <string name="ui_landscape_playback_buttons">Кнопки воспроизведения в альбомном режиме</string>
   <string name="ui_portrait_seekbar_position">Положение полосы перемотки в портретном режиме</string>
   <string name="ui_landscape_seekbar_position">Положение полосы перемотки в альбомном режиме</string>
   <string name="pref_player_buttons_opacity">Непрозрачность фона кнопок плеера</string>
@@ -1517,7 +1516,6 @@
   <string name="oss_androidx_documentfile_description">Уровень абстракции для доступа к хранилищу документов.</string>
   <string name="oss_androidx_media_description">API Android для медиасеансов и воспроизведения.</string>
   <string name="oss_androidx_palette_description">Извлекает доминирующие и яркие цветовые палитры из изображений.</string>
-  <string name="oss_androidx_profile_installer_description">Предварительно загружает классы и методы для ускорения запуска приложения.</string>
   <string name="oss_google_material_description">Компоненты Material Design и библиотека тем.</string>
   <string name="oss_google_cast_description">Фреймворк Chromecast для трансляции медиа.</string>
   <string name="oss_material_symbols_description">Набор значков Material Symbols для Compose.</string>
@@ -2350,7 +2348,12 @@
     <item quantity="many">Настройки восстановлены из %1$s. Пропущено %2$d повреждённых записей. Загрузки будут сохраняться в Configuration/Downloads.</item>
     <item quantity="other">Настройки восстановлены из %1$s. Пропущено %2$d повреждённой записи. Загрузки будут сохраняться в Configuration/Downloads.</item>
   </plurals>
-  <string name="settings_restore_reverted">Настройки, восстановленные из %1$s, вызвали сбой, поэтому они были отменены.</string>
+  <plurals name="pref_import_skipped_invalid">
+    <item quantity="one">Пропущена %1$d недопустимая настройка</item>
+    <item quantity="few">Пропущены %1$d недопустимые настройки</item>
+    <item quantity="many">Пропущено %1$d недопустимых настроек</item>
+    <item quantity="other">Пропущено %1$d недопустимой настройки</item>
+  </plurals>
   <string name="onboarding_configuration_restore_failed">Не удалось завершить настройку папки: %1$s</string>
   <string name="navbar_glow_title">Свечение стекла</string>
   <string name="navbar_glow_summary">Подсветка края и касаний панели навигации</string>
@@ -2789,6 +2792,9 @@
   <string name="jellyfin_details">Сведения</string>
   <string name="jellyfin_trailer">Трейлер</string>
   <string name="jellyfin_open_trailer_error">Нет приложения для открытия трейлеров.</string>
+  <string name="no_app_for_action">На этом устройстве нет приложения, которое может это открыть.</string>
+  <string name="tv_picker_file_exists">Файл с таким именем уже существует.</string>
+  <string name="tv_picker_no_access">У mpvRx нет доступа к этому расположению.</string>
   <string name="jellyfin_libraries">Медиатеки</string>
   <string name="jellyfin_continue_watching">Продолжить просмотр</string>
   <string name="jellyfin_latest_movies">Новые фильмы</string>
@@ -2880,10 +2886,8 @@
   <string name="clip_quick_length">Быстрый выбор длины</string>
   <string name="clip_length_seconds">%1$d с</string>
   <string name="clip_crop_reset">Использовать весь кадр</string>
-  <string name="pref_layout_center_seekbar_above">По центру · шкала над кнопками</string>
-  <string name="pref_layout_center_seekbar_below">По центру · шкала под кнопками</string>
-  <string name="pref_layout_playback_above">Воспроизведение и кнопки над шкалой</string>
-  <string name="pref_layout_playback_below">Воспроизведение и кнопки под шкалой</string>
+  <string name="pref_layout_seekbar_above">Полоса перемотки сверху</string>
+  <string name="pref_layout_seekbar_below">Полоса перемотки снизу</string>
   <string name="player_layout_preset_title">Расположение управления</string>
   <string name="player_layout_preview_hint">Только пример. Изменения сохраняются сразу.</string>
   <string name="player_layout_shared_landscape_hint">Общее для всех зон в альбомном режиме.</string>
@@ -2894,4 +2898,9 @@
   <string name="pref_measure_enabled_title">Отправлять диагностику в Measure</string>
   <string name="pref_measure_enabled_summary">Разрешить отправку сбоев, ANR, показателей производительности и действий сеанса в Measure. По умолчанию отключено.</string>
   <string name="pref_measure_not_configured">Диагностика недоступна: в сборке нет ключа API Measure.</string>
+  <string name="pref_layout_portrait_playback_position">Элементы управления в портретном режиме</string>
+  <string name="pref_layout_landscape_playback_position">Элементы управления в альбомном режиме</string>
+  <string name="pref_layout_playback_center">По центру экрана</string>
+  <string name="pref_layout_playback_above_seekbar">Над шкалой воспроизведения</string>
+  <string name="pref_layout_playback_below_seekbar">Под шкалой воспроизведения</string>
 </resources>

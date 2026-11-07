@@ -206,8 +206,6 @@
   <string name="pref_player_gestures_volume">音量手势</string>
   <string name="pref_player_gestures_pinch_to_zoom">双指捏合缩放</string>
   <string name="pref_player_gestures_pinch_to_zoom_subtitles">双指捏合缩放字幕</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe">双指滑动调节速度</string>
-  <string name="pref_player_gestures_two_finger_speed_swipe_summary">双指上下滑动，以 0.25x 为步长在 0.5x 到 4x 之间调节播放速度</string>
   <string name="pref_subtitles_secondary_pinch_zoom">双指捏合缩放次要字幕</string>
   <string name="pref_subtitles_secondary_pinch_zoom_summary">捏合缩放主要字幕时，同时缩放次要字幕</string>
   <string name="pref_player_gestures_swipe_subtitles_to_seek_dialog">滑动字幕打开定位对话框</string>
@@ -1047,6 +1045,9 @@
   <string name="player_horizontal_flip_off">水平翻转已关闭</string>
   <string name="player_vertical_flip_on">垂直翻转已开启</string>
   <string name="player_vertical_flip_off">垂直翻转已关闭</string>
+  <string name="player_hwplus_unsupported">HW+ 模式不支持%1$s。请切换到 HW 或 SW 解码后使用。</string>
+  <string name="player_hwplus_use_hw">使用 HW</string>
+  <string name="player_hwplus_cpu_deband">CPU 去色带</string>
   <string name="btn_label_back">返回箭头</string>
   <string name="btn_label_title">视频标题</string>
   <string name="btn_label_bookmarks">章节/书签</string>
@@ -1462,8 +1463,6 @@
   <string name="ui_no_storage_location_configured">未配置存储位置</string>
   <string name="ui_script_file_not_found">未找到脚本文件</string>
   <string name="ui_search_models">搜索模型...</string>
-  <string name="ui_portrait_playback_buttons">竖屏播放按钮</string>
-  <string name="ui_landscape_playback_buttons">横屏播放按钮</string>
   <string name="ui_portrait_seekbar_position">竖屏进度条位置</string>
   <string name="ui_landscape_seekbar_position">横屏进度条位置</string>
   <string name="pref_player_buttons_opacity">播放器按钮背景不透明度</string>
@@ -1525,7 +1524,6 @@
   <string name="oss_androidx_documentfile_description">用于文档存储访问的抽象层。</string>
   <string name="oss_androidx_media_description">Android 媒体会话和播放 API。</string>
   <string name="oss_androidx_palette_description">从图像中提取主要和鲜明的调色板。</string>
-  <string name="oss_androidx_profile_installer_description">预取类和方法以加快应用启动速度。</string>
   <string name="oss_google_material_description">Material Design 组件和主题库。</string>
   <string name="oss_google_cast_description">用于媒体投屏的 Chromecast 框架。</string>
   <string name="oss_material_symbols_description">用于 Compose 的 Material Symbols 图标集。</string>
@@ -2342,7 +2340,9 @@
   <plurals name="onboarding_configuration_restored_partial">
     <item quantity="other">已从 %1$s 恢复设置，跳过了 %2$d 个损坏的条目。下载将使用 Configuration/Downloads。</item>
   </plurals>
-  <string name="settings_restore_reverted">从 %1$s 恢复的设置导致应用崩溃，因此已撤销。</string>
+  <plurals name="pref_import_skipped_invalid">
+    <item quantity="other">已跳过 %1$d 项无效设置</item>
+  </plurals>
   <string name="onboarding_configuration_restore_failed">无法完成文件夹设置：%1$s</string>
     <string name="cloud_add_server">添加 WebDAV 服务器</string>
     <string name="cloud_add_server_summary">使用服务器账号连接云端视频库</string>
@@ -2996,6 +2996,9 @@
   <string name="jellyfin_details">详情</string>
   <string name="jellyfin_trailer">预告片</string>
   <string name="jellyfin_open_trailer_error">没有可打开预告片的应用。</string>
+  <string name="no_app_for_action">此设备上没有可以打开此项的应用。</string>
+  <string name="tv_picker_file_exists">已存在同名文件。</string>
+  <string name="tv_picker_no_access">mpvRx 无法访问此位置。</string>
   <string name="jellyfin_libraries">媒体库</string>
   <string name="jellyfin_continue_watching">继续观看</string>
   <string name="jellyfin_latest_movies">最新电影</string>
@@ -3087,10 +3090,8 @@
   <string name="clip_quick_length">快速时长</string>
   <string name="clip_length_seconds">%1$d秒</string>
   <string name="clip_crop_reset">使用完整画面</string>
-  <string name="pref_layout_center_seekbar_above">居中播放 · 进度条在操作按钮上方</string>
-  <string name="pref_layout_center_seekbar_below">居中播放 · 进度条在操作按钮下方</string>
-  <string name="pref_layout_playback_above">播放与操作按钮在进度条上方</string>
-  <string name="pref_layout_playback_below">播放与操作按钮在进度条下方</string>
+  <string name="pref_layout_seekbar_above">进度条在上方</string>
+  <string name="pref_layout_seekbar_below">进度条在下方</string>
   <string name="player_layout_preset_title">播放布局</string>
   <string name="player_layout_preview_hint">仅供预览，更改会立即保存。</string>
   <string name="player_layout_shared_landscape_hint">所有横屏操作区域共用此布局。</string>
@@ -3099,4 +3100,9 @@
   <string name="pref_measure_enabled_title">与 Measure 共享诊断信息</string>
   <string name="pref_measure_enabled_summary">选择向 Measure 发送崩溃、ANR、性能指标和会话活动。默认关闭。</string>
   <string name="pref_measure_not_configured">诊断不可用：此版本未配置 Measure API 密钥。</string>
+  <string name="pref_layout_portrait_playback_position">竖屏播放控件</string>
+  <string name="pref_layout_landscape_playback_position">横屏播放控件</string>
+  <string name="pref_layout_playback_center">屏幕中央</string>
+  <string name="pref_layout_playback_above_seekbar">进度条上方</string>
+  <string name="pref_layout_playback_below_seekbar">进度条下方</string>
 </resources>

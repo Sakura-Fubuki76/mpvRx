@@ -403,14 +403,7 @@ object AboutScreen : Screen {
                         context = context,
                         label = "mpvrx_upi_id",
                         text = "panditritesh2001@okhdfcbank",
-                        showToast = false,
                       )
-                      Toast
-                        .makeText(
-                          context,
-                          context.getString(app.gyrolet.mpvrx.R.string.ui_upi_id_copied),
-                          Toast.LENGTH_SHORT,
-                        ).show()
                     }.padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -959,13 +952,6 @@ internal val OPEN_SOURCE_LIBRARIES =
       descriptionRes = R.string.oss_androidx_palette_description,
       license = "Apache-2.0",
       url = "https://developer.android.com/jetpack/androidx/releases/palette",
-    ),
-    OpenSourceLibrary(
-      name = "AndroidX Profile Installer",
-      artifact = "androidx.profileinstaller:profileinstaller",
-      descriptionRes = R.string.oss_androidx_profile_installer_description,
-      license = "Apache-2.0",
-      url = "https://developer.android.com/jetpack/androidx/releases/profileinstaller",
     ),
     OpenSourceLibrary(
       name = "Google Material",

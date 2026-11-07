@@ -60,7 +60,9 @@ import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.Debanding
+import app.gyrolet.mpvrx.ui.player.HwPlusGuard
 import app.gyrolet.mpvrx.ui.player.MPVProfile
+import app.gyrolet.mpvrx.domain.motion.MotionInterpolation
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.RendererBackendPolicy
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
@@ -292,8 +294,14 @@ object DecoderPreferencesScreen : Screen {
                 modifier = Modifier.settingsSearchTarget(R.string.pref_decoder_debanding_title),
                 value = debanding,
                 onValueChange = {
-                  preferences.debanding.set(it)
-                  if (embeddedInPlayer) PlaybackSession.applyDebanding(it)
+                  val select: () -> Unit = {
+                    preferences.debanding.set(it)
+                    if (embeddedInPlayer) PlaybackSession.applyDebanding(it)
+                  }
+                  val blocked =
+                    embeddedInPlayer && it == Debanding.CPU &&
+                      HwPlusGuard.blocks(context, R.string.player_hwplus_cpu_deband, select)
+                  if (!blocked) select()
                 },
                 values = Debanding.entries,
                 enabled = !debandingConfigOwned,
@@ -497,6 +505,22 @@ object DecoderPreferencesScreen : Screen {
                   }
                 }
               }
+            }
+          }
+
+          if (MotionInterpolation.isBuildSupported) {
+            if (!embeddedInPlayer) item {
+              PreferenceSectionHeader(position = PreferenceSectionPosition.Single,
+                title = stringResource(R.string.motion_title),
+              )
+            }
+
+            item {
+              MotionInterpolationPreferences(
+                preferences = preferences,
+                rendererConfigOwned = rendererBackendConfigOwned,
+                hdrConfigOwned = MpvConfigControlledFeatures.HDR_OUTPUT.any(configOwnedOptions::contains),
+              )
             }
           }
         }

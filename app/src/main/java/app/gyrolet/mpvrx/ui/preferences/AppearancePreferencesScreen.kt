@@ -83,7 +83,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import app.gyrolet.mpvrx.ui.preferences.components.AppListPreference as ListPreference
-import me.zhanghai.compose.preference.Preference
+import app.gyrolet.mpvrx.ui.preferences.components.PreferenceAction
+import app.gyrolet.mpvrx.ui.preferences.components.AppPreference as Preference
 import app.gyrolet.mpvrx.ui.preferences.components.AppSliderPreference as SliderPreference
 import org.koin.compose.koinInject
 import kotlin.math.roundToInt
@@ -327,6 +328,7 @@ object AppearancePreferencesScreen : Screen {
                     customThemes = pickerThemes,
                     selectedCustomThemeName = selectedCustomThemeName,
                     isDarkMode = isDarkMode,
+                    amoledMode = amoledMode,
                     onThemeSelected = { theme, position ->
                       if ((theme != appTheme || selectedCustomThemeName.isNotBlank()) && themeTransition?.isAnimating != true) {
                         themeTransition?.startTransition(position)
@@ -451,6 +453,7 @@ object AppearancePreferencesScreen : Screen {
                       )
                     },
                     onClick = { isAppFontSheetOpen = true },
+                    action = PreferenceAction.Dialog,
                   )
                   }
 
@@ -841,6 +844,7 @@ object AppearancePreferencesScreen : Screen {
                     )
                   },
                   onClick = { isThumbnailParallelismDialogOpen = true },
+                  action = PreferenceAction.Dialog,
                   enabled = showVideoThumbnails,
                 )
               }

@@ -35,7 +35,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,6 +90,7 @@ data class VideoCardUiConfig(
   val showDateChip: Boolean,
   val showUnplayedOldVideoLabel: Boolean,
   val unplayedOldVideoDays: Int,
+  val grayscaleWatchedThumbnails: Boolean = true,
   val showExtensionField: Boolean = true,
   val showDurationField: Boolean = true,
   val centerGridTitles: Boolean = false,
@@ -114,6 +114,7 @@ fun rememberVideoCardUiConfig(fields: app.gyrolet.mpvrx.preferences.AnimeFieldPr
   val showCodecSupportIndicator by (fields?.showCodecSupportIndicator ?: browserPreferences.showCodecSupportIndicator).collectAsState()
   val showProgressBarConfig by (fields?.showProgressBar ?: browserPreferences.showProgressBar).collectAsState()
   val showDateChipConfig by (fields?.showDateChip ?: browserPreferences.showDateChip).collectAsState()
+  val grayscaleWatchedThumbnailsConfig by browserPreferences.grayscaleWatchedThumbnails.collectAsState()
   val showUnplayedOldVideoLabelConfig by appearancePreferences.showUnplayedOldVideoLabel.collectAsState()
   val unplayedOldVideoDaysConfig by appearancePreferences.unplayedOldVideoDays.collectAsState()
   val showExtensionField by (fields?.showExtensionField ?: browserPreferences.showExtensionField).collectAsState()
@@ -132,6 +133,7 @@ fun rememberVideoCardUiConfig(fields: app.gyrolet.mpvrx.preferences.AnimeFieldPr
     showFramerateInResolutionConfig,
     showCodecSupportIndicator,
     showProgressBarConfig,
+    grayscaleWatchedThumbnailsConfig,
     showDateChipConfig,
     showUnplayedOldVideoLabelConfig,
     unplayedOldVideoDaysConfig,
@@ -151,6 +153,7 @@ fun rememberVideoCardUiConfig(fields: app.gyrolet.mpvrx.preferences.AnimeFieldPr
       showFramerateInResolution = showFramerateInResolutionConfig,
       showCodecSupportIndicator = showCodecSupportIndicator,
       showProgressBar = showProgressBarConfig,
+      grayscaleWatchedThumbnails = grayscaleWatchedThumbnailsConfig,
       showDateChip = showDateChipConfig,
       showUnplayedOldVideoLabel = showUnplayedOldVideoLabelConfig,
       unplayedOldVideoDays = unplayedOldVideoDaysConfig,
@@ -180,7 +183,7 @@ private fun VideoTopStartBadges(
     if (isPinned) {
       Surface(
         shape = AppShapeScale.full,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.94f),
+        color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
         shadowElevation = 3.dp,
         modifier = Modifier.rotate(-18f),
@@ -328,6 +331,7 @@ fun VideoCard(
 
   val selectionContainerColor = animatedSelectionColor(isSelected)
   val showSelectionBadge = isSelected || selectionContainerColor.alpha > 0.001f
+  val thumbnailColorFilter = if (isWatched && resolvedUiConfig.grayscaleWatchedThumbnails) WatchedThumbnailFilter else null
 
   // Hold the last displayed thumbnail for this file across grid/list size changes.
   // Repository memory remains the source of truth for new requests.
@@ -472,6 +476,7 @@ fun VideoCard(
           }
 
           val thumbnailBitmap = remember(thumbnail, externalThumbnail) { (externalThumbnail ?: thumbnail)?.asImageBitmap() }
+          val thumbnailReveal = rememberThumbnailReveal((externalThumbnail ?: thumbnail) != null, thumbnailRequestKey)
 
           // Thumbnail
           Box(
@@ -494,6 +499,7 @@ fun VideoCard(
                   contentDescription = stringResource(R.string.ui_thumbnail),
                   modifier = Modifier.matchParentSize(),
                   contentScale = ContentScale.Crop,
+                  colorFilter = thumbnailColorFilter,
                 )
               } else thumbnailBitmap?.let {
                 Image(
@@ -501,8 +507,13 @@ fun VideoCard(
                   contentDescription =
                     androidx.compose.ui.res
                       .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
-                  modifier = Modifier.matchParentSize().then(if (showingSoftPreview) Modifier.blur(2.dp) else Modifier),
+                  modifier =
+                    Modifier
+                      .matchParentSize()
+                      .then(if (showingSoftPreview) Modifier.blur(2.dp) else Modifier)
+                      .thumbnailReveal(thumbnailReveal),
                   contentScale = ContentScale.Crop,
+                  colorFilter = thumbnailColorFilter,
                 )
               } ?: run {
                 Icon(
@@ -744,7 +755,7 @@ fun VideoCard(
 
               if (hasDateMetadataChip) {
                 Text(
-                  formatDate(video.dateModified),
+                  formatVideoCardDate(video.dateModified),
                   style = MaterialTheme.typography.labelSmall,
                   modifier =
                     Modifier
@@ -853,6 +864,7 @@ fun VideoCard(
           }
 
           val listThumbnailBitmap = remember(thumbnail, externalThumbnail) { (externalThumbnail ?: thumbnail)?.asImageBitmap() }
+          val listThumbnailReveal = rememberThumbnailReveal((externalThumbnail ?: thumbnail) != null, thumbnailRequestKey)
 
           Box(
             modifier =
@@ -874,6 +886,7 @@ fun VideoCard(
                   contentDescription = stringResource(R.string.ui_thumbnail),
                   modifier = Modifier.matchParentSize(),
                   contentScale = ContentScale.Crop,
+                  colorFilter = thumbnailColorFilter,
                 )
               } else listThumbnailBitmap?.let {
                 Image(
@@ -881,8 +894,13 @@ fun VideoCard(
                   contentDescription =
                     androidx.compose.ui.res
                       .stringResource(app.gyrolet.mpvrx.R.string.ui_thumbnail),
-                  modifier = Modifier.matchParentSize().then(if (showingSoftPreview) Modifier.blur(2.dp) else Modifier),
+                  modifier =
+                    Modifier
+                      .matchParentSize()
+                      .then(if (showingSoftPreview) Modifier.blur(2.dp) else Modifier)
+                      .thumbnailReveal(listThumbnailReveal),
                   contentScale = ContentScale.Crop,
+                  colorFilter = thumbnailColorFilter,
                 )
               } ?: run {
                 Icon(
@@ -1092,7 +1110,7 @@ fun VideoCard(
 
                 if (hasDateMetadataChip) {
                   Text(
-                    formatDate(video.dateModified),
+                    formatVideoCardDate(video.dateModified),
                     style = MaterialTheme.typography.labelSmall,
                     modifier =
                       Modifier
@@ -1171,5 +1189,5 @@ private val CARD_DATE_FORMATTER: java.time.format.DateTimeFormatter =
     .ofPattern("MMM dd, yyyy")
     .withZone(java.time.ZoneId.systemDefault())
 
-private fun formatDate(timestampSeconds: Long): String =
+internal fun formatVideoCardDate(timestampSeconds: Long): String =
   CARD_DATE_FORMATTER.format(java.time.Instant.ofEpochSecond(timestampSeconds))
