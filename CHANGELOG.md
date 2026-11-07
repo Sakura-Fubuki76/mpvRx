@@ -2,6 +2,17 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 3.0.3 - Upstream Integration and Persistent Cloud Cache
+
+**Release date:** November 7, 2026
+
+- Integrated upstream playback, browsing and UI updates, including DLNA support and mpvlib 1.1.7, while retaining the fork's cloud library, anime display preferences and branding.
+- Adopted upstream seek handling and player ownership/core recovery. Timeline dragging keeps thumbnail previews; horizontal screen swipes show only the timeline and preview instead of the full controls.
+- Fixed WebDAV/OpenList folder statistics disappearing after 24 hours even when cached data still existed. Completed counts, sizes and durations remain visible while the app revalidates the remote directory.
+- Keep cached directory listings on refresh errors and retain the last successful folder summary after partial scans. Automatic revalidation, manual force refresh and invalidation on real file changes remain enabled.
+- Improved subtitle discovery and matching while preserving external subtitle fonts, linked local font sources and episode-aware matching.
+- Fixed seek-preview rotation for fragmented MP4 files.
+
 ## 3.0.2 - Upstream 3.0.1 Merge
 
 - Synced upstream 3.0.1 (86 commits): persistent status HUD with live preview, two-finger speed swipe, configurable seekbar and playback-button placement, Android TV style volume and brightness levels, Jellyfin Material 3 Expressive browsing, an in-app music player, container rotation and crash reporting fixes, and mpvlib 1.1.4.
