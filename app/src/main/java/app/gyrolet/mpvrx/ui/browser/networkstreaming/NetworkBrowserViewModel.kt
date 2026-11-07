@@ -19,6 +19,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.gyrolet.mpvrx.database.repository.PlaylistRepository
+import app.gyrolet.mpvrx.domain.cloud.withCloudFolderSummary
 import app.gyrolet.mpvrx.domain.network.DlnaPath
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.network.NetworkFile
@@ -164,6 +165,7 @@ class NetworkBrowserViewModel(
     val request = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
       _isLoading.value = true
       _error.value = null
+      var hasCachedListing = false
 
       try {
         val connection =
@@ -193,11 +195,7 @@ class NetworkBrowserViewModel(
               cloudMetadata.observeFolders(connectionId)) { videos, folders ->
               val summaries = folders.associateBy { it.path }
               videos.map { file ->
-                val summary = summaries[file.path]
-                if (file.isDirectory && summary != null) file.copy(videoCount = summary.videoCount,
-                  size = summary.totalSize, durationMs = summary.totalDurationMs,
-                  folderScanComplete = summary.scanComplete && System.currentTimeMillis() - summary.updatedAt < 24 * 60 * 60 * 1000L)
-                else file
+                file.withCloudFolderSummary(summaries[file.path])
               }
             }.collect { enriched ->
               if (generation == loadGeneration && _files.value != enriched) {
@@ -213,6 +211,7 @@ class NetworkBrowserViewModel(
         val cached = if (connection.protocol == NetworkProtocol.DLNA) null else cloudMetadata.cachedDirectory(connectionId, currentPath)
         if (cached != null) {
           publish(cached, startWork = !forceStorageScan)
+          hasCachedListing = true
           // A cached listing, including an empty directory, is immediately usable.
           _isLoading.value = false
           app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("browse.cache", connectionId, currentPath, "items=${cached.size}")
@@ -233,15 +232,16 @@ class NetworkBrowserViewModel(
           }.onFailure { e ->
             if (e is CancellationException) throw e
             coroutineContext.ensureActive()
-            // Do not keep presenting old folder contents after a failed refresh.
-            _files.value = emptyList()
+            // Revalidation failure is not evidence of deletion. Keep the persisted snapshot
+            // (also on explicit refresh), and surface the error alongside it.
+            if (!hasCachedListing) _files.value = emptyList()
             _error.value = e.message ?: "Unknown error"
           }
       } catch (cancelled: CancellationException) {
         throw cancelled
       } catch (e: Exception) {
         coroutineContext.ensureActive()
-        _files.value = emptyList()
+        if (!hasCachedListing) _files.value = emptyList()
         _error.value = e.message ?: "Unknown error"
       } finally {
         if (generation == loadGeneration) _isLoading.value = false

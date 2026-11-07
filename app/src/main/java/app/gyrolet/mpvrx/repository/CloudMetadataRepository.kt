@@ -1,6 +1,7 @@
 package app.gyrolet.mpvrx.repository
 
 import app.gyrolet.mpvrx.domain.cloud.CloudTrace
+import app.gyrolet.mpvrx.domain.cloud.withCloudFolderSummary
 import android.media.MediaMetadataRetriever
 import app.gyrolet.mpvrx.database.dao.CloudMetadataDao
 import app.gyrolet.mpvrx.database.entities.CloudDirectoryItemEntity
@@ -199,11 +200,7 @@ class CloudMetadataRepository(
   suspend fun enrichVideos(connectionId: Long, files: List<NetworkFile>): List<NetworkFile> {
     val summaries = observeFolders(connectionId).first().associateBy { it.path }
     return observeVideos(connectionId, files).first().map { file ->
-      val summary = summaries[file.path]
-      if (file.isDirectory && summary != null) file.copy(videoCount = summary.videoCount,
-        size = summary.totalSize, durationMs = summary.totalDurationMs,
-        folderScanComplete = summary.scanComplete && System.currentTimeMillis() - summary.updatedAt < 24 * 60 * 60 * 1000L)
-      else file
+      file.withCloudFolderSummary(summaries[file.path])
     }
   }
 
@@ -222,11 +219,10 @@ class CloudMetadataRepository(
         val summaries = folders.associateBy { it.path }
         items.map { row ->
           val item = row.item
-          val summary = summaries[item.path]?.takeIf { item.isDirectory }
-          NetworkFile(item.name, item.path, summary?.totalSize ?: item.size, item.isDirectory,
-            item.lastModified, item.mimeType, summary?.totalDurationMs ?: row.durationMs, row.width, row.height,
-            summary?.videoCount, summary?.let { it.scanComplete && System.currentTimeMillis() - it.updatedAt < 24 * 60 * 60 * 1000L } ?: false,
+          NetworkFile(item.name, item.path, item.size, item.isDirectory,
+            item.lastModified, item.mimeType, row.durationMs, row.width, row.height,
             fps = row.fps, videoCodec = row.videoCodec, hasEmbeddedSubtitles = row.hasEmbeddedSubtitles, subtitleCodec = row.subtitleCodec)
+            .withCloudFolderSummary(summaries[item.path])
         }
       }.distinctUntilChanged().flowOn(Dispatchers.Default)
         .shareIn(storageScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), replay = 1)

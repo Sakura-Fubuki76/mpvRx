@@ -140,10 +140,10 @@ abstract class CloudMetadataDao {
   @Transaction
   open suspend fun putScannedFolder(folder: CloudFolderMetadataEntity) {
     val previous = getFolder(folder.connectionId, folder.path)
-    val retained = if (!folder.scanComplete && previous != null) folder.copy(
-      videoCount = previous.videoCount, totalSize = previous.totalSize,
-      totalDurationMs = previous.totalDurationMs, folderCount = previous.folderCount,
-    ) else folder
+    // Age or an unreachable child is not evidence that the last snapshot is invalid.
+    // replaceDirectory already invalidates ancestors on observed changes; keep that flag
+    // and the old timestamp too, so failed scans neither hide valid counts nor renew freshness.
+    val retained = if (!folder.scanComplete && previous != null) previous else folder
     putFolder(retained)
     // List responses contain no durations. Publish the persisted sum in the same transaction.
     refreshFolderDurations(folder.connectionId, folder.path)
