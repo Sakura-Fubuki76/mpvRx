@@ -419,7 +419,10 @@ fun PlayerControls(
   val showSystemNavigationBar = navigationBarRequested || WindowInsets.areNavigationBarsVisible
   val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
   var seekRippleRequest by remember { mutableStateOf<SeekRippleRequest?>(null) }
-  val controlsShown by viewModel.controlsShown.collectAsState()
+  val requestedControlsShown by viewModel.controlsShown.collectAsState()
+  val gestureSeekUpdate by viewModel.playerUpdate.collectAsState()
+  val horizontalSeekFeedback = gestureSeekUpdate is PlayerUpdates.HorizontalSeek
+  val controlsShown = fullControlsVisible(requestedControlsShown, horizontalSeekFeedback)
   val controlsInteractionEpoch by viewModel.controlsInteractionEpoch.collectAsState()
   val tvPlayFocusRequester = rememberTvInitialFocusRequester(enabled = controlsShown)
   val overlaysFollowVideoZoom by playerPreferences.overlaysFollowVideoZoom.collectAsState()
@@ -471,7 +474,7 @@ fun PlayerControls(
       } == true
   val bufferingState =
     rememberBufferingState(
-      enabled = showLoadingCircle && !isSeeking,
+      enabled = bufferingFeedbackEnabled(showLoadingCircle, isSeeking, horizontalSeekFeedback),
       sessionState = playbackSessionState,
       openingNetworkStream = openingNetworkStream,
     )
@@ -489,13 +492,11 @@ fun PlayerControls(
     } else {
       Modifier
     }
-  // Null until repeated seekbar updates start a scrub; a single tap never pauses playback.
-  var seekbarScrubWasPaused by remember { mutableStateOf<Boolean?>(null) }
   val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsStateWithLifecycle()
   val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
   // mpv can remain "seeking" until its cache refills. Only active scrubbing suppresses the spinner;
   // a real cache wait stays visible even when the controls have faded out.
-  val showBufferingIndicator = bufferingState.visible
+  val showBufferingIndicator = bufferingState.visible && !horizontalSeekFeedback
   var resetControlsTimestamp by remember { mutableStateOf(0L) }
   val configuredDecoder by PlaybackSession.propString["hwdec"].collectAsStateWithLifecycle()
   val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsStateWithLifecycle()
@@ -688,8 +689,7 @@ fun PlayerControls(
   val areSlidersShown =
     (isBrightnessSliderShown && showBrightnessGestureOverlay) ||
       (isVolumeSliderShown && showVolumeGestureOverlay)
-  val gestureSeekUpdate by viewModel.playerUpdate.collectAsState()
-  // Swipe-seek pauses playback internally; the auto-hide timer should still run through it.
+  // The auto-hide timer keeps running through a swipe-seek, even while paused.
   val isPlayingForAutoHide = paused == false || gestureSeekUpdate is PlayerUpdates.HorizontalSeek
 
   LaunchedEffect(
@@ -1380,7 +1380,7 @@ fun PlayerControls(
               is PlayerUpdates.ResumedFrom -> showResumeIndicatorOverlay
               is PlayerUpdates.ResumeAvailable -> true
               is PlayerUpdates.StartedAfresh -> showResumeIndicatorOverlay
-              is PlayerUpdates.HorizontalSeek -> showActionFeedbackOverlay
+              is PlayerUpdates.HorizontalSeek -> false // The gesture shows only the timeline and its thumbnail.
               is PlayerUpdates.FrameInfo -> true // Groups 3/4 — not in scope
               is PlayerUpdates.None -> false
             }
@@ -1390,15 +1390,16 @@ fun PlayerControls(
 
           val areButtonsVisible = controlsShown && !areControlsLocked && !areSlidersShown
           val seekbarVisible =
-            (controlsShown ||
-              if (isHorizontalSeekActive) {
-                !isPortrait &&
-                  (showSeekbarDuringHorizontalSeeking ||
-                    (currentPlayerUpdate as PlayerUpdates.HorizontalSeek).startedWithControlsShown)
-              } else {
-                seekBarShown
-              }) &&
-              !areControlsLocked && !areSlidersShown
+            seekTimelineVisible(
+              controlsShown = controlsShown,
+              horizontalSeeking = isHorizontalSeekActive,
+              isPortrait = isPortrait,
+              showDuringHorizontalSeeking = showSeekbarDuringHorizontalSeeking,
+              startedWithControlsShown = (currentPlayerUpdate as? PlayerUpdates.HorizontalSeek)?.startedWithControlsShown == true,
+              seekBarShown = seekBarShown,
+              controlsLocked = areControlsLocked,
+              slidersShown = areSlidersShown,
+            )
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
@@ -2136,8 +2137,8 @@ fun PlayerControls(
             val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsStateWithLifecycle()
             val seekbarStyle by appearancePreferences.seekbarStyle.collectAsState()
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
-            val scrubPreviewPosition by viewModel.scrubPreviewPosition.collectAsStateWithLifecycle()
-            val displayedSeekbarPosition = scrubPreviewPosition ?: precisePosition
+            // Upstream's live gesture target is also the preview target: no second seek pipeline.
+            val scrubPreviewPosition = precisePosition.takeIf { isHorizontalSeekActive }
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
             val seekbarChapters =
@@ -2167,38 +2168,24 @@ fun PlayerControls(
 
             val effectiveRemaining =
               (remaining ?: 0f).takeIf { it > 0f }
-                ?: (seekbarDuration - displayedSeekbarPosition).coerceAtLeast(0f)
+                ?: (seekbarDuration - precisePosition).coerceAtLeast(0f)
 
             SeekbarWithTimers(
-              position = displayedSeekbarPosition,
+              position = precisePosition,
               committedPosition = precisePosition,
               previewPosition = scrubPreviewPosition,
               externalScrubbing = isHorizontalSeekActive,
               duration = seekbarDuration,
               remaining = effectiveRemaining,
               onValueChange = {
-                // Seeker emits one value and then finishes for a tap. Defer decoder preview
-                // and pausing until another value arrives, so a tap commits only one seek.
-                if (isSeeking) {
-                  if (seekbarScrubWasPaused == null) {
-                    val alreadyPaused = paused ?: false
-                    seekbarScrubWasPaused = alreadyPaused
-                    if (!alreadyPaused) {
-                      viewModel.pause()
-                    }
-                  }
-                  // Stream scrubbing previews the UI only; local files may preview decoder frames.
-                  viewModel.seekPreviewTo(it)
-                }
                 isSeeking = true
                 resetControlsTimestamp = System.currentTimeMillis()
+                viewModel.scrubTo(it)
               },
               onValueChangeFinished = { targetPosition ->
-                val resumePlayback = seekbarScrubWasPaused == false
-                seekbarScrubWasPaused = null
                 isSeeking = false
                 resetControlsTimestamp = System.currentTimeMillis()
-                viewModel.seekFromScrub(targetPosition, resumePlayback = resumePlayback)
+                viewModel.seekFromScrub(targetPosition)
                 viewModel.showControls()
               },
               timersInverted = Pair(false, invertDuration),

@@ -2166,7 +2166,7 @@ fun AudioPlayerControls(
         committedPosition = timelinePosition,
         duration = timelineDuration.coerceAtLeast(1f),
         remaining = effectiveRemaining,
-        onValueChange = { value -> if (!isAudiobook) viewModel.seekPreviewTo(value) },
+        onValueChange = { value -> if (!isAudiobook) viewModel.scrubTo(value) },
         onValueChangeFinished = viewModel::seekAudioTo,
         timersInverted = Pair(false, invertDuration),
         durationTimerOnCLick = { playerPreferences.invertDuration.set(!invertDuration) },

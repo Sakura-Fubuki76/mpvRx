@@ -357,7 +357,7 @@ internal fun SeekbarWithTimers(
   var isUserInteracting by remember { mutableStateOf(false) }
   var userPosition by remember { mutableFloatStateOf(position) }
 
-  // Animated position for smooth transitions
+  // Animate only continuous playback ticks; saved-position restores and seeks must land instantly.
   val animatedPosition = remember { Animatable(position) }
   val scope = rememberCoroutineScope()
 
@@ -367,8 +367,8 @@ internal fun SeekbarWithTimers(
       // When `position` changes on the next poll, the effect is cancelled and relaunched,
       // which retargets the same Animatable smoothly instead of stacking independent
       // spring coroutines that fight each other and leak work every ~50ms.
-      if (externalScrubbing || position == 0f) {
-        // Gesture preview already updates at pointer-event frequency; no delayed spring.
+      if (externalScrubbing || position == 0f || shouldSnapSeekbarPosition(position, animatedPosition.value)) {
+        // Resume, media switches and seeks are discontinuities, not playback ticks.
         animatedPosition.snapTo(position)
       } else {
         animatedPosition.animateTo(
@@ -393,7 +393,16 @@ internal fun SeekbarWithTimers(
     ) {
       SeekbarContent(
         previewPosition = previewPosition,
-        positionProvider = { previewPosition ?: if (isUserInteracting) userPosition else animatedPosition.value },
+        positionProvider = {
+          resolveSeekbarPosition(
+            position = position,
+            animatedPosition = animatedPosition.value,
+            userPosition = userPosition,
+            isUserInteracting = isUserInteracting,
+            externalScrubbing = externalScrubbing,
+            previewPosition = previewPosition,
+          )
+        },
         committedPosition = committedPosition,
         duration = duration,
         chapters = chapters,
@@ -466,7 +475,16 @@ internal fun SeekbarWithTimers(
 
       SeekbarContent(
         previewPosition = previewPosition,
-        positionProvider = { previewPosition ?: if (isUserInteracting) userPosition else animatedPosition.value },
+        positionProvider = {
+          resolveSeekbarPosition(
+            position = position,
+            animatedPosition = animatedPosition.value,
+            userPosition = userPosition,
+            isUserInteracting = isUserInteracting,
+            externalScrubbing = externalScrubbing,
+            previewPosition = previewPosition,
+          )
+        },
         committedPosition = committedPosition,
         duration = duration,
         chapters = chapters,
@@ -1743,7 +1761,11 @@ private fun LiquidSeekbar(
   val currentPosition = positionProvider()
   LaunchedEffect(currentPosition) {
     if (currentPosition.isFinite()) {
-      dampedDragAnimation.updateValue(currentPosition)
+      if (!isThumbInteracting && shouldSnapSeekbarPosition(currentPosition, dampedDragAnimation.value)) {
+        dampedDragAnimation.snapToValue(currentPosition)
+      } else {
+        dampedDragAnimation.updateValue(currentPosition)
+      }
     }
   }
   LaunchedEffect(isThumbInteracting) {
@@ -1761,7 +1783,11 @@ private fun LiquidSeekbar(
     val trackWidthPx = constraints.maxWidth.toFloat()
     val playedFraction =
       if (safeDuration > 0f) {
-        dampedDragAnimation.progress.coerceIn(0f, 1f)
+        if (!isThumbInteracting && shouldSnapSeekbarPosition(currentPosition, dampedDragAnimation.value)) {
+          (currentPosition / safeDuration).coerceIn(0f, 1f)
+        } else {
+          dampedDragAnimation.progress.coerceIn(0f, 1f)
+        }
       } else {
         0f
       }
