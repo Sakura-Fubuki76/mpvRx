@@ -938,7 +938,11 @@ class MediaPlaybackService :
     lastPublishedPositionSeconds = 0.0
     mediaDurationSeconds = 0.0
     paused = false
-    playbackSpeed = 1.0f
+    // Speed is core-wide and may remain unchanged across files, so no new property event is
+    // guaranteed. Preserve the actual 2x/etc. rate used by Android's notification timeline.
+    playbackSpeed =
+      readMpvDouble("speed", playbackSpeed.toDouble())
+        .toFloat().takeIf { it.isFinite() && it > 0f } ?: 1.0f
     isCurrentFavorite = false
     if (itemChanged || artworkChanged) {
       chapters = emptyList()
@@ -1181,14 +1185,18 @@ class MediaPlaybackService :
     stopSelf()
   }
 
-  private fun stopDetachedPlaybackIfNeeded() {
+  private fun stopDetachedPlaybackIfNeeded(expectedGeneration: Long? = null) {
     // Never kill the shared PlaybackSession media while an Activity is taking it back over.
     // A fresh launch may already have destroyed and recreated the shared session before this
     // service's asynchronous onDestroy() callback reaches here.
-    if (mpvAccessReleased || activityForeground || handingBackToActivity) return
-    if (PlaybackSession.state.value.surfaceAttached) return
-    torrentStreamingEngine.stopStream()
-    PlaybackSession.stop(clearQueue = false)
+    if ((mpvAccessReleased && expectedGeneration == null) || activityForeground || handingBackToActivity ||
+      activeInstance !== this
+    ) return
+    PlaybackSession.stopIfDetached(
+      expectedGeneration = expectedGeneration ?: PlaybackSession.state.value.generation,
+      ownerIsActive = { activeInstance === this && !activityForeground && !handingBackToActivity },
+      beforeStop = { torrentStreamingEngine.stopStream() },
+    )
   }
 
   private fun handleDetachedEndOfFile(expectedGeneration: Long, naturalEnd: Boolean = false) {
@@ -1466,10 +1474,9 @@ class MediaPlaybackService :
   }
 
   private fun sanitizedPositionMs(): Long {
-    val livePosition = runCatching { PlaybackSession.getPropertyDouble("time-pos") }.getOrNull()
-    if (livePosition != null && livePosition.isFinite() && livePosition >= 0.0) {
-      currentPositionSeconds = livePosition
-    }
+    // Queue selection publishes the incoming title before native loadfile replaces the old file.
+    // Never put the outgoing position (or a cached position) under the incoming notification.
+    currentPositionSeconds = PlaybackSession.readLoadedPlaybackState(mediaIdentifier) { position, _ -> position } ?: 0.0
     val seconds = currentPositionSeconds.takeIf { it.isFinite() && it > 0.0 } ?: return 0L
     return (seconds * 1000.0)
       .coerceAtMost(Long.MAX_VALUE.toDouble())
@@ -2169,6 +2176,12 @@ class MediaPlaybackService :
   }
 
   override fun onDestroy() {
+    val detachedGeneration =
+      if (mpvAccessReleased || activityForeground || handingBackToActivity || activeInstance !== this) {
+        null
+      } else {
+        PlaybackSession.state.value.takeUnless { it.surfaceAttached }?.generation
+      }
     try {
       Log.d(TAG, "Service destroyed")
 
@@ -2181,7 +2194,7 @@ class MediaPlaybackService :
         runCatching { unregisterReceiver(noisyReceiver) }
         noisyReceiverRegistered = false
       }
-      isServiceRunning = false
+      if (activeInstance === this) isServiceRunning = false
 
       try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
@@ -2223,9 +2236,14 @@ class MediaPlaybackService :
     } catch (e: Exception) {
       Log.e(TAG, "Error in onDestroy", e)
     } finally {
-      isServiceRunning = false
-      if (activeInstance === this) activeInstance = null
-      stopDetachedPlaybackIfNeeded()
+      if (detachedGeneration != null) {
+        runCatching { stopDetachedPlaybackIfNeeded(detachedGeneration) }
+          .onFailure { Log.e(TAG, "Error stopping detached playback after service destruction", it) }
+      }
+      if (activeInstance === this) {
+        isServiceRunning = false
+        activeInstance = null
+      }
       handingBackToActivity = false
       super.onDestroy()
     }

@@ -30,25 +30,16 @@ import java.io.File
  * Everything libmpv needs on disk before it will initialize: the bundled assets, the user's MPV
  * directory (config, scripts, script-modules, shaders, fonts) and the subtitle font directory.
  *
- * libmpv parses mpv.conf and loads Lua scripts *during* [is.xyz.mpv.MPVLib.init], so this has to
- * complete first or the core starts with whatever happens to be on disk. That used to make it
- * PlayerActivity's private startup work, which meant a core warm-up could only happen once an
- * Activity already existed — and the Activity could not initialize the core without this. This
- * object is the shared seam that breaks that cycle: [PlaybackCorePrewarmer] prepares the assets and
- * initializes the core from the application context long before any Activity is on screen.
- *
- * Everything here is idempotent and cheap on a warm cache, so both callers may run it.
+ * libmpv parses mpv.conf and loads Lua scripts during initialization, so preparation must
+ * finish before the owning Activity creates the native core. Keep these Context-based helpers
+ * separate because the fork's font-bank and on-demand font imports also use this asset pipeline.
  */
 object PlaybackStartupAssets : KoinComponent {
   private const val TAG = "PlaybackStartupAssets"
   private const val MPV_ASSET_SYNC_PREFERENCES = "mpv_asset_sync"
   private const val USER_MPV_ASSET_SELECTION = "user_mpv_asset_selection_v1"
 
-  /**
-   * Serializes the whole tree copy. [prepare] runs on the prewarmer's worker while PlayerActivity
-   * runs it again from its own IO coroutine, and two concurrent writers to the same scripts/ and
-   * fonts/ trees would leave half-copied files behind.
-   */
+  /** Serializes startup and deferred user-asset synchronization across Activity instances. */
   private val assetLock = Any()
 
   private val advancedPreferences: AdvancedPreferences by inject()
@@ -93,8 +84,7 @@ object PlaybackStartupAssets : KoinComponent {
    * Prepares the assets for a core that is about to initialize on [context]'s behalf, and reports
    * how long it took.
    *
-   * Safe to call concurrently with itself and safe to call on an already-warm cache: in the common
-   * case (the prewarmer ran at app launch) this is four cheap directory probes.
+   * Safe to call concurrently with itself and safe to call on an already-warm cache.
    */
   fun prepare(context: Context) {
     attach(context)
@@ -114,10 +104,8 @@ object PlaybackStartupAssets : KoinComponent {
    * does not match the preferences. When it does, PlayerActivity has no reason to schedule its
    * deferred re-sync afterwards — it would only repeat work that already happened.
    *
-   * Process state rather than Activity state on purpose: the walk may now be performed by
-   * [PlaybackCorePrewarmer] at app launch, before any Activity exists, and the Activity's own
-   * [prepare] call will then find the cache already current and skip it. Consulting this instead of
-   * an Activity-scoped flag is what keeps the prewarm from causing a redundant second walk.
+   * Kept at process scope so a replacement Activity can reuse work already completed by its
+   * predecessor instead of walking the same SAF tree again immediately after startup.
    */
   @Volatile
   var userMpvAssetsFullySynced: Boolean = false

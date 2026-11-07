@@ -44,7 +44,7 @@ import app.gyrolet.mpvrx.presentation.crash.CrashMonitor
 import app.gyrolet.mpvrx.domain.network.NetworkImageRepository
 import app.gyrolet.mpvrx.repository.NetworkRepository
 import app.gyrolet.mpvrx.ui.player.MediaPlayerWidget
-import app.gyrolet.mpvrx.ui.player.PlaybackCorePrewarmer
+import app.gyrolet.mpvrx.ui.player.PlaybackActivityOwner
 import app.gyrolet.mpvrx.ui.player.PlaybackPerformanceTrace
 import app.gyrolet.mpvrx.ui.player.PlaybackPhase
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
@@ -488,40 +488,20 @@ class App :
     if (activity is PlayerActivity) PlaybackPerformanceTrace.end("ON_DESTROY")
   }
 
-  /**
-   * Keep libmpv warm for quick navigation/re-entry, but do not pin its native decoder/renderer
-   * allocation forever after playback has genuinely ended. collectLatest makes this self-cancelling:
-   * any new load, surface attachment, background session, or other state change aborts the grace
-   * timer before destruction can run.
-   *
-   * The reaper deliberately ignores a core that has not played anything yet. Reaping exists to
-   * release native decoder/renderer allocation that playback accumulated; a core that
-   * [PlaybackCorePrewarmer] initialized at launch holds none. Destroying it would hand the next open
-   * the entire cold-init cost the prewarm just paid, for no memory saved.
-   */
   private fun startIdleMpvCoreReaper() {
     applicationScope.launch {
-      PlaybackSession.state.collectLatest { state ->
-        val isFullyIdle =
-          state.phase == PlaybackPhase.IDLE &&
+      combine(PlaybackSession.state, PlaybackActivityOwner.hasOwner) { state, hasOwner ->
+        !hasOwner && state.phase == PlaybackPhase.IDLE &&
             state.currentItem == null &&
             !state.surfaceAttached &&
-            PlaybackSession.isInitialized &&
-            PlaybackSession.hasEverLoadedMedia
+            PlaybackSession.isInitialized
+      }.distinctUntilChanged().collectLatest { isFullyIdle ->
         if (!isFullyIdle) return@collectLatest
 
         delay(IDLE_MPV_CORE_GRACE_MS)
 
-        val latest = PlaybackSession.state.value
-        val stillFullyIdle =
-          latest.phase == PlaybackPhase.IDLE &&
-            latest.currentItem == null &&
-            !latest.surfaceAttached &&
-            PlaybackSession.isInitialized &&
-            PlaybackSession.hasEverLoadedMedia
-        if (stillFullyIdle) {
+        if (PlaybackSession.destroyIfIdle()) {
           Log.d(TAG, "Destroying libmpv after idle grace period")
-          PlaybackSession.destroy()
         }
       }
     }

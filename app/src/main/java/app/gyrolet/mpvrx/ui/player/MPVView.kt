@@ -11,6 +11,7 @@ package app.gyrolet.mpvrx.ui.player
 
 import android.content.Context
 import android.os.Environment
+import android.os.SystemClock
 import android.util.AttributeSet
 import android.util.Log
 import android.view.KeyCharacterMap
@@ -111,13 +112,10 @@ class MPVView(
     )
   }
 
-  /**
-   * Suspends the media loader until this view's Surface is attached, like mpv-android's
-   * `playFile()` deferring `loadfile` to `surfaceCreated`. The bind is re-attempted so a failed or
-   * superseded attachment is recovered. Returns false only when binding is disabled or exiting.
-   */
+  /** A slow Surface must not prevent the media load and its watchdog from starting. */
   internal suspend fun awaitSurfaceReady(): Boolean {
-    while (true) {
+    val deadline = SystemClock.elapsedRealtime() + SURFACE_READY_TIMEOUT_MS
+    while (SystemClock.elapsedRealtime() < deadline) {
       val attached =
         withContext(Dispatchers.Main.immediate) {
           when {
@@ -131,6 +129,7 @@ class MPVView(
       if (attached != null) return attached
       withTimeoutOrNull(SURFACE_RETRY_MS) { surfaceReadiness.first { it } }
     }
+    return false
   }
 
   /**
@@ -173,6 +172,7 @@ class MPVView(
   internal fun initializeCoreSession(
     configDir: String,
     cacheDir: String,
+    ownerIsActive: () -> Boolean = { true },
   ): Result<Boolean> {
     // The libmpv core is process-wide, so returning to the player can reuse a core created with
     // older renderer preferences. Keep fallbacks stable for the lifetime of that preference
@@ -195,6 +195,7 @@ class MPVView(
       postInitOptions = ::postInitOptions,
       observeProperties = ::observeProperties,
       userScriptsKey = scriptsKey,
+      ownerIsActive = ownerIsActive,
     )
   }
 
@@ -449,7 +450,9 @@ class MPVView(
   private fun initOptions() {
     val inputs = awaitInitInputs()
     PlaybackSession.setOptionString("profile", inputs.profile)
-    val backend = selectRenderBackend(inputs.anime4kEnabled, inputs.gpuNextEnabled, inputs.vulkanCapable)
+    val backend = selectRenderBackend(
+      inputs.anime4kEnabled, inputs.gpuNextEnabled, inputs.vulkanCapable && !forceOpenGlFallback,
+    )
     val useVulkan = backend.gpuApi == "vulkan"
     val hwdecMode = preferredHwdecMode(useVulkan)
     PlaybackSession.setVideoOutput(backend.vo)
@@ -616,6 +619,7 @@ class MPVView(
   private companion object {
     const val DEFAULT_OSD_SAFE_MARGIN = 16
     const val SURFACE_RETRY_MS = 250L
+    const val SURFACE_READY_TIMEOUT_MS = 5_000L
   }
 
   @Suppress("ReturnCount", "DEPRECATION")
