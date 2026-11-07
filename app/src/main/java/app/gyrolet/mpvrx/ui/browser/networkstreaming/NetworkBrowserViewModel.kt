@@ -19,6 +19,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import app.gyrolet.mpvrx.database.repository.PlaylistRepository
+import app.gyrolet.mpvrx.domain.network.DlnaPath
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.network.NetworkFile
 import app.gyrolet.mpvrx.domain.network.NetworkPath
@@ -175,6 +176,16 @@ class NetworkBrowserViewModel(
           if (generation != loadGeneration) return
           metadataObserver?.cancel()
           metadataProbe?.cancel()
+          // DLNA paths encode opaque object IDs. Do not send them through the cloud
+          // metadata scanner, which treats paths as filesystem names and reorders entries.
+          if (connection.protocol == NetworkProtocol.DLNA) {
+            _files.value = if (DlnaPath.isOrderedContainer(NetworkPath.from(currentPath))) {
+              fileList
+            } else {
+              fileList.sortedForNetworkBrowser(NetworkSortType.Title, SortOrder.Ascending)
+            }
+            return
+          }
           val sorted = cloudMetadata.enrichVideos(connectionId, fileList).sortedForNetworkBrowser(NetworkSortType.Title, SortOrder.Ascending)
           _files.value = sorted
           metadataObserver = viewModelScope.launch {
@@ -199,7 +210,7 @@ class NetworkBrowserViewModel(
           if (startWork) scheduleThumbnails(connection, sorted, forceStorageScan)
         }
 
-        val cached = cloudMetadata.cachedDirectory(connectionId, currentPath)
+        val cached = if (connection.protocol == NetworkProtocol.DLNA) null else cloudMetadata.cachedDirectory(connectionId, currentPath)
         if (cached != null) {
           publish(cached, startWork = !forceStorageScan)
           // A cached listing, including an empty directory, is immediately usable.
@@ -212,7 +223,9 @@ class NetworkBrowserViewModel(
           .onSuccess { fileList ->
             coroutineContext.ensureActive()
             if (generation == loadGeneration) {
-              cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
+              if (connection.protocol != NetworkProtocol.DLNA) {
+                cloudMetadata.saveDirectory(connectionId, currentPath, fileList)
+              }
               publish(fileList)
 
               if (lastSearchQuery.isNotBlank()) searchIndex(lastSearchQuery, forceRefresh = forceStorageScan)
@@ -418,25 +431,18 @@ class NetworkBrowserViewModel(
   }
 
   private fun currentDirectoryPlayableFiles(clickedFile: NetworkFile): List<NetworkFile> {
-    val includeAudio = browserPreferences.includeAudioBrowser.get() &&
-      _connection.value?.protocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST)
-    if (!playerPreferences.playlistMode.get() || !clickedFile.isPlayableNetworkMedia(includeAudio)) {
-      return listOf(clickedFile)
-    }
+    return networkPlaybackQueue(
+      clickedFile = clickedFile,
+      directoryFiles = if (_connection.value?.protocol == NetworkProtocol.DLNA) _files.value else files.value,
+      searchResults = _searchResults.value,
+      protocol = _connection.value?.protocol,
+      currentPath = NetworkPath.from(currentPath),
+      playlistMode = playerPreferences.playlistMode.get(),
+      includeAudioBrowser = browserPreferences.includeAudioBrowser.get(),
+      sortType = browserPreferences.networkSortType.get(),
+      sortOrder = browserPreferences.networkSortOrder.get(),
+    )
 
-    val files =
-      (_searchResults.value ?: this.files.value)
-        .filter { it.isPlayableNetworkMedia(includeAudio) }
-        .sortedForNetworkBrowser(
-          sortType = browserPreferences.networkSortType.get(),
-          sortOrder = browserPreferences.networkSortOrder.get(),
-        )
-
-    return if (files.any { it.path == clickedFile.path }) {
-      files
-    } else {
-      (files + clickedFile).distinctBy(NetworkFile::path)
-    }
   }
 
   private fun M3UPlaylistItem.forSavedConnection(connection: NetworkConnection): M3UPlaylistItem {
@@ -456,13 +462,15 @@ class NetworkBrowserViewModel(
     connection: NetworkConnection,
   ): NetworkPath? =
     runCatching {
+      // DLNA references are ContentDirectory IDs, not paths below the description URL.
+      if (connection.protocol == NetworkProtocol.DLNA) return@runCatching null
       val uri = URI(rawUri)
       val expectedScheme =
         when (connection.protocol) {
           NetworkProtocol.SMB -> "smb"
           NetworkProtocol.FTP -> "ftp"
           NetworkProtocol.SFTP -> "sftp"
-          NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST -> if (connection.useHttps) "https" else "http"
+          NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST, NetworkProtocol.DLNA -> if (connection.useHttps) "https" else "http"
         }
       if (!uri.scheme.equals(expectedScheme, ignoreCase = true) ||
         !uri.host.equals(connection.host.trim('[', ']'), ignoreCase = true) ||
@@ -563,4 +571,30 @@ internal fun List<NetworkFile>.sortedForNetworkBrowser(
     sortedWith(if (sortOrder.isAscending) comparator else comparator.reversed())
 
   return directories.sortedGroup() + media.sortedGroup() + images.sortedGroup()
+}
+
+/** Cloud libraries remain video-only; DLNA music is available regardless of the local-audio toggle. */
+internal fun networkBrowserIncludesAudio(protocol: NetworkProtocol?, includeAudioBrowser: Boolean): Boolean =
+  protocol == NetworkProtocol.DLNA ||
+    (includeAudioBrowser && protocol !in setOf(NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST))
+
+/** Preserve ordered DLNA albums/playlists, but keep cloud index results and ordinary sorting intact. */
+internal fun networkPlaybackQueue(
+  clickedFile: NetworkFile,
+  directoryFiles: List<NetworkFile>,
+  searchResults: List<NetworkFile>?,
+  protocol: NetworkProtocol?,
+  currentPath: NetworkPath,
+  playlistMode: Boolean,
+  includeAudioBrowser: Boolean,
+  sortType: NetworkSortType,
+  sortOrder: SortOrder,
+): List<NetworkFile> {
+  val orderedContainer = protocol == NetworkProtocol.DLNA && DlnaPath.isOrderedContainer(currentPath)
+  val includeAudio = networkBrowserIncludesAudio(protocol, includeAudioBrowser)
+  if ((!orderedContainer && !playlistMode) || !clickedFile.isPlayableNetworkMedia(includeAudio)) return listOf(clickedFile)
+
+  val playable = (searchResults ?: directoryFiles).filter { it.isPlayableNetworkMedia(includeAudio) }
+  val queue = if (orderedContainer) playable else playable.sortedForNetworkBrowser(sortType, sortOrder)
+  return if (queue.any { it.path == clickedFile.path }) queue else (queue + clickedFile).distinctBy(NetworkFile::path)
 }

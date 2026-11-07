@@ -1498,6 +1498,7 @@ fun NetworkSortDialog(
   isOpen: Boolean,
   onDismiss: () -> Unit,
   isCloudLibrary: Boolean = false,
+  showSortOptions: Boolean = true,
 ) {
   val browserPreferences = koinInject<BrowserPreferences>()
   val appearancePreferences = koinInject<AppearancePreferences>()
@@ -1603,7 +1604,7 @@ fun NetworkSortDialog(
         else -> Pair("Asc", "Desc")
       }
     },
-    showSortOptions = true,
+    showSortOptions = showSortOptions,
     viewModeSelector = if (isCloudLibrary) MultiViewModeSelector("View Mode", listOf(
       ViewModeOption("Folder", Icons.RoundedFilled.ViewModule, cloudViewMode == FolderViewMode.AlbumView,
         { browserPreferences.cloudViewMode.set(FolderViewMode.AlbumView) }),

@@ -23,6 +23,7 @@ object NetworkClientFactory {
       NetworkProtocol.OPENLIST -> OpenListClient(connection, tokenStore = OpenListTokenStore(
         org.koin.java.KoinJavaComponent.get(android.content.Context::class.java)))
       NetworkProtocol.SFTP -> SftpClient(connection)
+      NetworkProtocol.DLNA -> DlnaClient(connection)
     }
   }
 }

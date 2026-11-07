@@ -27,7 +27,7 @@ data class NetworkAddress(
         NetworkProtocol.SMB -> "smb"
         NetworkProtocol.FTP -> "ftp"
         NetworkProtocol.SFTP -> "sftp"
-        NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST -> if (useHttps) "https" else "http"
+        NetworkProtocol.WEBDAV, NetworkProtocol.OPENLIST, NetworkProtocol.DLNA -> if (useHttps) "https" else "http"
       }
       val url = when {
         input.startsWith("\\\\") -> "smb://${input.drop(2).replace('\\', '/')}"
@@ -42,7 +42,11 @@ data class NetworkAddress(
         "smb" -> NetworkProtocol.SMB
         "ftp" -> NetworkProtocol.FTP
         "sftp" -> NetworkProtocol.SFTP
-        "http", "https", "webdav", "webdavs", "dav", "davs" ->
+        "http", "https" -> when (protocol) {
+          NetworkProtocol.OPENLIST, NetworkProtocol.DLNA -> protocol
+          else -> NetworkProtocol.WEBDAV
+        }
+        "webdav", "webdavs", "dav", "davs" ->
           if (protocol == NetworkProtocol.OPENLIST) NetworkProtocol.OPENLIST else NetworkProtocol.WEBDAV
         else -> throw IllegalArgumentException("Unsupported network protocol")
       }

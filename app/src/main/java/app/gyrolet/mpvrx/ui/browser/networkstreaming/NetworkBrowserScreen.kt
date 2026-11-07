@@ -64,6 +64,8 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.database.repository.PlaylistItemInput
 import app.gyrolet.mpvrx.database.repository.PlaylistRepository
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
+import app.gyrolet.mpvrx.domain.network.DlnaPath
+import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import app.gyrolet.mpvrx.domain.network.NetworkFile
 import app.gyrolet.mpvrx.domain.network.NetworkPath
 import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
@@ -116,6 +118,7 @@ data class NetworkBrowserScreen(
   val currentPath: String = "/",
   val showAnimeLibrary: Boolean = true,
   val sessionId: String = java.util.UUID.randomUUID().toString(),
+  val currentFolderName: String? = null,
   /**
    * When set, the browser runs as a picker for that playlist: selecting files is enabled and
    * confirming writes them via `PlaylistRepository`. Null means the normal browse/play mode.
@@ -182,6 +185,9 @@ data class NetworkBrowserScreen(
     val effectiveLayout = networkLayoutMode
     val isLoading by viewModel.isLoading.collectAsState()
     val error by viewModel.error.collectAsState()
+    val isDlna = connection?.protocol == NetworkProtocol.DLNA
+    val orderedDlnaFolder = isDlna && DlnaPath.isOrderedContainer(normalizedPath)
+    val showAudio = networkBrowserIncludesAudio(connection?.protocol, includeAudioInBrowser)
 
     // Keep the last successful directory listing in place on transient failures, but
     // report the failed operation rather than silently swallowing its error.
@@ -219,7 +225,7 @@ data class NetworkBrowserScreen(
     // following its include-audio preference.
     fun isSelectable(file: NetworkFile): Boolean =
       when (targetPlaylistIsAudio) {
-        null -> file.isPlayableNetworkMedia(includeAudioInBrowser && !isCloudLibrary)
+        null -> file.isPlayableNetworkMedia(showAudio)
         true -> file.isPlayableNetworkAudio()
         false -> file.isPlayableNetworkVideo()
       }
@@ -227,7 +233,7 @@ data class NetworkBrowserScreen(
     // Only the media files currently visible (search applied) are selectable, so select-all and
     // select-invert match what the user can actually see.
     val selectableVideos =
-      remember(files, includeAudioInBrowser, searchQuery, targetPlaylistIsAudio) {
+      remember(files, showAudio, searchQuery, targetPlaylistIsAudio) {
         val visible =
           if (searchQuery.isBlank() || indexResults != null) files else files.filter { it.name.contains(searchQuery, ignoreCase = true) }
         visible.filter(::isSelectable)
@@ -368,7 +374,7 @@ data class NetworkBrowserScreen(
                       NetworkFolderBookmark(
                         connectionId = connectionId,
                         path = normalizedPath.value,
-                        folderName = normalizedPath.segments.last(),
+                        folderName = currentFolderName ?: normalizedPath.segments.last(),
                       ),
                     )
                   },
@@ -433,9 +439,10 @@ data class NetworkBrowserScreen(
         videoGridColumnsPortrait = videoGridColumnsPortrait,
         videoGridColumnsLandscape = videoGridColumnsLandscape,
         // Upstream added the manual-grid columns; the picker keeps overriding include-audio.
-        includeAudio = targetPlaylistIsAudio ?: (includeAudioInBrowser && !isCloudLibrary),
+        includeAudio = targetPlaylistIsAudio ?: showAudio,
         searchQuery = if (indexResults != null) "" else searchQuery,
         onRefresh = { viewModel.loadFiles(forceStorageScan = true) },
+        preserveServerOrder = orderedDlnaFolder,
         onFolderClick = { folder ->
           backstack.navigateTo(
             NetworkBrowserScreen(
@@ -443,6 +450,7 @@ data class NetworkBrowserScreen(
               connectionName = connectionName,
               currentPath = folder.path,
               showAnimeLibrary = showAnimeLibrary,
+              currentFolderName = folder.name,
               targetPlaylistId = targetPlaylistId,
               targetPlaylistIsAudio = targetPlaylistIsAudio,
             ),
@@ -505,6 +513,7 @@ data class NetworkBrowserScreen(
         isCloudLibrary = isCloudLibrary,
         isOpen = sortDialogOpen.value,
         onDismiss = { sortDialogOpen.value = false },
+        showSortOptions = !orderedDlnaFolder,
       )
     }
   }
@@ -591,6 +600,7 @@ private fun NetworkBrowserContent(
   videoGridColumnsPortrait: Int,
   videoGridColumnsLandscape: Int,
   includeAudio: Boolean,
+  preserveServerOrder: Boolean,
   searchQuery: String,
   onRefresh: suspend () -> Unit,
   onFolderClick: (NetworkFile) -> Unit,
@@ -602,8 +612,8 @@ private fun NetworkBrowserContent(
   modifier: Modifier = Modifier,
 ) {
   val sortedFiles =
-    remember(files, networkSortType, networkSortOrder) {
-      files.sortedForNetworkBrowser(networkSortType, networkSortOrder)
+    remember(files, networkSortType, networkSortOrder, preserveServerOrder) {
+      if (preserveServerOrder) files else files.sortedForNetworkBrowser(networkSortType, networkSortOrder)
     }
 
   val filteredFiles =

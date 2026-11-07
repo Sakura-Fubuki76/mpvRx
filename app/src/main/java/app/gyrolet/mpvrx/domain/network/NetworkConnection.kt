@@ -59,6 +59,7 @@ enum class NetworkProtocol(
   WEBDAV("WebDAV", 80),
   OPENLIST("OpenList", 80),
   SFTP("SFTP", 22),
+  DLNA("DLNA", 80),
 }
 
 /**
