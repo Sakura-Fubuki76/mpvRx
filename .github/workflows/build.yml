@@ -336,11 +336,12 @@ jobs:
         env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-          SITE_BASE_URL: https://riteshp2001.github.io/mpvRx
         shell: bash
         run: |
           set -euo pipefail
-          base="$SITE_BASE_URL"
+          # Every fork hosts its own Pages site; never publish another repository's URLs.
+          base="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}"
+          export SITE_BASE_URL="$base"
           build=$(git rev-list --count HEAD)
           published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 

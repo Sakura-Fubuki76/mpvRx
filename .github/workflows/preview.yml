@@ -46,9 +46,10 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PREVIEW_MANIFEST_URL: https://sakura-fubuki76.github.io/mpvRx/latest.json
         run: |
           set -euo pipefail
+
+          preview_manifest_url="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/latest.json"
 
           source_fingerprint="$(
             git ls-files -s -- \
@@ -63,7 +64,7 @@ jobs:
           )"
 
           latest_fingerprint="$(
-            curl -fsSL --retry 3 --retry-delay 2 "$PREVIEW_MANIFEST_URL" \
+            curl -fsSL --retry 3 --retry-delay 2 "$preview_manifest_url" \
               | python3 -c 'import json, sys; print(json.load(sys.stdin).get("source_fingerprint", ""))' \
               2>/dev/null || true
           )"
@@ -284,9 +285,12 @@ jobs:
       SOURCE_RUN_NUMBER: ${{ github.run_number }}
       SOURCE_RUN_URL: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
       SOURCE_BRANCH: ${{ github.ref_name }}
-      SITE_BASE_URL: https://sakura-fubuki76.github.io/mpvRx
 
     steps:
+      - name: Resolve site base URL
+        shell: bash
+        run: echo "SITE_BASE_URL=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
+
       - name: Checkout preview source
         uses: actions/checkout@v7
         with:
