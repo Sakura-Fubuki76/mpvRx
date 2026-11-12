@@ -1506,7 +1506,7 @@ fun GestureHandler(
                         if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
                           horizontalSeekHideJob?.cancel()
                           seekStartedWithControlsShown = viewModel.controlsShown.value
-                          viewModel.autoHideControls()
+                          viewModel.beginGestureSeek()
                           gestureType = "horizontal_seek"
                           hasStartedSeeking = true
                           // Follow the same high precision clock that drives the seekbar.

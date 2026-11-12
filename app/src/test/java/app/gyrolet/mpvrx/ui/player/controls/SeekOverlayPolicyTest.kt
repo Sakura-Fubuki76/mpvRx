@@ -4,9 +4,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SeekOverlayPolicyTest {
-  private fun timeline(horizontal: Boolean = true, portrait: Boolean = false, enabled: Boolean = true,
+  private fun timeline(horizontal: Boolean = true, enabled: Boolean = true,
     startedVisible: Boolean = false, barShown: Boolean = true, locked: Boolean = false, sliders: Boolean = false) =
-    seekTimelineVisible(false, horizontal, portrait, enabled, startedVisible, barShown, locked, sliders)
+    seekTimelineVisible(false, horizontal, enabled, startedVisible, barShown, locked, sliders)
 
   @Test fun horizontalSeekNeverShowsFullControlsOrBufferingFeedback() {
     assertFalse(fullControlsVisible(true, true))
@@ -26,8 +26,14 @@ class SeekOverlayPolicyTest {
     assertTrue(timeline(enabled = false, startedVisible = true))
   }
 
-  @Test fun preservesPortraitAndLockRules() {
-    assertFalse(timeline(portrait = true))
+  @Test fun portraitSwipeKeepsTheTimelineAndItsPreviewLikeLandscape() {
+    // Portrait gestures seek the same way, so they own the same minimal timeline overlay.
+    assertTrue(timeline())
+    assertTrue(timeline(enabled = false, startedVisible = true))
+    assertFalse(timeline(enabled = false))
+  }
+
+  @Test fun lockAndSliderRulesStillHideTheTimeline() {
     assertFalse(timeline(locked = true))
     assertFalse(timeline(sliders = true))
   }

@@ -701,10 +701,8 @@ private fun SeekbarContent(
         },
     contentAlignment = Alignment.Center,
   ) {
-    // Portrait gesture seeking has no timeline, so it must not leave a floating sprite either.
-    val suppressGesturePreview = previewPosition != null && isPortrait
-    if (isVisuallyInteracting && !showWavyVisualizer && previewAnchorWidth > 0 && !suppressGesturePreview) {
-      val gap = with(previewDensity) { 16.dp.roundToPx() }
+    if (isVisuallyInteracting && !showWavyVisualizer && previewAnchorWidth > 0) {
+      val gap = with(previewDensity) { 8.dp.roundToPx() }
       val fraction = if (safeDuration > 0) safeThumbPosition / safeDuration else 0f
       val (previewWidthDp, previewHeightDp) =
         SeekPreviewPlacement.cellSizeDp(

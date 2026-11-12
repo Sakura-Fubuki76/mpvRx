@@ -8,11 +8,10 @@ internal fun fullControlsVisible(requested: Boolean, horizontalSeeking: Boolean)
 internal fun bufferingFeedbackEnabled(enabled: Boolean, scrubbing: Boolean, horizontalSeeking: Boolean): Boolean =
   enabled && !scrubbing && !horizontalSeeking
 
-/** Preserve the fork's existing orientation, preference, and lock rules for the timeline. */
+/** Preserve the fork's existing preference and lock rules for the timeline. */
 internal fun seekTimelineVisible(
   controlsShown: Boolean,
   horizontalSeeking: Boolean,
-  isPortrait: Boolean,
   showDuringHorizontalSeeking: Boolean,
   startedWithControlsShown: Boolean,
   seekBarShown: Boolean,
@@ -21,7 +20,7 @@ internal fun seekTimelineVisible(
 ): Boolean =
   (controlsShown ||
     if (horizontalSeeking) {
-      !isPortrait && (showDuringHorizontalSeeking || startedWithControlsShown)
+      showDuringHorizontalSeeking || startedWithControlsShown
     } else {
       seekBarShown
     }) && !controlsLocked && !slidersShown

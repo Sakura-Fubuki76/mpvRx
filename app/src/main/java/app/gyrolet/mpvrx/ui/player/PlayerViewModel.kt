@@ -5157,6 +5157,18 @@ fun restartFromBeginning() {
     seekBarVisibleForPolling = true
   }
 
+  /**
+   * A horizontal swipe owns the screen: every transport band leaves and the gesture decides
+   * whether the timeline overlay is drawn. Unlike [autoHideControls] the idle timeline flag stays
+   * off, so a finished swipe cannot flash the timeline in portrait, which has no gesture timeline.
+   */
+  fun beginGestureSeek() {
+    _controlsShown.value = false
+    _seekBarShown.value = false
+    controlsVisibleForPolling = false
+    seekBarVisibleForPolling = false
+  }
+
   fun hideSeekBar() {
     _seekBarShown.value = false
     seekBarVisibleForPolling = false

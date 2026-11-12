@@ -1224,7 +1224,26 @@ fun PlayerControls(
             }
           }
           val buttonsBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Buttons] ?: clusterEdge)
-          val seekbarBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Seekbar] ?: clusterEdge)
+          // A live scrub hides every control band, leaving only the timeline and its thumbnail.
+          // The remembered transport row must not keep the timeline lifted over an empty slot, so
+          // the scrub overlay rests on the bottom edge like the fork's pre-upstream layout did.
+          // A swipe that began over hidden controls owns the screen: only the timeline and its
+          // thumbnail remain, so it rests on the bottom edge instead of floating over the empty
+          // slot of the transport row. A swipe that began with the controls visible keeps the
+          // slot it already occupies, so the timeline never travels while the gesture runs.
+          val scrubStartedHidden =
+            (gestureSeekUpdate as? PlayerUpdates.HorizontalSeek)?.let { !it.startedWithControlsShown } == true
+          // Latched through the exit animation: the gesture ends a frame before the timeline fades,
+          // and lifting the slot there would make the timeline rise just before it disappears.
+          var scrubOverlayLatched by remember { mutableStateOf(false) }
+          val seekbarOnBottomEdge = scrubStartedHidden || scrubOverlayLatched
+          val seekbarCenterFromBottom =
+            if (seekbarOnBottomEdge) {
+              clusterEdge + bandHeight(BottomSlot.Seekbar) / 2
+            } else {
+              bandCenters[BottomSlot.Seekbar] ?: clusterEdge
+            }
+          val seekbarBandCenter = createGuidelineFromBottom(seekbarCenterFromBottom)
           val playbackBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Playback] ?: clusterEdge)
           fun ConstrainScope.linkInBottomStack(slot: BottomSlot) {
             val center =
@@ -1421,13 +1440,22 @@ fun PlayerControls(
             seekTimelineVisible(
               controlsShown = controlsShown,
               horizontalSeeking = isHorizontalSeekActive,
-              isPortrait = isPortrait,
               showDuringHorizontalSeeking = showSeekbarDuringHorizontalSeeking,
               startedWithControlsShown = (currentPlayerUpdate as? PlayerUpdates.HorizontalSeek)?.startedWithControlsShown == true,
               seekBarShown = seekBarShown,
               controlsLocked = areControlsLocked,
               slidersShown = areSlidersShown,
             )
+          LaunchedEffect(scrubStartedHidden, seekbarVisible, areButtonsVisible) {
+            when {
+              scrubStartedHidden -> scrubOverlayLatched = true
+              areButtonsVisible -> scrubOverlayLatched = false
+              !seekbarVisible -> {
+                delay(if (reduceMotion) 0L else exitMs.toLong())
+                scrubOverlayLatched = false
+              }
+            }
+          }
           val leftCustomButtons = remember(customButtons) { customButtons.filter { it.isLeft } }
           val rightCustomButtons = remember(customButtons) { customButtons.filterNot { it.isLeft } }
           val showLandscapeLeftCustomButtons = areButtonsVisible && !isPortrait && leftCustomButtons.isNotEmpty()
@@ -1446,7 +1474,7 @@ fun PlayerControls(
             ) - CustomButtonsRowInsetVertical * 2).coerceAtLeast(0.dp)
           val visibleBottomClusterTop = when {
             areButtonsVisible -> bottomClusterTop
-            seekbarVisible -> (bandCenters[BottomSlot.Seekbar] ?: clusterEdge) + bandHeight(BottomSlot.Seekbar) / 2
+            seekbarVisible -> seekbarCenterFromBottom + bandHeight(BottomSlot.Seekbar) / 2
             else -> clusterEdge
           }
           val skipChipBottomTarget =
