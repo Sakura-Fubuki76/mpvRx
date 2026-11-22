@@ -7,11 +7,8 @@ on:
 
 permissions:
   contents: read
-  actions: read
-  pages: write
-  id-token: write
 
-# Preview runs queue behind each other so scheduled builds cannot cancel a pending publication.
+# Keep builds and publication serialized for the rolling preview release.
 concurrency:
   group: mpvrx-preview
   cancel-in-progress: false
@@ -24,9 +21,6 @@ jobs:
     outputs:
       should_build: ${{ steps.activity.outputs.should_build }}
       source_fingerprint: ${{ steps.activity.outputs.source_fingerprint }}
-      selected_flavor: ${{ steps.activity.outputs.selected_flavor }}
-      website_visible: ${{ steps.activity.outputs.website_visible }}
-      publication_mode: ${{ steps.activity.outputs.publication_mode }}
       commit_count: ${{ steps.metadata.outputs.commit_count }}
       source_sha: ${{ steps.metadata.outputs.source_sha }}
       commit_title: ${{ steps.metadata.outputs.commit_title }}
@@ -36,7 +30,6 @@ jobs:
       - name: Checkout preview source
         uses: actions/checkout@v7
         with:
-          submodules: recursive
           fetch-depth: 0
 
       - name: Check for unpublished app activity
@@ -46,61 +39,29 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-
-          preview_manifest_url="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}/latest.json"
-
+          preview_manifest_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/preview/latest.json"
           source_fingerprint="$(
             git ls-files -s -- \
-              app \
-              build.gradle.kts \
-              settings.gradle.kts \
-              gradle.properties \
-              gradle \
-              fastlane/metadata/android/preview-site \
-              fastlane/metadata/android/en-US/images/icon.png \
+              app third_party .gitmodules build.gradle.kts settings.gradle.kts \
+              gradle.properties gradle scripts/build_preview_manifest.py \
+              .github/workflows/preview.yml \
               | sha256sum | cut -d' ' -f1
           )"
-
           latest_fingerprint="$(
             curl -fsSL --retry 3 --retry-delay 2 "$preview_manifest_url" \
               | python3 -c 'import json, sys; print(json.load(sys.stdin).get("source_fingerprint", ""))' \
               2>/dev/null || true
           )"
-
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$source_fingerprint" != "$latest_fingerprint" ]]; then
             should_build=true
-            reason="manual request"
-            selected_flavor=all
-            website_visible=true
-            publication_mode=manual
-          elif [[ -z "$latest_fingerprint" ]]; then
-            should_build=true
-            reason="published manifest has no source fingerprint"
-            selected_flavor=all
-            website_visible=true
-            publication_mode=automatic
-          elif [[ "$source_fingerprint" != "$latest_fingerprint" ]]; then
-            should_build=true
-            reason="app source changed"
-            selected_flavor=all
-            website_visible=true
-            publication_mode=automatic
           else
             should_build=false
-            reason="no app activity since the latest preview"
-            selected_flavor=all
-            website_visible=true
-            publication_mode=automatic
           fi
-
           {
             echo "should_build=$should_build"
             echo "source_fingerprint=$source_fingerprint"
-            echo "selected_flavor=$selected_flavor"
-            echo "website_visible=$website_visible"
-            echo "publication_mode=$publication_mode"
           } >> "$GITHUB_OUTPUT"
-          echo "Preview decision: $should_build ($reason)"
+          echo "Preview build required: $should_build"
 
       - name: Set build metadata
         id: metadata
@@ -116,46 +77,22 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build ${{ matrix.distribution.name }} preview APKs
+    name: Build Standard preview APKs
     needs: check
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        distribution:
-          - id: standard
-            name: Standard
-            gradle: Standard
-            dir: standard
-            abis: universal arm64-v8a armeabi-v7a x86 x86_64
-            asset: ''
-          - id: fongmi
-            name: FongMi
-            gradle: Fongmi
-            dir: fongmi
-            abis: universal
-            asset: fongmi
-          - id: no_vulkan
-            name: No Vulkan
-            gradle: NoVulkan
-            dir: noVulkan
-            abis: universal
-            asset: no-vulkan
     env:
       COMMIT_COUNT: ${{ needs.check.outputs.commit_count }}
-      GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
-      APK_DIR: ${{ matrix.distribution.dir }}
-      APK_ABIS: ${{ matrix.distribution.abis }}
-      ASSET_NAME: ${{ matrix.distribution.asset }}
+      APK_DIR: standard
+      APK_ABIS: universal arm64-v8a armeabi-v7a x86 x86_64
 
     steps:
       - name: Checkout preview source
         uses: actions/checkout@v7
         with:
+          ref: ${{ needs.check.outputs.source_sha }}
           submodules: recursive
-          # BuildConfig.GIT_COUNT and the preview version code rely on the real repository history.
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -175,7 +112,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew "assemble${GRADLE_FLAVOR}Preview" --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleStandardPreview --stacktrace --no-daemon --max-workers=2
 
       - name: Sign and stage preview APKs
         shell: bash
@@ -238,171 +175,80 @@ jobs:
           for abi in $APK_ABIS; do
             base="app-${APK_DIR}-${abi}-preview"
             sign_apk "$out_dir" "$base" "${APK_DIR} ${abi} preview"
-            cp "$out_dir/$base.apk" "downloads/mpvRx-preview-r${COMMIT_COUNT}-${ASSET_NAME:-$abi}.apk"
+            cp "$out_dir/$base.apk" "downloads/mpvRx-preview-r${COMMIT_COUNT}-${abi}.apk"
           done
-
 
       - name: Upload preview APKs
         uses: actions/upload-artifact@v7
         with:
-          name: preview-apks-${{ matrix.distribution.id }}
+          name: preview-apks-standard
           path: downloads/*.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
   publish:
-    name: Publish preview download page
+    name: Publish GitHub preview release
     needs: [check, build]
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Keep staging and deployment serialized.
-    concurrency:
-      group: mpvrx-pages
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
     env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       COMMIT_COUNT: ${{ needs.check.outputs.commit_count }}
       SOURCE_SHA: ${{ needs.check.outputs.source_sha }}
       COMMIT_TITLE: ${{ needs.check.outputs.commit_title }}
       PUBLISHED_AT: ${{ needs.check.outputs.published_at }}
       SOURCE_FINGERPRINT: ${{ needs.check.outputs.source_fingerprint }}
-      SELECTED_FLAVOR: ${{ needs.check.outputs.selected_flavor }}
-      WEBSITE_VISIBLE: ${{ needs.check.outputs.website_visible }}
-      PUBLICATION_MODE: ${{ needs.check.outputs.publication_mode }}
-      SOURCE_RUN_ID: ${{ github.run_id }}
-      SOURCE_RUN_NUMBER: ${{ github.run_number }}
-      SOURCE_RUN_URL: ${{ format('{0}/{1}/actions/runs/{2}', github.server_url, github.repository, github.run_id) }}
-      SOURCE_BRANCH: ${{ github.ref_name }}
 
     steps:
-      - name: Resolve site base URL
-        shell: bash
-        run: echo "SITE_BASE_URL=https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
-
       - name: Checkout preview source
         uses: actions/checkout@v7
         with:
-          submodules: recursive
+          ref: ${{ needs.check.outputs.source_sha }}
 
-      - name: Download preview APKs
+      - name: Download signed preview APKs
         uses: actions/download-artifact@v7
         with:
-          pattern: preview-apks-*
-          merge-multiple: true
-          path: site/downloads
+          name: preview-apks-standard
+          path: downloads
 
-      - name: Stage GitHub Pages preview site
+      - name: Generate preview update manifest
+        run: python3 scripts/build_preview_manifest.py --downloads-dir downloads --output latest.json
+
+      - name: Publish rolling preview prerelease
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p site/downloads
-          cp fastlane/metadata/android/preview-site/index.html site/index.html
-          cp fastlane/metadata/android/en-US/images/icon.png site/icon.png
-          cp fastlane/metadata/android/preview-site/site.webmanifest site/site.webmanifest
-          touch site/.nojekyll
-
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          site_dir = Path("site")
-          downloads_dir = site_dir / "downloads"
-          base_url = os.environ["SITE_BASE_URL"].rstrip("/")
-          commit_count = int(os.environ["COMMIT_COUNT"])
-          source_sha = os.environ["SOURCE_SHA"]
-          commit_title = os.environ["COMMIT_TITLE"]
-          published_at = os.environ["PUBLISHED_AT"]
-          run_id = int(os.environ["SOURCE_RUN_ID"])
-          run_number = int(os.environ["SOURCE_RUN_NUMBER"])
-          run_url = os.environ["SOURCE_RUN_URL"]
-          source_fingerprint = os.environ["SOURCE_FINGERPRINT"]
-          selected_flavor = os.environ["SELECTED_FLAVOR"]
-          website_visible = os.environ["WEBSITE_VISIBLE"].lower() == "true"
-          publication_mode = os.environ["PUBLICATION_MODE"]
-
-          public_names = [
-              "universal",
-              "arm64-v8a",
-              "armeabi-v7a",
-              "x86",
-              "x86_64",
-              "fongmi",
-              "no-vulkan",
-          ]
-          assets = []
-
-          for public_name in public_names:
-              name = f"mpvRx-preview-r{commit_count}-{public_name}.apk"
-              apk = downloads_dir / name
-              if not apk.is_file():
-                  raise SystemExit(f"Missing signed APK for {public_name}: {apk}")
-
-              assets.append({
-                  "abi": public_name,
-                  "browser_download_url": f"{base_url}/downloads/{name}",
-                  "name": name,
-                  "size": apk.stat().st_size,
-                  "content_type": "application/vnd.android.package-archive",
-                  "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
-              })
-
-          manifest = {
-              "tag_name": f"preview-r{commit_count}",
-              "name": f"mpvRx Preview r{commit_count}",
-              "body": (
-                  f"Commit: {commit_title}\n\n"
-                  f"{publication_mode.title()} preview from workflow run #{run_number}. "
-                  f"Source commit: {source_sha[:7]}."
-              ),
-              "published_at": published_at,
-              "assets": assets,
-              "channel": "preview",
-              "commit_sha": source_sha,
-              "commit_title": commit_title,
-              "commit_count": commit_count,
-              "source_fingerprint": source_fingerprint,
-              "website_visible": website_visible,
-              "publication_mode": publication_mode,
-              "run_number": run_number,
-              "run_id": run_id,
-              "run_url": run_url,
-              "source_branch": os.environ["SOURCE_BRANCH"],
-              "source_workflow": "Preview Build",
-              "selected_flavor": selected_flavor,
-              "pages_url": base_url + "/",
-          }
-
-          (site_dir / "latest.json").write_text(
-              json.dumps(manifest, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          PY
-
-          python3 -m json.tool site/latest.json >/dev/null
-          find site -maxdepth 2 -type f -printf '%p %k KB\n' | sort
+          python3 -c 'import json; print(json.load(open("latest.json"))["body"])' > preview-notes.md
+          title="mpvRx Preview r${COMMIT_COUNT}"
+          if ! gh release view preview --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create preview --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" \
+              --title "$title" --notes-file preview-notes.md --prerelease --latest=false
+          fi
+          # Upload versioned APKs first, then replace the manifest as the publication marker.
+          gh release upload preview downloads/*.apk --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload preview latest.json --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit preview --repo "$GITHUB_REPOSITORY" --title "$title" \
+            --notes-file preview-notes.md --prerelease --latest=false
+          # Only this dedicated prerelease tag is rolling; stable tags are never replaced.
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/preview" \
+            -f sha="$SOURCE_SHA" -F force=true
+          # Keep just the current five APKs; prune only after the new manifest is published.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/preview" \
+            --jq '.assets[] | select(.name | endswith(".apk")) | [.id, .name] | @tsv' \
+            | while IFS=$'\t' read -r asset_id asset_name; do
+                if [[ ! -f "downloads/$asset_name" ]]; then
+                  gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+                fi
+              done
 
       - name: Upload preview manifest as Actions artifact
         uses: actions/upload-artifact@v7
         with:
           name: mpvRx-preview-r${{ needs.check.outputs.commit_count }}-manifest
-          path: site/latest.json
+          path: latest.json
           if-no-files-found: error
           retention-days: 14
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v6
-
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: site
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v5

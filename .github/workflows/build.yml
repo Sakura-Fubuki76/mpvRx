@@ -16,39 +16,19 @@ concurrency:
 
 jobs:
   build:
-    name: Build ${{ matrix.distribution.name }} APKs
+    name: Build Standard APKs
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        distribution:
-          - id: standard
-            name: Standard
-            gradle: Standard
-            dir: standard
-            abis: universal arm64-v8a armeabi-v7a x86 x86_64
-          - id: fongmi
-            name: FongMi
-            gradle: Fongmi
-            dir: fongmi
-            abis: universal
-          - id: no_vulkan
-            name: No Vulkan
-            gradle: NoVulkan
-            dir: noVulkan
-            abis: universal
     env:
-      DISTRIBUTION: ${{ matrix.distribution.id }}
-      GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
-      APK_DIR: ${{ matrix.distribution.dir }}
-      APK_ABIS: ${{ matrix.distribution.abis }}
+      APK_DIR: standard
+      APK_ABIS: universal arm64-v8a armeabi-v7a x86 x86_64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          # Play Store version codes, BuildConfig.GIT_COUNT and preview identities need full history.
+          submodules: recursive
+          # The fork native YUV bridge requires libyuv; version metadata needs full history.
           fetch-depth: 0
 
       - name: Generate build metadata
@@ -78,7 +58,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew "assemble${GRADLE_FLAVOR}Release" --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
 
       - name: Sign APKs when signing secrets are available
         shell: bash
@@ -150,45 +130,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$DISTRIBUTION" in
-            standard)
-              release_dir="app/build/outputs/apk/standard/release"
-              architectures=(universal arm64-v8a armeabi-v7a x86 x86_64)
-              for abi in "${architectures[@]}"; do
-                if ! compgen -G "$release_dir/app-standard-${abi}-release*.apk" >/dev/null; then
-                  echo "No standard release APK found for $abi"
-                  exit 1
-                fi
-              done
-              ;;
-            fongmi)
-              release_dir="app/build/outputs/apk/fongmi/release"
-              if ! compgen -G "$release_dir/app-fongmi-universal-release*.apk" >/dev/null; then
-                echo "No universal release APK found for fongmi"
-                exit 1
-              fi
-              if find "$release_dir" -maxdepth 1 -type f -name "app-fongmi-*-release*.apk" ! -name "app-fongmi-universal-release*.apk" | grep -q .; then
-                echo "fongmi produced an unexpected ABI-specific APK"
-                find "$release_dir" -maxdepth 1 -type f -name '*.apk' -print
-                exit 1
-              fi
-              ;;
-            no_vulkan)
-              release_dir="app/build/outputs/apk/noVulkan/release"
-              if ! compgen -G "$release_dir/app-noVulkan-universal-release*.apk" >/dev/null; then
-                echo "No universal non-Vulkan release APK found"
-                exit 1
-              fi
-              if find "$release_dir" -maxdepth 1 -type f -name "app-noVulkan-*-release*.apk" ! -name "app-noVulkan-universal-release*.apk" | grep -q .; then
-                echo "The non-Vulkan flavor produced an unexpected ABI-specific APK"
-                find "$release_dir" -maxdepth 1 -type f -name '*.apk' -print
-                exit 1
-              fi
-              ;;
-          esac
+          release_dir="app/build/outputs/apk/standard/release"
+          for abi in $APK_ABIS; do
+            if ! compgen -G "$release_dir/app-standard-${abi}-release*.apk" >/dev/null; then
+              echo "Missing Standard release APK for $abi"
+              find "$release_dir" -maxdepth 1 -type f -name '*.apk' -print || true
+              exit 1
+            fi
+          done
 
       - name: Upload arm64-v8a APK
-        if: ${{ matrix.distribution.id == 'standard' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-arm64-v8a-release-${{ steps.metadata.outputs.short_sha }}
@@ -198,7 +149,6 @@ jobs:
           compression-level: 0
 
       - name: Upload armeabi-v7a APK
-        if: ${{ matrix.distribution.id == 'standard' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-armeabi-v7a-release-${{ steps.metadata.outputs.short_sha }}
@@ -208,7 +158,6 @@ jobs:
           compression-level: 0
 
       - name: Upload universal APK
-        if: ${{ matrix.distribution.id == 'standard' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-universal-release-${{ steps.metadata.outputs.short_sha }}
@@ -218,7 +167,6 @@ jobs:
           compression-level: 0
 
       - name: Upload x86 APK
-        if: ${{ matrix.distribution.id == 'standard' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-x86-release-${{ steps.metadata.outputs.short_sha }}
@@ -228,31 +176,10 @@ jobs:
           compression-level: 0
 
       - name: Upload x86_64 APK
-        if: ${{ matrix.distribution.id == 'standard' }}
         uses: actions/upload-artifact@v7
         with:
           name: app-standard-x86_64-release-${{ steps.metadata.outputs.short_sha }}
           path: app/build/outputs/apk/standard/release/app-standard-x86_64-release*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload Fongmi universal APK
-        if: ${{ matrix.distribution.id == 'fongmi' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-fongmi-release-${{ steps.metadata.outputs.short_sha }}
-          path: app/build/outputs/apk/fongmi/release/app-fongmi-universal-release*.apk
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0
-
-      - name: Upload non-Vulkan universal APK
-        if: ${{ matrix.distribution.id == 'no_vulkan' }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: app-no-vulkan-release-${{ steps.metadata.outputs.short_sha }}
-          path: app/build/outputs/apk/noVulkan/release/app-noVulkan-universal-release*.apk
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

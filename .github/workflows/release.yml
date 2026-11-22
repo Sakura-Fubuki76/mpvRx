@@ -90,44 +90,21 @@ jobs:
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build ${{ matrix.distribution.name }} release APKs
+    name: Build Standard release APKs
     needs: prepare
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        distribution:
-          - id: standard
-            name: Standard
-            gradle: Standard
-            dir: standard
-            abis: universal arm64-v8a armeabi-v7a x86 x86_64
-            asset: ''
-          - id: fongmi
-            name: FongMi
-            gradle: Fongmi
-            dir: fongmi
-            abis: universal
-            asset: fongmi
-          - id: no_vulkan
-            name: No Vulkan
-            gradle: NoVulkan
-            dir: noVulkan
-            abis: universal
-            asset: no-vulkan
     env:
       VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
-      GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
-      APK_DIR: ${{ matrix.distribution.dir }}
-      APK_ABIS: ${{ matrix.distribution.abis }}
-      ASSET_NAME: ${{ matrix.distribution.asset }}
+      APK_DIR: standard
+      APK_ABIS: universal arm64-v8a armeabi-v7a x86 x86_64
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.source_sha }}
+          submodules: recursive
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -147,7 +124,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew "assemble${GRADLE_FLAVOR}Release" --stacktrace --no-daemon --max-workers=2
+          ./gradlew assembleStandardRelease --stacktrace --no-daemon --max-workers=2
 
       - name: Sign and stage release APKs
         shell: bash
@@ -210,13 +187,13 @@ jobs:
           for abi in $APK_ABIS; do
             base="app-${APK_DIR}-${abi}-release"
             sign_apk "$out_dir" "$base" "${APK_DIR} ${abi} release"
-            cp "$out_dir/$base.apk" "release-assets/mpvRx-${ASSET_NAME:-$abi}-${VERSION_TAG}.apk"
+            cp "$out_dir/$base.apk" "release-assets/mpvRx-${abi}-${VERSION_TAG}.apk"
           done
 
       - name: Upload release assets
         uses: actions/upload-artifact@v7
         with:
-          name: release-assets-${{ matrix.distribution.id }}
+          name: release-assets-standard
           path: release-assets/*
           if-no-files-found: error
           retention-days: 7
@@ -248,7 +225,7 @@ jobs:
         run: |
           set -euo pipefail
           : > checksums.txt
-          variants=(universal arm64-v8a armeabi-v7a x86 x86_64 fongmi no-vulkan)
+          variants=(universal arm64-v8a armeabi-v7a x86 x86_64)
           for variant in "${variants[@]}"; do
             asset="release-assets/mpvRx-${variant}-${VERSION_TAG}.apk"
             if [[ ! -f "$asset" ]]; then
@@ -286,11 +263,9 @@ jobs:
           variant_guide = """
           ### APK variants
 
-          All variants contain the same mpvRx app version, with their native backends built from [mpvlib Android](https://github.com/Riteshp2001/mpvlibAndroid). Choose the package that best matches your device:
+          This fork publishes only Standard APKs, with the native backend built from [mpvlib Android](https://github.com/Riteshp2001/mpvlibAndroid). Choose the architecture that best matches your device:
 
           - **Standard** (`mpvRx-<architecture>-<version>.apk`): Recommended for most devices. Available as Universal and architecture-specific APKs with the standard Vulkan-capable playback backend.
-          - **FongMi** (`mpvRx-fongmi-<version>.apk`): Universal package using the FongMi native profile for Vulkan, direct MediaCodec, and Dolby Vision playback.
-          - **Non-Vulkan** (`mpvRx-no-vulkan-<version>.apk`): Universal OpenGL-only package for devices without compatible Vulkan support or with unstable legacy GPU drivers.
           """.strip()
           Path('release-notes.md').write_text(
               latest + '\n\n---\n' + variant_guide + '\n\n### SHA-256 checksums\n\n```text\n',

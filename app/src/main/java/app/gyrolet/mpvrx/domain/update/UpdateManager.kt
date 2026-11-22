@@ -432,7 +432,7 @@ class UpdateManager(
 
   private companion object {
     const val STABLE_RELEASE_URL = "https://api.github.com/repos/Sakura-Fubuki76/mpvRx/releases/latest"
-    const val PREVIEW_RELEASE_URL = "https://sakura-fubuki76.github.io/mpvRx/latest.json"
+    const val PREVIEW_RELEASE_URL = "https://github.com/Sakura-Fubuki76/mpvRx/releases/download/preview/latest.json"
     const val LEGACY_IGNORED_VERSION_KEY = "ignored_version"
     const val PART_SUFFIX = ".part"
     const val LOCAL_HASH_LENGTH = 12
