@@ -2,12 +2,6 @@ name: Make release
 
 on:
   push:
-    branches:
-      - master
-    paths:
-      - app/build.gradle.kts
-      - CHANGELOG.md
-      - .github/workflows/release.yml
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
@@ -28,8 +22,7 @@ jobs:
   prepare:
     name: Resolve release tag
     if: >-
-      github.event_name != 'push' || startsWith(github.ref, 'refs/tags/') ||
-      startsWith(github.event.head_commit.message, 'chore(release): v')
+      github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -40,7 +33,6 @@ jobs:
       - name: Checkout release source
         uses: actions/checkout@v7
         with:
-          submodules: recursive
           fetch-depth: 0
 
       - name: Resolve and validate release tag
@@ -125,7 +117,6 @@ jobs:
             abis: universal
             asset: no-vulkan
     env:
-      MEASURE_API_KEY: ${{ secrets.MEASURE_API_KEY }}
       VERSION_TAG: ${{ needs.prepare.outputs.version_tag }}
       GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
       APK_DIR: ${{ matrix.distribution.dir }}
@@ -136,7 +127,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          submodules: recursive
           ref: ${{ needs.prepare.outputs.source_sha }}
           fetch-depth: 0
 
@@ -146,6 +136,9 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
+      - name: Install compile SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.2"'
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -220,23 +213,6 @@ jobs:
             cp "$out_dir/$base.apk" "release-assets/mpvRx-${ASSET_NAME:-$abi}-${VERSION_TAG}.apk"
           done
 
-      - name: Upload native debug symbols
-        uses: actions/upload-artifact@v7
-        with:
-          name: native-debug-symbols-${{ matrix.distribution.id }}-${{ github.sha }}
-          path: app/build/outputs/native-debug-symbols/
-          if-no-files-found: warn
-          retention-days: 30
-          compression-level: 0
-
-      - name: Upload R8 diagnostics
-        uses: actions/upload-artifact@v7
-        with:
-          name: r8-${{ matrix.distribution.id }}-${{ github.sha }}
-          path: app/build/outputs/mapping/
-          if-no-files-found: error
-          retention-days: 30
-
       - name: Upload release assets
         uses: actions/upload-artifact@v7
         with:
@@ -258,7 +234,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          submodules: recursive
           ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Download release assets
@@ -283,7 +258,6 @@ jobs:
             fi
             sha256sum "$asset" | tee -a checksums.txt
           done
-
 
       - name: Prepare release notes
         shell: bash

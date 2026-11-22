@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.MaterialShapes
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -37,18 +39,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -82,14 +88,15 @@ import app.gyrolet.mpvrx.ui.securefolder.SecureFolderSettingsScreen
 import app.gyrolet.mpvrx.ui.remote.RemoteControlScreen
 import app.gyrolet.mpvrx.ui.theme.LocalEmphasizedTypography
 import app.gyrolet.mpvrx.ui.theme.rememberConnectedShape
-import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
 import app.gyrolet.mpvrx.ui.utils.LocalBackStack
-import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.LocalShowSettingsBackArrow
+import app.gyrolet.mpvrx.ui.utils.LocalTwoPaneSettings
 import app.gyrolet.mpvrx.ui.utils.ScreenNavDisplay
+import app.gyrolet.mpvrx.ui.utils.navigateTo
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import kotlinx.serialization.Serializable
 import org.koin.compose.koinInject
+import kotlin.random.Random
 
 private data class SettingsDestination(
   val title: String,
@@ -102,16 +109,37 @@ private data class SettingsDestination(
 private data class SettingsSection(
   val title: String,
   val tint: Color,
+  val iconContainerColor: Color,
   val items: List<SettingsDestination>,
 )
 
 @Serializable
-object PreferencesScreen : Screen {
-  @OptIn(ExperimentalMaterial3Api::class)
+object PreferencesScreen : ScrollableSettingsScreen {
+  private var lastIconShapeIndex = -1
+
+  @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
   @Composable
   override fun Content() {
     val backstack = LocalBackStack.current
     val colorScheme = MaterialTheme.colorScheme
+    val iconShapes = remember {
+      listOf(
+        MaterialShapes.Cookie4Sided,
+        MaterialShapes.Cookie6Sided,
+        MaterialShapes.Clover4Leaf,
+        MaterialShapes.SoftBurst,
+        MaterialShapes.Gem,
+      )
+    }
+    val iconShapeIndex = rememberSaveable {
+      if (lastIconShapeIndex < 0) {
+        Random.nextInt(iconShapes.size)
+      } else {
+        (lastIconShapeIndex + Random.nextInt(1, iconShapes.size)) % iconShapes.size
+      }
+    }
+    SideEffect { lastIconShapeIndex = iconShapeIndex }
+    val iconShape = iconShapes[iconShapeIndex].toShape()
     val television = isTelevision()
     val sections = settingsSections().mapNotNull { section ->
       val items = section.items.filter { !television || TvSettingsPolicy.supportsScreen(it.screen) }
@@ -119,9 +147,10 @@ object PreferencesScreen : Screen {
     }
 
     val configuration = LocalConfiguration.current
-    val isTablet = configuration.smallestScreenWidthDp >= 600
+    val useTwoPane = television || configuration.screenWidthDp >= 600
+    val categoryPaneFraction = if (!television && configuration.screenWidthDp < 840) 0.5f else 0.4f
 
-    if (isTablet || television) {
+    if (useTwoPane) {
       @Suppress("UNCHECKED_CAST")
       val detailBackstack = rememberNavBackStack(AppearancePreferencesScreen) as NavBackStack<Screen>
       val selectedScreen = detailBackstack.first()
@@ -133,9 +162,10 @@ object PreferencesScreen : Screen {
         if (!TvFocusMemory.restore(PreferencesScreen)) categoryFocusRequester.tryRequestFocus()
       }
       Row(modifier = Modifier.fillMaxSize()) {
-        Box(modifier = Modifier.weight(0.4f).tvFocusGroup()) {
+        Box(modifier = Modifier.weight(categoryPaneFraction).tvFocusGroup()) {
           SettingsPane(
             sections = sections,
+            iconShape = iconShape,
             selectedScreen = selectedScreen,
             modifier = Modifier.focusRequester(categoryFocusRequester),
             onScreenSelected = { screen ->
@@ -158,11 +188,14 @@ object PreferencesScreen : Screen {
           color = colorScheme.outlineVariant.copy(alpha = 0.5f),
           thickness = 1.dp,
         )
-        Box(modifier = Modifier.weight(0.6f).onFocusChanged { focus ->
+        Box(modifier = Modifier.weight(1f - categoryPaneFraction).onFocusChanged { focus ->
           detailPaneFocused = focus.hasFocus
           if (focus.hasFocus) detailPaneActivated = true
         }.tvFocusGroup()) {
-          CompositionLocalProvider(LocalBackStack provides detailBackstack) {
+          CompositionLocalProvider(
+            LocalBackStack provides detailBackstack,
+            LocalTwoPaneSettings provides true,
+          ) {
             ScreenNavDisplay(
               backStack = detailBackstack,
               modifier = Modifier.fillMaxSize(),
@@ -180,6 +213,7 @@ object PreferencesScreen : Screen {
     } else {
       SettingsPane(
         sections = sections,
+        iconShape = iconShape,
         selectedScreen = null,
         onScreenSelected = { backstack.navigateTo(it) },
       )
@@ -190,6 +224,7 @@ object PreferencesScreen : Screen {
   @Composable
   private fun SettingsPane(
     sections: List<SettingsSection>,
+    iconShape: Shape,
     selectedScreen: Screen?,
     onScreenSelected: (Screen) -> Unit,
     modifier: Modifier = Modifier,
@@ -225,9 +260,7 @@ object PreferencesScreen : Screen {
             .fillMaxSize()
             .tvContentFocus()
             .padding(padding),
-        // Keep the settings page full-height and let its list scroll clear of any
-        // transient mini-player overlay without clipping the entire screen.
-        contentPadding = PaddingValues(bottom = 28.dp + LocalNavigationBarHeight.current),
+        contentPadding = settingsContentPadding(PaddingValues(bottom = 28.dp)),
         verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
         item {
@@ -243,6 +276,7 @@ object PreferencesScreen : Screen {
         items(sections, key = { it.title }) { section ->
           SettingsSectionBlock(
             section = section,
+            iconShape = iconShape,
             selectedScreen = selectedScreen,
             onItemClick = { destination -> onScreenSelected(destination.screen) },
           )
@@ -260,7 +294,8 @@ object PreferencesScreen : Screen {
     return listOfNotNull(
       SettingsSection(
         title = stringResource(R.string.pref_section_appearance),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onPrimaryContainer,
+        iconContainerColor = colorScheme.primaryContainer,
         items =
           listOf(
             SettingsDestination(
@@ -285,7 +320,8 @@ object PreferencesScreen : Screen {
       ),
       SettingsSection(
         title = stringResource(R.string.pref_section_playback),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onSecondaryContainer,
+        iconContainerColor = colorScheme.secondaryContainer,
         items =
           listOf(
             SettingsDestination(
@@ -322,7 +358,8 @@ object PreferencesScreen : Screen {
       ),
       SettingsSection(
         title = stringResource(if (television) R.string.pref_section_display_controls else R.string.pref_section_gestures_controls),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onTertiaryContainer,
+        iconContainerColor = colorScheme.tertiaryContainer,
         items =
           listOf(
             SettingsDestination(
@@ -341,7 +378,8 @@ object PreferencesScreen : Screen {
       ),
       SettingsSection(
         title = stringResource(R.string.pref_section_storage),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onPrimaryContainer,
+        iconContainerColor = colorScheme.primaryContainer,
         items =
           listOfNotNull(
             SettingsDestination(
@@ -364,7 +402,8 @@ object PreferencesScreen : Screen {
       ),
       SettingsSection(
         title = stringResource(R.string.ui_network),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onSecondaryContainer,
+        iconContainerColor = colorScheme.secondaryContainer,
         items =
           listOfNotNull(
             if (app.gyrolet.mpvrx.BuildConfig.ENABLE_YTDLP || !app.gyrolet.mpvrx.BuildConfig.IS_PLAY_STORE_BUILD) {
@@ -393,7 +432,8 @@ object PreferencesScreen : Screen {
       ),
       SettingsSection(
         title = stringResource(R.string.pref_section_ai),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onTertiaryContainer,
+        iconContainerColor = colorScheme.tertiaryContainer,
         items =
           listOf(
             SettingsDestination(
@@ -406,7 +446,8 @@ object PreferencesScreen : Screen {
       ).takeUnless { app.gyrolet.mpvrx.BuildConfig.IS_PLAY_STORE_BUILD },
       SettingsSection(
         title = stringResource(R.string.pref_section_advanced),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onPrimaryContainer,
+        iconContainerColor = colorScheme.primaryContainer,
         items =
           listOf(
             SettingsDestination(
@@ -430,7 +471,8 @@ object PreferencesScreen : Screen {
       ),
       SettingsSection(
         title = stringResource(R.string.pref_section_about),
-        tint = colorScheme.onSurfaceVariant,
+        tint = colorScheme.onTertiaryContainer,
+        iconContainerColor = colorScheme.tertiaryContainer,
         items =
           listOf(
             SettingsDestination(
@@ -503,6 +545,7 @@ private fun SettingsSearchEntry(
 @Composable
 private fun SettingsSectionBlock(
   section: SettingsSection,
+  iconShape: Shape,
   selectedScreen: Screen?,
   onItemClick: (SettingsDestination) -> Unit,
 ) {
@@ -529,6 +572,7 @@ private fun SettingsSectionBlock(
 
     SettingsDestinationGroup(
       section = section,
+      iconShape = iconShape,
       selectedScreen = selectedScreen,
       onItemClick = onItemClick,
       modifier = Modifier.padding(horizontal = 16.dp),
@@ -539,6 +583,7 @@ private fun SettingsSectionBlock(
 @Composable
 private fun SettingsDestinationGroup(
   section: SettingsSection,
+  iconShape: Shape,
   selectedScreen: Screen?,
   onItemClick: (SettingsDestination) -> Unit,
   modifier: Modifier = Modifier,
@@ -555,6 +600,8 @@ private fun SettingsDestinationGroup(
             index = rowIndex,
             itemCount = section.items.size,
             tint = section.tint,
+            iconContainerColor = section.iconContainerColor,
+            iconShape = iconShape,
             isSelected = selectedScreen == item.screen,
             onClick = { onItemClick(item) },
           )
@@ -566,6 +613,8 @@ private fun SettingsDestinationGroup(
                 index = rowIndex * columns + columnIndex,
                 itemCount = section.items.size,
                 tint = section.tint,
+                iconContainerColor = section.iconContainerColor,
+                iconShape = iconShape,
                 isSelected = selectedScreen == item.screen,
                 onClick = { onItemClick(item) },
                 modifier = Modifier.weight(1f),
@@ -586,6 +635,8 @@ private fun SettingsDestinationRow(
   index: Int,
   itemCount: Int,
   tint: Color,
+  iconContainerColor: Color,
+  iconShape: Shape,
   isSelected: Boolean,
   onClick: () -> Unit,
   modifier: Modifier = Modifier,
@@ -623,8 +674,8 @@ private fun SettingsDestinationRow(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Surface(
-        shape = MaterialTheme.shapes.largeIncreased,
-        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = iconShape,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else iconContainerColor,
       ) {
         Box(
           modifier = Modifier.size(48.dp),

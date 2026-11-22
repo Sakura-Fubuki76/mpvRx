@@ -16,6 +16,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Surface
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.data.network.proxy.NetworkStreamingProxy
 import app.gyrolet.mpvrx.data.network.proxy.XtreamStreamingProxy
 import app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri
@@ -24,16 +27,22 @@ import app.gyrolet.mpvrx.network.AndroidCookieJar
 import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AudioChannels
 import app.gyrolet.mpvrx.preferences.AudioPreferences
+import app.gyrolet.mpvrx.preferences.DecoderPreferences
+import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
 import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
 import app.gyrolet.mpvrx.utils.media.HttpUtils
+import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpCookies
 import `is`.xyz.mpv.MPVLib
 import `is`.xyz.mpv.MPVNode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -49,6 +58,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicLong
@@ -63,6 +73,7 @@ data class PlaybackSessionState(
   val paused: Boolean = true,
   val currentItem: PlaybackItem? = null,
   val error: String? = null,
+  val youtubeAuthenticationRequired: Boolean = false,
   /** Why the current network media is waiting for data, or null while it plays (or is local). */
   val bufferingReason: BufferingReason? = null,
 ) {
@@ -134,13 +145,19 @@ object PlaybackSession : MPVLib.EventObserver {
   private const val SPATIAL_AUDIO_FILTER =
     "@mpvrx-spatial:lavfi=[pan=stereo|c0=0.85*c0-0.15*c1|c1=0.85*c1-0.15*c0]"
   private var spatialAudioObserverStarted = false
+  private var appliedSpatialFilter: String? = null
+  private var selectedAutoEqProfile: AutoEqProfile? = null
+  private var appliedAutoEqFilter: String? = null
+  private var failedAutoEqGeneration: Long? = null
+  private val _autoEqUnavailable = MutableStateFlow(false)
+  internal val autoEqUnavailable: StateFlow<Boolean> = _autoEqUnavailable.asStateFlow()
   private val nativeEvents = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
   private var nativeObserver: NativeEventObserver? = null
 
-  private class NativeEventObserver : MPVLib.EventObserver {
+  private class NativeEventObserver : MPVLib.EventObserver, MPVLib.LogObserver {
     @Volatile private var fileGeneration: Long? = null
 
-    private fun enqueue(eventId: Int? = null, action: () -> Unit) {
+    private fun enqueue(eventId: Int? = null, coreEvent: Boolean = false, action: () -> Unit) {
       val expectedGeneration = fileGeneration
       nativeEvents.launch {
         nativeLock.withLock {
@@ -151,6 +168,7 @@ object PlaybackSession : MPVLib.EventObserver {
               expectedGeneration = expectedGeneration,
               currentGeneration = _state.value.generation,
               completingStop = completingStop,
+              coreEvent = coreEvent,
               isShutdown = eventId == MPVLib.MpvEvent.MPV_EVENT_SHUTDOWN,
             )
           ) action()
@@ -168,7 +186,26 @@ object PlaybackSession : MPVLib.EventObserver {
 
     override fun eventProperty(property: String, value: Double) = enqueue { PlaybackSession.eventProperty(property, value) }
 
-    override fun eventProperty(property: String, value: MPVNode) = enqueue { PlaybackSession.eventProperty(property, value) }
+    override fun eventProperty(property: String, value: MPVNode) =
+      enqueue(coreEvent = property == STATISTICS_STATE_PROPERTY) { PlaybackSession.eventProperty(property, value) }
+
+    override fun logMessage(prefix: String, level: Int, text: String) {
+      if (prefix != "ytdl_hook" || level > MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR ||
+        !YtdlpCookies.isAuthenticationError(text)
+      ) return
+      val generation = fileGeneration ?: return
+      enqueue {
+        val current = _state.value
+        if (current.generation == generation &&
+          current.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.ERROR) &&
+          current.currentItem?.let { item ->
+            sequenceOf(item.originalUri, item.playableUri).any(YtdlpCookies::isYouTubeSource)
+          } == true
+        ) {
+          updateState { it.copy(youtubeAuthenticationRequired = true) }
+        }
+      }
+    }
 
     override fun event(eventId: Int, data: MPVNode) {
       if (eventId == MPVLib.MpvEvent.MPV_EVENT_START_FILE) fileGeneration = _state.value.generation
@@ -181,12 +218,34 @@ object PlaybackSession : MPVLib.EventObserver {
     val observer = nativeObserver ?: return
     nativeObserver = null
     MPVLib.removeObserver(observer)
+    MPVLib.removeLogObserver(observer)
   }
 
   private val BUFFERING_STATUS_PROPERTIES = setOf("pause", "paused-for-cache", "seeking", "demuxer-via-network", "eof-reached")
   private const val PLAYBACK_TRANSITION_AUDIO_RESTORE_DELAY_MS = 180L
   private const val AMBIENT_SHADER_PREFIX = "ambient_"
   private const val AMBIENT_SHADER_SUFFIX = ".glsl"
+  private const val STATISTICS_REQUEST_PROPERTY = "user-data/mpvrx/statistics-request"
+  private const val STATISTICS_STATE_PROPERTY = "user-data/mpvrx/statistics-state"
+  private const val STATISTICS_ANDROID_PROPERTY = "user-data/mpvrx/statistics-android"
+  private const val STATISTICS_LANGUAGE_PROPERTY = "user-data/mpvrx/statistics-language"
+  @Volatile private var statisticsLocalizedContext: Context? = null
+  private val statisticsErrorHandler = CoroutineExceptionHandler { _, error ->
+    Log.e(TAG, "Statistics update failed", error)
+  }
+  private val statisticsCommands =
+    CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1) + statisticsErrorHandler)
+  private val statisticsDiagnostics = CoroutineScope(SupervisorJob() + Dispatchers.IO + statisticsErrorHandler)
+  private var statisticsDiagnosticsJob: Job? = null
+  private var sessionBatteryGeneration = 0L
+  private var sessionBatteryBaseline: SessionBatteryReading? = null
+  private var sessionBatteryBaselineJob: Job? = null
+  internal val scrollableStatisticsPages = setOf(2, 4, 5, 7, 8, 9)
+  private val statisticsStateLock = Any()
+  private var statisticsRevision = 0L
+  private var statisticsSelectionRequested = false
+  private val _visibleStatisticsPage = MutableStateFlow(0)
+  internal val visibleStatisticsPage: StateFlow<Int> = _visibleStatisticsPage.asStateFlow()
   private val TIMELINE_PROPERTIES =
     setOf(
       "time-pos",
@@ -248,8 +307,17 @@ object PlaybackSession : MPVLib.EventObserver {
   )
 
   private val nativeLock = ReentrantLock(true)
+  private val advancedPreferences by lazy {
+    org.koin.java.KoinJavaComponent.get<AdvancedPreferences>(AdvancedPreferences::class.java)
+  }
   private val audioPreferences by lazy {
     org.koin.java.KoinJavaComponent.get<AudioPreferences>(AudioPreferences::class.java)
+  }
+  private val decoderPreferences by lazy {
+    org.koin.java.KoinJavaComponent.get<DecoderPreferences>(DecoderPreferences::class.java)
+  }
+  private val playerPreferences by lazy {
+    org.koin.java.KoinJavaComponent.get<PlayerPreferences>(PlayerPreferences::class.java)
   }
   private val observers = CopyOnWriteArraySet<MPVLib.EventObserver>()
   private val _state = MutableStateFlow(PlaybackSessionState())
@@ -257,6 +325,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private val _videoZoom = MutableStateFlow(0f)
   private val _videoPanX = MutableStateFlow(0f)
   private val _videoPanY = MutableStateFlow(0f)
+  private var appliedBlackBarCrop: Pair<BlackBarSource, String>? = null
   private val streamSequence = AtomicLong()
   private val observedProperties = mutableSetOf<Pair<String, Int>>()
   private val playbackTransitionAudioGuardHandler = Handler(Looper.getMainLooper())
@@ -305,6 +374,10 @@ object PlaybackSession : MPVLib.EventObserver {
   private var appliedSurfaceSize: String? = null
   private var activeCoreConfigurationKey: String? = null
   private var activeUserScriptsKey: String? = null
+  // FongMi build: user scripts mpvRx loaded itself, by entry name, with their mpv client ids.
+  private var managesUserScripts = false
+  private val loadedUserScripts = linkedMapOf<String, Long>()
+  private var loadedUserScriptsLocation: String? = null
   private var attachedSurfaceOwner: Any? = null
   private var attachedSurfaceWidth = 0
   private var attachedSurfaceHeight = 0
@@ -324,6 +397,8 @@ object PlaybackSession : MPVLib.EventObserver {
   private var loadedAudiobookDurationMs = 0L
   private var loadedAudiobookEnded = false
   private var speedBeforeAudiobook: Float? = null
+  private var attachedOsdOwner: Any? = null
+  private var appliedDolbyVisionOutput: String? = null
   private var defaultUserAgent: String? = null
   private var pendingPositionRestoreGeneration = 0L
   private var pendingPositionRestoreOverride: Pair<Long, PlaybackPositionRestoreOverride>? = null
@@ -339,6 +414,7 @@ object PlaybackSession : MPVLib.EventObserver {
   private var ambientVideoTransform: MutableMap<String, Double>? = null
   @Volatile var isAmbientShaderActive: Boolean = false
     private set
+  private var youTubeAmbientSubtitleMargins: Pair<Long, String>? = null
   private val ambientTransformProperties = setOf("video-zoom", "video-pan-x", "video-pan-y")
   private var streamingOptionsApplied = false
   private var appliedUserAgent: String? = null
@@ -377,6 +453,82 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   if (currentKey == AdvancedPreferences.USER_SCRIPTS_DISABLED) return false
   return nativeLock.withLock { initialized && activeUserScriptsKey != currentKey }
 }
+
+  /**
+   * FongMi build, right after init with `load-scripts=no`: loads the user scripts mpv would have
+   * auto-loaded, keeping their client ids so a selection change can unload them. mpv.conf can turn
+   * auto-loading back on; mpv has then loaded them itself and changes keep restarting the core.
+   */
+  internal fun loadManagedUserScripts(
+    entries: List<java.io.File>,
+    location: String,
+  ) {
+    withReadyCore(Unit) {
+      managesUserScripts = FongMiMpv.isBuildSupported && MPVLib.getPropertyString("load-scripts") == "no"
+      if (managesUserScripts) syncManagedUserScriptsLocked(entries, location)
+    }
+  }
+
+  /** Whether user-script changes can be applied to the running core. */
+  internal val managesUserScriptsLive: Boolean
+    get() = nativeLock.withLock { initialized && managesUserScripts }
+
+  /** Unlike [userScriptsNeedReload], also reports switching scripts off. */
+  internal fun userScriptsDiffer(currentKey: String): Boolean =
+    nativeLock.withLock { initialized && activeUserScriptsKey != currentKey }
+
+  /**
+   * Unloads scripts that left [entries] and loads the new ones, then records [userScriptsKey] as
+   * the running selection. A changed scripts [location] reloads every script, since equal names
+   * may now hold different files.
+   */
+  internal fun syncManagedUserScripts(
+    entries: List<java.io.File>,
+    location: String,
+    userScriptsKey: String,
+  ): Boolean =
+    withReadyCore(false) {
+      if (!initialized || !managesUserScripts) return@withReadyCore false
+      syncManagedUserScriptsLocked(entries, location)
+      val previous = activeUserScriptsKey
+      activeUserScriptsKey = userScriptsKey
+      // The core key embeds the selection (MPVView.initializeCoreSession); keep its other parts.
+      activeCoreConfigurationKey =
+        activeCoreConfigurationKey?.let { key ->
+          val segment = "|scripts=$previous|"
+          if (previous != null && segment in key) key.replace(segment, "|scripts=$userScriptsKey|") else null
+        }
+      true
+    }
+
+  private fun syncManagedUserScriptsLocked(
+    entries: List<java.io.File>,
+    location: String,
+  ) {
+    val wanted = entries.associateBy { it.name }
+    val reloadAll = loadedUserScriptsLocation != null && loadedUserScriptsLocation != location
+    val iterator = loadedUserScripts.entries.iterator()
+    while (iterator.hasNext()) {
+      val (name, clientId) = iterator.next()
+      if (reloadAll || name !in wanted) {
+        // Shutdown is queued; mpv drops the script's bindings and overlays as its client ends.
+        runCatching { MPVLib.command("unload-script", clientId.toString()) }
+          .onFailure { Log.w(TAG, "Could not unload script $name", it) }
+        iterator.remove()
+      }
+    }
+    wanted.forEach { (name, file) ->
+      if (name in loadedUserScripts) return@forEach
+      val clientId =
+        runCatching { MPVLib.commandNode("load-script", file.absolutePath)?.get("client_id")?.asInt() }.getOrNull()
+      if (clientId != null && clientId > 0) {
+        loadedUserScripts[name] = clientId
+      } else {
+        Log.w(TAG, "Could not load script $name")
+      }
+    }
+    loadedUserScriptsLocation = location
+  }
 
   fun reloadMpvConfig(configPath: String): Boolean =
     nativeLock.withLock {
@@ -461,7 +613,12 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
         }
 
         applicationContext = context.applicationContext
+        appliedSpatialFilter = null
+        appliedAutoEqFilter = null
+        failedAutoEqGeneration = null
+        _autoEqUnavailable.value = false
         nativeCoreReady = false
+        resetStatisticsState()
         observedProperties.clear()
         suspendedVideoTrack = null
         rendererOutputReady = false
@@ -510,10 +667,12 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           NativeEventObserver().also { observer ->
             nativeObserver = observer
             MPVLib.addObserver(observer)
+            MPVLib.addLogObserver(observer)
           }
           reobserveTrackedProperties()
           observeProperties()
           initialized = true
+          observeProperty(STATISTICS_STATE_PROPERTY, MPVLib.MpvFormat.MPV_FORMAT_NODE)
           observeProperty("audio-params", MPVLib.MpvFormat.MPV_FORMAT_NODE)
           observeProperty("audio-out-params", MPVLib.MpvFormat.MPV_FORMAT_NODE)
           startSpatialAudioObserverLocked()
@@ -526,6 +685,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           if (coreCreated) runCatching { MPVLib.destroy() }
           initialized = false
           nativeCoreReady = false
+          resetStatisticsState()
           activeCoreConfigurationKey = null
           activeUserScriptsKey = null
           suspendedVideoTrack = null
@@ -561,6 +721,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     ownerIsActive: () -> Boolean = { true },
     onRendererReady: (() -> Unit)? = null,
     onRendererFailed: (() -> Unit)? = null,
+    hostsDirectOutput: Boolean = false,
   ): Boolean =
     withCore(default = false) {
       if (!ownerIsActive() || !surface.isValid) {
@@ -570,6 +731,10 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
 
       val targetWidth = width?.takeIf { it > 0 } ?: return@withCore false
       val targetHeight = height?.takeIf { it > 0 } ?: return@withCore false
+      // Only the full player lays out MediaCodec embed's Surface and, on FongMi, gives it the
+      // subtitle overlay it waits for. Other Surfaces (mini player, external display) use gpu.
+      val videoOutput =
+        if (desiredVideoOutput == MediaCodecEmbed.VO && !hostsDirectOutput) "gpu" else desiredVideoOutput
       // Both vo and wid changes seek the whole file when a video track is selected. Finish
       // deselecting video before either changes, including direct fullscreen/mini-player handoffs.
       // AudioTrack and its clock stay running while the video decoder/output are replaced.
@@ -607,15 +772,23 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
               if (windowId == 0L || windowId == -1L) return@withLock false
 
               val activated = runCatching {
-                MPVLib.setPropertyString("vo", desiredVideoOutput)
+                MPVLib.setPropertyString("vo", videoOutput)
                 MPVLib.setPropertyString("force-window", "yes")
-                // Read back the actual output, not just the requested option. Video selection
-                // must be the final step, after JNI's window and the new output are usable.
-                if (MPVLib.getPropertyString("current-vo") != desiredVideoOutput) return@withLock false
+                // Readiness is "Surface bound and wid applied", not "a video output object
+                // exists". mpv creates the output itself once a load or a video-track
+                // selection gives it something to configure. When the previous output was
+                // destroyed (video_out == null), no idle event creates one, and re-setting
+                // the same vo / force-window values is a no-op in mpv's option layer, so a
+                // current-vo readback gate could only pass after a load — while the load
+                // path waits for this flag. That circular wait was the 5 s reopen stall.
+                // Video selection stays the final step, after JNI's window is observable
+                // and the output is requested; the selection is what makes mpv build the
+                // output. current-vo is logged only as a diagnostic for that distinction.
                 rendererOutputReady = true
                 restoreSuspendedVideoTrackLocked()
                 applyDeferredVideoSelectionLocked()
-                Log.d(TAG, "Android renderer ready: generation=${_state.value.generation}, wid=$windowId")
+                Log.d(TAG, "Android renderer ready: generation=${_state.value.generation}, wid=$windowId, " +
+                  "current-vo=${MPVLib.getPropertyString("current-vo")}")
               }.onFailure {
                 rendererOutputReady = false
                 Log.e(TAG, "Could not activate video output after Surface attachment", it)
@@ -693,32 +866,160 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   fun isSurfaceAttachedTo(owner: Any): Boolean =
     nativeLock.withLock { _state.value.surfaceAttached && attachedSurfaceOwner === owner }
 
+  /**
+   * Attaches the transparent overlay that carries subtitles and OSD (FongMi build). Dolby Vision
+   * tracks then go straight to MediaCodec on the video Surface; mpv keeps other tracks on the GPU.
+   */
+  fun bindOsdSurface(
+    surface: Surface,
+    width: Int,
+    height: Int,
+    owner: Any,
+  ): Boolean =
+    withCore(default = false) {
+      if (!DolbyVisionDirect.isBuildSupported || !surface.isValid || width <= 0 || height <= 0) {
+        return@withCore false
+      }
+      if (attachedOsdOwner != null) detachOsdSurfaceLocked()
+      runCatching {
+        DolbyVisionDirect.attachOsdSurface(surface)
+        MPVLib.setPropertyString("android-osd-surface-size", "${width}x$height")
+        attachedOsdOwner = owner
+        // Direct output makes FongMi's FFmpeg insist on a native Dolby Vision MediaCodec
+        // decoder and fail the whole video track when the device has none (for example
+        // HDR10-only phones playing profile 8.1 through MediaCodec embed end up with audio
+        // and no picture). Only request it when a DV decoder actually exists; "configured"
+        // keeps the embed output and lets the decoder fall back to the base layer.
+        setDolbyVisionOutputLocked(
+          if (DolbyVisionDirect.hasDolbyVisionDecoder) "direct" else "configured",
+        )
+      }.onFailure { error ->
+        Log.e(TAG, "Could not attach the subtitle overlay Surface", error)
+        detachOsdSurfaceLocked()
+      }.isSuccess
+    }
+
+  fun resizeOsdSurface(
+    width: Int,
+    height: Int,
+    owner: Any,
+  ): Boolean =
+    withCore(default = false) {
+      if (attachedOsdOwner !== owner || width <= 0 || height <= 0) return@withCore false
+      MPVLib.setPropertyString("android-osd-surface-size", "${width}x$height")
+      true
+    }
+
+  fun isOsdSurfaceAttachedTo(owner: Any): Boolean = nativeLock.withLock { attachedOsdOwner === owner }
+
+  /**
+   * FongMi build: the cover picture mpv found in the playing file. Audio plays without a selected
+   * video track, so every track is checked rather than current-tracks/video.
+   */
+  fun albumArtBytes(): ByteArray? =
+    withReadyCore(null) {
+      if (!FongMiMpv.isBuildSupported) return@withReadyCore null
+      val count = MPVLib.getPropertyInt("track-list/count") ?: return@withReadyCore null
+      (0 until count).firstNotNullOfOrNull { index -> FongMiMpv.getPropertyByteArray("track-list/$index/albumart-data") }
+    }
+
+  /** FongMi build: whether mpv reports the current media as a live broadcast. */
+  fun isLiveMedia(): Boolean = FongMiMpv.isBuildSupported && getPropertyBoolean(FongMiMpv.MEDIA_LIVE) == true
+
+  fun unbindOsdSurface(owner: Any): Boolean =
+    withCore(default = false) {
+      if (attachedOsdOwner !== owner) return@withCore false
+      detachOsdSurfaceLocked()
+      true
+    }
+
+  private fun detachOsdSurfaceLocked() {
+    // Move a direct Dolby Vision track back to the GPU output before its overlay disappears.
+    runCatching { setDolbyVisionOutputLocked("configured") }
+    runCatching { DolbyVisionDirect.detachOsdSurface() }
+      .onFailure { error -> Log.w(TAG, "Could not detach the subtitle overlay Surface", error) }
+    attachedOsdOwner = null
+  }
+
+  private fun setDolbyVisionOutputLocked(output: String) {
+    if (appliedDolbyVisionOutput == output) return
+    if (!MpvConfigOverridePolicy.isOwnedByMpvConf("android-dolby-vision-output")) {
+      MPVLib.setPropertyString("android-dolby-vision-output", output)
+    }
+    appliedDolbyVisionOutput = output
+    applyDolbyVisionProfile7Locked()
+  }
+
+  /** Profile 7 handling follows the output; the demuxer reads it when the next file opens. */
+  fun applyDolbyVisionProfile7() {
+    withCore(Unit) { if (DolbyVisionDirect.isBuildSupported) applyDolbyVisionProfile7Locked() }
+  }
+
+  private fun applyDolbyVisionProfile7Locked() {
+    if (MpvConfigOverridePolicy.isOwnedByMpvConf("demuxer-dovi-profile7")) return
+    val direct = appliedDolbyVisionOutput == "direct"
+    MPVLib.setPropertyString("demuxer-dovi-profile7", decoderPreferences.doviProfile7.get().mpvValueFor(direct))
+  }
+
   fun isRendererReadyFor(owner: Any): Boolean =
     nativeLock.withLock { rendererOutputReady && _state.value.surfaceAttached && attachedSurfaceOwner === owner }
 
   fun unbindSurface(owner: Any): Boolean =
     withCore(default = false) {
       if (attachedSurfaceOwner !== owner || !_state.value.surfaceAttached) return@withCore false
-      detachRendererSurfaceLocked()
+      detachRendererSurfaceLocked(overlayOwner = owner)
       true
     }
 
   /**
    * Stops video before changing vo/wid. These operations must stay under the same native lock;
    * restoring vid before the replacement output is ready would reintroduce a whole-file seek.
+   * [overlayOwner]'s subtitle overlay leaves with the video Surface.
    */
-  private fun detachRendererSurfaceLocked() {
+  private fun detachRendererSurfaceLocked(overlayOwner: Any? = null) {
     ++surfaceAttachmentToken
     suspendVideoTrackLocked()
     rendererOutputReady = false
-    MPVLib.setPropertyString("vo", "null")
-    MPVLib.setPropertyString("force-window", "no")
+    // Release a GPU output's overlay while mpv is idle: once wid=0 lets mpv retire that output,
+    // every synchronous call, including the overlay's own surfaceDestroyed, waits for the GPU
+    // teardown. The direct Dolby Vision output (mediacodec_embed) keeps the old order: mpv drops
+    // it within wid=0, while detaching its overlay first would rebuild the output right here.
+    if (overlayOwner != null && attachedOsdOwner === overlayOwner &&
+      MPVLib.getPropertyString("current-vo") != "mediacodec_embed"
+    ) detachOsdSurfaceLocked()
+    // FongMi's mpv only drops the swapchain for wid=0, and detachSurface() returns once the
+    // Surface is unused; its core thread then retires the idle output. vo=null or
+    // force-window=no would instead destroy the whole Vulkan device on this (UI) thread, which
+    // Mali drivers can stall on while the window is being hidden (ANR).
+    if (!BuildConfig.MPV_SUPPORTS_IN_PLACE_SURFACE) {
+      MPVLib.setPropertyString("vo", "null")
+      MPVLib.setPropertyString("force-window", "no")
+    }
     MPVLib.detachSurface()
     attachedSurfaceOwner = null
     attachedSurfaceWidth = 0
     attachedSurfaceHeight = 0
     updateState { it.copy(surfaceAttached = false) }
   }
+
+  /**
+   * Makes libass rebuild its font list, e.g. after a fallback font was downloaded. A new
+   * sub-fonts-dir value recreates the subtitle renderers and redecodes their cached lines, so the
+   * shown line stays. Each value names the same folder: a trailing slash is dropped or added, and
+   * an unset one (mpv's config fonts folder) becomes "~~/fonts".
+   */
+  fun reloadSubtitleFonts(): Boolean =
+    withCore(false) {
+      val directory = MPVLib.getPropertyString("sub-fonts-dir").orEmpty()
+      val replacement =
+        when {
+          directory.isEmpty() -> "~~/fonts"
+          directory.endsWith('/') && directory.length > 1 -> directory.dropLast(1)
+          else -> "$directory/"
+        }
+      MPVLib.setPropertyString("sub-fonts-dir", replacement)
+      true
+    }
 
   /** A retained VO can redraw its current frame without seeking or touching audio buffers. */
   fun redrawVideoFrame() {
@@ -739,6 +1040,35 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   /** The configured video output, even while background playback has swapped mpv to `null`. */
   val videoOutput: String
     get() = desiredVideoOutput
+
+  /**
+   * FongMi build: rebuilds only the playing video's output on another GPU renderer, keeping the
+   * file, position and audio (`android-set-gpu-output`). mpv rolls back to the previous output on
+   * failure. False when it cannot switch now, e.g. without a playing video track. Blocks while
+   * the output is rebuilt, so callers stay off the main thread.
+   */
+  fun switchGpuOutput(
+    gpuNext: Boolean,
+    vulkan: Boolean,
+    fromBackendKey: String,
+    toBackendKey: String,
+  ): Boolean =
+    withReadyCore(false) {
+      if (!FongMiMpv.isBuildSupported || !rendererOutputReady) return@withReadyCore false
+      val switched =
+        runCatching {
+          MPVLib.commandNode("android-set-gpu-output", if (gpuNext) "yes" else "no", if (vulkan) "yes" else "no")
+        }.getOrNull() != null
+      if (switched) {
+        desiredVideoOutput = if (gpuNext) "gpu-next" else "gpu"
+        // The core now matches the new renderer selection; anything unexpected rebuilds it on reopen.
+        activeCoreConfigurationKey =
+          activeCoreConfigurationKey
+            ?.takeIf { it.startsWith("$fromBackendKey|") }
+            ?.let { toBackendKey + it.removePrefix(fromBackendKey) }
+      }
+      switched
+    }
 
   fun markBackground() {
     updateState { current ->
@@ -774,6 +1104,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
 
   fun stop(clearQueue: Boolean = true) {
     withCore(Unit) {
+      clearSessionBatteryMeasurementLocked()
       AudiobookPlayback.capture()
       loadedPlaybackItem = null
       AudiobookPlayback.clearTimer()
@@ -940,6 +1271,8 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   }
 
   private fun destroyLocked(nativeShutdown: Boolean = false) {
+    clearSessionBatteryMeasurementLocked()
+    resetStatisticsState()
     val nextGeneration = _state.value.generation + 1L
     if (!nativeShutdown) AudiobookPlayback.capture()
     loadedPlaybackItem = null
@@ -976,9 +1309,15 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       runCatching { MPVLib.setPropertyBoolean("pause", true) }
       runCatching { MPVLib.setPropertyString("vo", "null") }
       runCatching { MPVLib.detachSurface() }
+      if (attachedOsdOwner != null) runCatching { DolbyVisionDirect.detachOsdSurface() }
     }
     rendererOutputReady = false
     attachedSurfaceOwner = null
+    attachedOsdOwner = null
+    appliedDolbyVisionOutput = null
+    managesUserScripts = false
+    loadedUserScripts.clear()
+    loadedUserScriptsLocation = null
     attachedSurfaceWidth = 0
     attachedSurfaceHeight = 0
     runCatching { unregisterNativeObserver() }
@@ -1291,6 +1630,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           paused = holdForPositionRestore || desiredPaused,
           currentItem = resolvedItem,
           error = null,
+          youtubeAuthenticationRequired = false,
         )
       }
       clearTimelinePropertiesLocked()
@@ -1329,6 +1669,15 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
         MPVLib.setPropertyString("force-window", "no")
       }
 
+      // The outgoing picture stays on the Surface until the next file's first frame. An audio or
+      // unidentified item may never deliver one, so it gets the normal blank reset instead.
+      if (FongMiMpv.isBuildSupported && !MpvConfigOverridePolicy.isOwnedByMpvConf("android-keep-video-frame")) {
+        val keepFrame =
+          playerPreferences.keepVideoFrameBetweenFiles.get() &&
+            resolvedItem.declaredMediaKind() == DeclaredPlaybackMediaKind.VIDEO
+        MPVLib.setPropertyString("android-keep-video-frame", if (keepFrame) "yes" else "no")
+      }
+
       // Disable the outgoing track only once this replacement request owns the native lock. Doing
       // it during asynchronous URI preparation can blank playback even when that work is cancelled.
       MPVLib.setPropertyString("vid", "no")
@@ -1356,6 +1705,8 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
           if (flattenEditions && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions")) {
             add("flatten-editions=yes")
           }
+          // mpv only recognises disc images by a URI ending in .iso.
+          if (FongMiMpv.isBuildSupported && resolvedItem.isIsoWithoutIsoUri(playableUri)) add("force-iso=yes")
         }.joinToString(",")
       PlaybackPerformanceTrace.mark("LOADFILE_SENT", "generation=$generation")
       MPVLib.command("loadfile", playableUri, "replace", "-1", loadOptions)
@@ -1466,14 +1817,176 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       true
     }
 
-  internal fun setPausedForGeneration(expectedGeneration: Long, paused: Boolean): Boolean =
-    withReadyCore(false) {
-      if (_state.value.generation != expectedGeneration || loadedGeneration != expectedGeneration) return@withReadyCore false
-      setPropertyBoolean("pause", paused)
-      true
+  /** Restored/discovered audio is deduplicated and attached under the same native lock. */
+  internal fun addExternalAudioForGeneration(
+    expectedGeneration: Long,
+    path: String,
+    title: String?,
+    matchesExisting: (String) -> Boolean,
+  ): Boolean = withReadyCore(false) {
+    val current = _state.value
+    val loadedItem = loadedPlaybackItem ?: return@withReadyCore false
+    if (expectedGeneration <= 0L || loadedGeneration != expectedGeneration ||
+      current.generation != expectedGeneration || current.currentItem?.queueEntryId != loadedItem.queueEntryId ||
+      current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+    ) return@withReadyCore false
+    for (index in 0 until (MPVLib.getPropertyInt("track-list/count") ?: 0)) {
+      if (MPVLib.getPropertyString("track-list/$index/type") != "audio") continue
+      val existing = MPVLib.getPropertyString("track-list/$index/external-filename") ?: continue
+      if (matchesExisting(existing)) return@withReadyCore true
     }
+    if (title == null) {
+      MPVLib.command("audio-add", path, "auto")
+    } else {
+      MPVLib.command("audio-add", path, "auto", title)
+    }
+    true
+  }
 
   fun commandNode(vararg command: String): MPVNode? = withCore(null) { MPVLib.commandNode(*command) }
+
+  /** 0 = Off, 1..7 = stats.lua pages, 8 = Console, 9 = mpv's keyboard-only page 0. */
+  fun setStatisticsPage(page: Int) {
+    require(page in 0..9) { "Invalid statistics page: $page" }
+    val revision =
+      synchronized(statisticsStateLock) {
+        statisticsSelectionRequested = true
+        statisticsRevision += 1
+        advancedPreferences.enabledStatisticsPage.set(page)
+        statisticsRevision
+      }
+    // Native property writes can wait for mpv, but the tap and Off feedback must not.
+    statisticsCommands.launch {
+      withReadyCore(Unit) {
+        val current = synchronized(statisticsStateLock) { revision == statisticsRevision }
+        if (current) MPVLib.setPropertyString(STATISTICS_REQUEST_PROPERTY, "$revision:$page")
+      }
+    }
+  }
+
+  /** Restore once per core; media changes and Activity re-entry must not reopen an overlay. */
+  fun restoreStatisticsPage() = synchronized(statisticsStateLock) {
+    if (!statisticsSelectionRequested) {
+      val saved = advancedPreferences.enabledStatisticsPage.get()
+      if (saved !in 0..9) Log.w(TAG, "Discarding invalid saved statistics page: $saved")
+      setStatisticsPage(if (saved in 1..7 || saved == 9) saved else 0)
+    }
+  }
+
+  private fun resetStatisticsState() = synchronized(statisticsStateLock) {
+    statisticsLocalizedContext = null
+    statisticsDiagnosticsJob?.cancel()
+    statisticsDiagnosticsJob = null
+    statisticsRevision += 1
+    statisticsSelectionRequested = false
+    _visibleStatisticsPage.value = 0
+  }
+
+  private fun beginSessionBatteryMeasurementLocked(generation: Long) {
+    if (sessionBatteryGeneration == generation) return
+    clearSessionBatteryMeasurementLocked()
+    sessionBatteryGeneration = generation
+    val context = checkNotNull(applicationContext) { "Battery measurement requires an initialized application context" }
+    val core = nativeObserver
+    sessionBatteryBaselineJob = statisticsDiagnostics.launch {
+      val reading =
+        try {
+          readSessionBatteryReading(context)
+        } catch (error: SecurityException) {
+          Log.w(TAG, "Battery measurement access was denied", error)
+          SessionBatteryReading(null, null, null)
+        }
+      nativeLock.withLock {
+        if (isActive && nativeObserver === core && _state.value.generation == generation &&
+          _state.value.phase != PlaybackPhase.STOPPING
+        ) {
+          sessionBatteryBaseline = reading
+        }
+      }
+    }
+  }
+
+  private fun clearSessionBatteryMeasurementLocked() {
+    sessionBatteryBaselineJob?.cancel()
+    sessionBatteryBaselineJob = null
+    sessionBatteryBaseline = null
+    sessionBatteryGeneration = 0L
+  }
+
+  internal fun readSessionBatteryBaseline(generation: Long): SessionBatteryReading? =
+    nativeLock.withLock {
+      sessionBatteryBaseline.takeIf {
+        generation == sessionBatteryGeneration && generation == _state.value.generation
+      }
+    }
+
+  private fun onStatisticsState(value: String) {
+    val parts = value.split(':', limit = 2)
+    val revision = parts.getOrNull(0)?.toLongOrNull()
+    val page = parts.getOrNull(1)?.toIntOrNull()
+    if (revision == null || page == null || page !in 0..9) {
+      Log.w(TAG, "Invalid statistics state from mpv: $value")
+      return
+    }
+    synchronized(statisticsStateLock) {
+      if (!statisticsSelectionRequested || revision != statisticsRevision) return
+      _visibleStatisticsPage.value = page
+      advancedPreferences.enabledStatisticsPage.set(page)
+      updateStatisticsDiagnostics(page)
+    }
+  }
+
+  fun scrollStatisticsPage(lines: Int) {
+    if (lines == 0) return
+    val revision = synchronized(statisticsStateLock) { statisticsRevision }
+    statisticsCommands.launch {
+      withReadyCore(Unit) {
+        val current = synchronized(statisticsStateLock) { revision == statisticsRevision }
+        val page = _visibleStatisticsPage.value
+        if (current && page in scrollableStatisticsPages && advancedPreferences.enabledStatisticsPage.get() == page) {
+          MPVLib.command("script-message", "mpvrx-stats-scroll", lines.coerceIn(-100, 100).toString())
+        }
+      }
+    }
+  }
+
+  internal fun updateStatisticsLanguage(
+    context: Context,
+    locales: LocaleListCompat = AppCompatDelegate.getApplicationLocales(),
+  ) = withReadyCore(Unit) {
+    val localized = StatisticsTranslations.localizedContext(context, locales)
+    if (localized.resources.configuration.locales == statisticsLocalizedContext?.resources?.configuration?.locales) {
+      return@withReadyCore
+    }
+    MPVLib.setPropertyString(STATISTICS_LANGUAGE_PROPERTY, StatisticsTranslations.payload(localized))
+    statisticsLocalizedContext = localized
+  }
+
+  private fun updateStatisticsDiagnostics(page: Int) {
+    if (page != 7) {
+      statisticsDiagnosticsJob?.cancel()
+      statisticsDiagnosticsJob = null
+    } else if (statisticsDiagnosticsJob?.isActive != true) {
+      val context = checkNotNull(applicationContext) { "Statistics require an initialized application context" }
+      val core = nativeObserver
+      statisticsDiagnosticsJob = statisticsDiagnostics.launch {
+        val diagnostics = StatisticsDiagnostics(playerPreferences, decoderPreferences)
+        while (isActive && _visibleStatisticsPage.value == 7 && advancedPreferences.enabledStatisticsPage.get() == 7) {
+          val state = _state.value
+          val sample = diagnostics.sample(state, statisticsLocalizedContext ?: context).toString()
+          withReadyCore(Unit) {
+            if (isActive && nativeObserver === core && _state.value.generation == state.generation &&
+              _visibleStatisticsPage.value == 7 &&
+              advancedPreferences.enabledStatisticsPage.get() == 7
+            ) {
+              MPVLib.setPropertyString(STATISTICS_ANDROID_PROPERTY, sample)
+            }
+          }
+          delay(if (state.paused) 2_000L else 1_000L)
+        }
+      }
+    }
+  }
 
   internal fun removeVideoFilter(label: String) {
     val removal = arrayOf("vf", "remove", "@$label")
@@ -1627,6 +2140,21 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       }
     }
   }
+
+  internal fun setPlaybackSpeedForGeneration(
+    expectedGeneration: Long,
+    speed: Float,
+    canApply: () -> Boolean,
+  ): Boolean =
+    withReadyCore(false) {
+      val current = _state.value
+      if (!canApply() || current.generation != expectedGeneration || loadedGeneration != expectedGeneration ||
+        current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+        MpvConfigOverridePolicy.isOwnedByMpvConf("speed")
+      ) return@withReadyCore false
+      MPVLib.setPropertyFloat("speed", speed)
+      true
+    }
 
   fun getPropertyBoolean(property: String): Boolean? = withReadyCore(null) { MPVLib.getPropertyBoolean(property) }
 
@@ -1827,6 +2355,8 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     fun double(property: String): Double?
 
     fun string(property: String): String?
+
+    fun node(property: String): MPVNode?
   }
 
   private object LockedPropertyReader : PropertyReader {
@@ -1835,6 +2365,8 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     override fun double(property: String): Double? = runCatching { MPVLib.getPropertyDouble(property) }.getOrNull()
 
     override fun string(property: String): String? = runCatching { MPVLib.getPropertyString(property) }.getOrNull()
+
+    override fun node(property: String): MPVNode? = MPVLib.getPropertyNode(property)
   }
 
   /** The session owns this filter so toggles and track changes also work without a player screen. */
@@ -1842,8 +2374,24 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     if (spatialAudioObserverStarted) return
     spatialAudioObserverStarted = true
     nativeEvents.launch {
-      combine(audioPreferences.spatialAudio.changes(), audioPreferences.audioChannels.changes()) { _, _ -> }
-        .collect { nativeLock.withLock { applySpatialAudioLocked() } }
+      combine(
+        audioPreferences.spatialAudio.changes(),
+        audioPreferences.audioChannels.changes(),
+        combine(audioPreferences.autoEqProfile.changes(), audioPreferences.autoEqEnabled.changes()) { saved, active ->
+          if (active) saved else ""
+        },
+        audioPreferences.equalizerEnabled.changes(),
+      ) { _, _, savedAutoEq, _ -> savedAutoEq }
+        .collect { savedAutoEq ->
+          val profile = AutoEq.restore(savedAutoEq)
+          nativeLock.withLock {
+            selectedAutoEqProfile = profile
+            failedAutoEqGeneration = null
+            appliedAutoEqFilter = null
+            _autoEqUnavailable.value = savedAutoEq.isNotBlank() && profile == null
+            applySpatialAudioLocked()
+          }
+        }
     }
   }
 
@@ -1856,22 +2404,85 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     if (current.currentItem == null || loadedGeneration != current.generation ||
       current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
     ) return false
-    if (MPVLib.getPropertyInt("audio-params/channel-count") != 2) return false
+    val channels = MPVLib.getPropertyInt("audio-params/channel-count") ?: return false
+    if (channels != 2) return false
     if (MPVLib.getPropertyString("audio-channels") == "mono") return false
     // Encoded passthrough must reach the receiver unchanged.
     return MPVLib.getPropertyString("audio-params/format")?.startsWith("spdif") != true &&
       MPVLib.getPropertyString("audio-out-params/format")?.startsWith("spdif") != true
   }
 
+  private fun desiredSpatialFilterLocked(): String? =
+    SPATIAL_AUDIO_FILTER.takeIf { shouldApplySpatialAudioLocked() }
+
   private fun applySpatialAudioLocked() {
     if (!nativeCoreReady || MpvConfigOverridePolicy.isOwnedByMpvConf("af")) return
+    var changed = false
     runCatching {
-      val enabled = shouldApplySpatialAudioLocked()
+      val desired = desiredSpatialFilterLocked()
       val filters = MPVLib.getPropertyNode("af")?.toObject<List<JsonObject>>(Json).orEmpty()
       val present = filters.any { (it["label"] as? JsonPrimitive)?.content == SPATIAL_AUDIO_LABEL }
-      if (enabled && !present) MPVLib.command("af", "add", SPATIAL_AUDIO_FILTER)
-      if (!enabled && present) MPVLib.command("af", "remove", "@$SPATIAL_AUDIO_LABEL")
-    }.onFailure { Log.w(TAG, "Unable to update spatial audio", it) }
+      if (desired == null && present) {
+        MPVLib.command("af", "remove", "@$SPATIAL_AUDIO_LABEL")
+      }
+      if (desired != null && (!present || appliedSpatialFilter != desired)) {
+        MPVLib.command("af", "add", desired)
+        changed = true
+        val applied = MPVLib.getPropertyNode("af")?.toObject<List<JsonObject>>(Json).orEmpty()
+        check(applied.any { (it["label"] as? JsonPrimitive)?.content == SPATIAL_AUDIO_LABEL })
+      }
+      appliedSpatialFilter = desired
+    }.onFailure { error ->
+      appliedSpatialFilter = null
+      Log.w(TAG, "Unable to update spatial audio", error)
+    }
+    applyAutoEqLocked(moveToEnd = changed)
+  }
+
+  private fun desiredAutoEqFilterLocked(): String? {
+    if (!nativeCoreReady || !audioPreferences.equalizerEnabled.get() || !audioPreferences.autoEqEnabled.get() ||
+      MpvConfigOverridePolicy.isOwnedByMpvConf("af") || failedAutoEqGeneration == _state.value.generation
+    ) return null
+    val state = _state.value
+    val item = state.currentItem ?: return null
+    if (loadedGeneration != state.generation || state.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+      !item.isDefinitelyAudioOnly() || item.audiobook != null ||
+      MPVLib.getPropertyString("audio-params/format")?.startsWith("spdif") == true ||
+      MPVLib.getPropertyString("audio-out-params/format")?.startsWith("spdif") == true
+    ) return null
+    return selectedAutoEqProfile?.mpvFilter()
+  }
+
+  private fun applyAutoEqLocked(moveToEnd: Boolean = false) {
+    if (!nativeCoreReady || MpvConfigOverridePolicy.isOwnedByMpvConf("af")) return
+    runCatching {
+      val desired = desiredAutoEqFilterLocked()
+      val filters = MPVLib.getPropertyNode("af")?.toObject<List<JsonObject>>(Json).orEmpty()
+      var present = filters.any { (it["label"] as? JsonPrimitive)?.content == AutoEq.FILTER_LABEL }
+      if (present && (desired == null || moveToEnd)) {
+        MPVLib.command("af", "remove", "@${AutoEq.FILTER_LABEL}")
+        present = false
+      }
+      if (desired != null && (!present || appliedAutoEqFilter != desired)) {
+        MPVLib.command("af", "add", desired)
+        val applied = MPVLib.getPropertyNode("af")?.toObject<List<JsonObject>>(Json).orEmpty()
+        check(applied.any { (it["label"] as? JsonPrimitive)?.content == AutoEq.FILTER_LABEL })
+      }
+      appliedAutoEqFilter = desired
+      _autoEqUnavailable.value = failedAutoEqGeneration == _state.value.generation ||
+        (audioPreferences.autoEqEnabled.get() && audioPreferences.autoEqProfile.get().isNotBlank() && selectedAutoEqProfile == null)
+    }.onFailure { error ->
+      failedAutoEqGeneration = _state.value.generation
+      _autoEqUnavailable.value = true
+      appliedAutoEqFilter = null
+      runCatching {
+        val filters = MPVLib.getPropertyNode("af")?.toObject<List<JsonObject>>(Json).orEmpty()
+        if (filters.any { (it["label"] as? JsonPrimitive)?.content == AutoEq.FILTER_LABEL }) {
+          MPVLib.command("af", "remove", "@${AutoEq.FILTER_LABEL}")
+        }
+      }
+      Log.w(TAG, "Unable to update AutoEq", error)
+    }
   }
 
   fun setPropertyString(
@@ -1910,13 +2521,28 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       }
       // A preference update can race with a shader install. Enforce the composition boundary
       // under the same native lock, rather than trusting a blend value calculated before it.
-      val effectiveValue = when {
+      val spatialFilter = if (property == "af") desiredSpatialFilterLocked() else null
+      val spatialLabel = spatialFilter?.substringBefore(':')
+      val valueWithSpatial = when {
         property == "blend-subtitles" && isAmbientShaderActive -> "no"
-        property == "af" && shouldApplySpatialAudioLocked() && !value.contains("@$SPATIAL_AUDIO_LABEL:") ->
-          listOf(value, SPATIAL_AUDIO_FILTER).filter { it.isNotBlank() }.joinToString(",")
+        property == "sub-use-margins" && youTubeAmbientSubtitleMargins != null -> {
+          youTubeAmbientSubtitleMargins = youTubeAmbientSubtitleMargins?.first?.let { it to value }
+          "no"
+        }
+        spatialFilter != null && !value.contains("$spatialLabel:") ->
+          listOf(value, spatialFilter).filter { it.isNotBlank() }.joinToString(",")
         else -> value
       }
+      val autoEqFilter = if (property == "af") desiredAutoEqFilterLocked() else null
+      val effectiveValue = if (autoEqFilter != null && !valueWithSpatial.contains("@${AutoEq.FILTER_LABEL}:")) {
+        listOf(valueWithSpatial, autoEqFilter).filter { it.isNotBlank() }.joinToString(",")
+      } else valueWithSpatial
       MPVLib.setPropertyString(property, effectiveValue)
+      if (property == "af") {
+        appliedSpatialFilter = spatialFilter
+        appliedAutoEqFilter = autoEqFilter
+        applySpatialAudioLocked()
+      }
       when (property) {
         "user-agent" -> appliedUserAgent = value
         "http-header-fields" -> appliedHttpHeaderFields = value
@@ -1925,6 +2551,64 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   }
 
   fun grabThumbnail(dimension: Int): Bitmap? = withCore(null) { MPVLib.grabThumbnail(dimension) }
+
+  private fun matchesBlackBarSourceLocked(source: BlackBarSource): Boolean {
+    val current = _state.value
+    return loadedGeneration == source.generation && current.generation == source.generation &&
+      MPVLib.getPropertyString("vid")?.toIntOrNull() == source.trackId &&
+      MPVLib.getPropertyInt("video-out-params/w") == source.width &&
+      MPVLib.getPropertyInt("video-out-params/h") == source.height &&
+      (MPVLib.getPropertyInt("video-out-params/rotate") ?: 0) == source.rotation
+  }
+
+  internal fun captureBlackBarFrame(
+    source: BlackBarSource,
+    destination: File,
+    previousPosition: Double?,
+  ): Double? = withCore(null) {
+    if (!matchesBlackBarSourceLocked(source) || !_state.value.surfaceAttached || _state.value.paused ||
+      activeAmbientShaderPaths.isNotEmpty() ||
+      MPVLib.getPropertyBoolean("seeking") == true || MPVLib.getPropertyBoolean("paused-for-cache") == true ||
+      !MPVLib.getPropertyString("video-crop").isNullOrEmpty()
+    ) return@withCore null
+
+    // A container-cropped screenshot cannot be mapped onto the complete source frame.
+    if ((MPVLib.getPropertyInt("video-out-params/crop-w") ?: source.width) in 1 until source.width ||
+      (MPVLib.getPropertyInt("video-out-params/crop-h") ?: source.height) in 1 until source.height
+    ) return@withCore null
+    val position = MPVLib.getPropertyDouble("time-pos") ?: return@withCore null
+    if (previousPosition != null && kotlin.math.abs(position - previousPosition) < 0.05) return@withCore null
+
+    // grabThumbnail center-crops to a square. Request the whole video frame, without OSD or subtitles.
+    MPVLib.commandNode("screenshot-to-file", destination.absolutePath, "video") ?: return@withCore null
+    position
+  }
+
+  internal fun applyBlackBarCrop(source: BlackBarSource, bars: VideoBlackBars) = withCore(Unit) {
+    if (bars.isEmpty || !matchesBlackBarSourceLocked(source) ||
+      MpvConfigOverridePolicy.isOwnedByMpvConf("video-crop") ||
+      !MPVLib.getPropertyString("video-crop").isNullOrEmpty()
+    ) return@withCore
+    val geometry = bars.cropGeometry(source)
+    MPVLib.setPropertyString("file-local-options/video-crop", geometry)
+    if (MPVLib.getPropertyString("video-crop") == geometry) {
+      appliedBlackBarCrop = source to geometry
+    } else {
+      Log.w(TAG, "mpv did not apply black bar crop $geometry")
+    }
+  }
+
+  internal fun clearBlackBarCrop(unlessSource: BlackBarSource? = null) = withCore(Unit) {
+    val (source, geometry) = appliedBlackBarCrop ?: return@withCore
+    if (source == unlessSource) return@withCore
+    appliedBlackBarCrop = null
+    // mpv resets file-local options when the file ends. Never clear another script's crop.
+    if (loadedGeneration == source.generation && _state.value.generation == source.generation &&
+      MPVLib.getPropertyString("video-crop") == geometry
+    ) {
+      MPVLib.setPropertyString("file-local-options/video-crop", "")
+    }
+  }
 
   fun grabThumbnailFast(
     path: String,
@@ -2046,6 +2730,14 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     property: String,
     value: MPVNode,
   ) {
+    if (property == STATISTICS_STATE_PROPERTY) {
+      val state = value.asString()
+      if (state != null) {
+        onStatisticsState(state)
+      } else if (value !== MPVNode.None) {
+        Log.w(TAG, "Invalid statistics state node from mpv")
+      }
+    }
     propNode.emit(property, value)
     if (property == "audio-params" || property == "audio-out-params") applySpatialAudioLocked()
     observerSnapshot().forEach { observer -> runCatching { observer.eventProperty(property, value) } }
@@ -2069,6 +2761,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
             // attributed to the latest requested generation.
             if (_state.value.phase != PlaybackPhase.STOPPING) {
               updateState { it.copy(phase = PlaybackPhase.LOADING, activeGeneration = it.generation) }
+              beginSessionBatteryMeasurementLocked(_state.value.generation)
               applySpatialAudioLocked()
             }
             if (supersededStopGeneration != 0L && _state.value.generation > supersededStopGeneration) {
@@ -2101,8 +2794,9 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
             // new file audio-only until a renderer exists; never reuse the outgoing file's id.
             if (!rendererOutputReady || !current.surfaceAttached) suspendVideoTrackLocked()
             // FILE_LOADED and native renderer activation can arrive in either order. JNI surface
-            // attachment alone is not readiness: selecting video before wid/vo are active can
-            // make MediaCodec drop the track. Also cover a Surface lost during an in-flight load.
+            // attachment alone is not readiness: selecting video before wid is applied and the
+            // output is requested can make MediaCodec drop the track. Also cover a Surface lost
+            // during an in-flight load.
             if (current.currentItem?.videoSelection() == PlaybackVideoSelection.IMMEDIATE &&
               suspendedVideoTrack == null
             ) {
@@ -2124,6 +2818,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
                 activeGeneration = it.generation,
                 paused = appliedPaused,
                 error = null,
+                youtubeAuthenticationRequired = false,
               )
             }
             propBoolean.emit("pause", appliedPaused)
@@ -2375,6 +3070,21 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     }
   }
 
+  internal fun keepYouTubeAmbientSubtitlesInsidePicture(owner: Long, active: Boolean) = withCore(Unit) {
+    val saved = youTubeAmbientSubtitleMargins
+    if (active) {
+      if (MpvConfigOverridePolicy.isOwnedByMpvConf("sub-use-margins")) return@withCore
+      val original = saved?.second ?: MPVLib.getPropertyString("sub-use-margins") ?: return@withCore
+      youTubeAmbientSubtitleMargins = owner to original
+      if (saved == null && original != "no") MPVLib.setPropertyString("sub-use-margins", "no")
+    } else if (saved != null && saved.first == owner) {
+      youTubeAmbientSubtitleMargins = null
+      if (MPVLib.getPropertyString("sub-use-margins") == "no" && saved.second != "no") {
+        MPVLib.setPropertyString("sub-use-margins", saved.second)
+      }
+    }
+  }
+
   /** Read one coherent geometry snapshot; never guess a 16:9 frame during a file transition. */
   internal fun ambientGeometry(): AmbientGeometry? = withReadyCore(null) {
     if ((MPVLib.getPropertyInt("video-params/w") ?: 0) <= 0) return@withReadyCore null
@@ -2520,6 +3230,7 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   }
 
   private fun resetAmbientShaderTrackingLocked() {
+    youTubeAmbientSubtitleMargins = null
     ambientVideoTransform = null
     isAmbientShaderActive = false
     activeAmbientShaderPaths.clear()
@@ -2695,23 +3406,10 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     return ResolvedPlayable(Uri.parse(item.playableUri).openContentFd(context) ?: item.playableUri)
   }
 
-  private fun releaseActiveNetworkStream() {
-    val registration = nativeLock.withLock { activeNetworkStream.also { activeNetworkStream = null } }
-    registration?.let(::releaseNetworkStream)
-  }
-
   private fun releaseActiveNetworkStreamLocked() {
     val registration = activeNetworkStream
     activeNetworkStream = null
     registration?.let(::releaseNetworkStream)
-  }
-
-  private fun releaseAuxiliaryNetworkStreams() {
-    val registrations =
-      nativeLock.withLock {
-        auxiliaryNetworkStreams.values.toList().also { auxiliaryNetworkStreams.clear() }
-      }
-    registrations.forEach(::releaseNetworkStream)
   }
 
   private fun releaseAuxiliaryNetworkStreamsLocked() {

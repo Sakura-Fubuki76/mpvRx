@@ -15,7 +15,6 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import app.gyrolet.mpvrx.network.awaitResponse
 import app.gyrolet.mpvrx.ui.player.resolveLocalPath
-import app.gyrolet.mpvrx.utils.telemetry.withMeasureTelemetry
 import java.io.BufferedReader
 import java.io.File
 import java.io.FilterInputStream
@@ -64,9 +63,9 @@ sealed class M3UParseResult {
 
 /** Resource limits shared by every M3U entry point. */
 data class M3ULimits(
-  val maxBytes: Long = 32L * 1024 * 1024,
-  val maxLines: Int = 300_000,
-  val maxEntries: Int = 100_000,
+  val maxBytes: Long = 256L * 1024 * 1024,
+  val maxLines: Int = 2_000_000,
+  val maxEntries: Int = 500_000,
 ) {
   init {
     require(maxBytes > 0) { "maxBytes must be positive" }
@@ -93,7 +92,6 @@ object M3UParser {
   private val defaultHttpClient by lazy {
     OkHttpClient
       .Builder()
-      .withMeasureTelemetry()
       .connectTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
       .readTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS)
       .build()

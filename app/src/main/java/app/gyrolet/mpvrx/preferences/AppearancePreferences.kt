@@ -66,7 +66,7 @@ class AppearancePreferences(
   private val television = DeviceFormFactor.isTelevision(context)
 
   val darkMode = preferenceStore.getEnum("dark_mode", DarkMode.System)
-  val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Dynamic)
+  val appTheme = preferenceStore.getEnum("app_theme", AppTheme.Lavender)
   val customTheme = preferenceStore.getString("custom_theme", "")
   val selectedCustomThemeName = preferenceStore.getString("selected_custom_theme_name", "")
   val customWallpaperUri = preferenceStore.getString(CUSTOM_WALLPAPER_URI_KEY, "")
@@ -126,7 +126,7 @@ class AppearancePreferences(
   // Reuse the existing key so an explicitly saved Center choice is restored.
   // Both legacy seekbar-relative values use the combined landscape button row.
   val landscapePlaybackControlsPlacement =
-    preferenceStore.getEnum("landscape_playback_controls_placement", PlaybackControlsPlacement.BelowSeekbar)
+    preferenceStore.getEnum("landscape_playback_controls_placement", PlaybackControlsPlacement.Center)
   // Absolute background level: 0.55 keeps each button's designed tint, 1 is opaque, 0 is clear.
   // A new key, because "player_buttons_opacity" stored a multiplier whose 100% kept buttons translucent.
   val playerButtonsBackgroundOpacity = preferenceStore.getFloat("player_buttons_background_opacity", 0.55f)
@@ -138,6 +138,8 @@ class AppearancePreferences(
   val showPlaylistsTab = preferenceStore.getBoolean("show_playlists_tab", true)
   val showCloudTab = preferenceStore.getBoolean("show_cloud_tab", true)
   val showSnapshotTab = preferenceStore.getBoolean("show_snapshot_tab", false)
+  val profileSectionOrder = preferenceStore.profileLayoutOrder("profile_section_order", ProfileSection.entries.map { it.name })
+  val profileHiddenSections = preferenceStore.getStringSet("profile_hidden_sections")
   val showNetworkTab = preferenceStore.getBoolean("show_network_tab", false)
   val showJellyfinTab = preferenceStore.getBoolean("show_jellyfin_tab", false)
   /**

@@ -19,14 +19,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.ui.icons.AppIcon
-import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.liquidglass.AdaptiveControlsButton
 import app.gyrolet.mpvrx.ui.liquidglass.PlayerLiquidTokens
 import app.gyrolet.mpvrx.ui.player.controls.PlayerButtonAlpha
 import app.gyrolet.mpvrx.ui.theme.LocalDarkAppColorScheme
+import app.gyrolet.mpvrx.ui.theme.controlColor
 import app.gyrolet.mpvrx.ui.theme.spacing
 
 @Suppress("CompositionLocalAllowlist")
@@ -56,7 +55,12 @@ internal fun playerButtonContainerColor(): Color =
   playerButtonColorScheme().surfaceContainerHigh.copy(alpha = PlayerButtonAlpha.CONTAINER).asPlayerButtonBackground()
 
 @Composable
-internal fun playerButtonContentColor(): Color = playerButtonColorScheme().onSurface
+internal fun playerButtonContentColor(): Color =
+  if (!LocalBorderlessPlayerControls.current && LocalPlayerButtonsOpacity.current <= 0f) {
+    controlColor
+  } else {
+    playerButtonColorScheme().onSurface
+  }
 
 @Composable
 internal fun playerButtonBorderColor(): Color =
@@ -72,6 +76,7 @@ fun ControlsButton(
   color: Color? = null,
   enabled: Boolean = true,
   onLongClickLabel: String? = null,
+  active: Boolean? = null,
 ) {
   AdaptiveControlsButton(
     onClick = onClick,
@@ -85,6 +90,7 @@ fun ControlsButton(
     borderless = LocalBorderlessPlayerControls.current,
     useGlass = true,
     buttonSize = PlayerLiquidTokens.ButtonSize,
+    active = active,
   )
 }
 
@@ -102,14 +108,5 @@ fun ControlsGroup(
       androidx.compose.foundation.layout.Arrangement
         .spacedBy(if (LocalBorderlessPlayerControls.current) 0.dp else spacing.extraSmall),
     content = content,
-  )
-}
-
-@Preview
-@Composable
-private fun PreviewControlsButton() {
-  ControlsButton(
-    Icons.RoundedFilled.CatchingPokemon,
-    onClick = {},
   )
 }

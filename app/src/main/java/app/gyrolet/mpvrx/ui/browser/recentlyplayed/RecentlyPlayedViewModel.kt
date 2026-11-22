@@ -62,7 +62,7 @@ class RecentlyPlayedViewModel(
     viewModelScope.launch {
       kotlinx.coroutines.flow
         .combine(
-          recentlyPlayedRepository.observeRecentlyPlayed(limit = 50),
+          recentlyPlayedRepository.observeRecentlyPlayed(limit = DEFAULT_HISTORY_LIMIT),
           refreshRevision,
         ) { entities, revision ->
           entities to revision
@@ -489,23 +489,11 @@ class RecentlyPlayedViewModel(
     }
   }
 
-  private fun formatFileSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val units = arrayOf("B", "KB", "MB", "GB", "TB")
-    val digitGroups = (kotlin.math.log10(bytes.toDouble()) / kotlin.math.log10(1024.0)).toInt()
-    return String.format(
-      java.util.Locale.getDefault(),
-      "%.1f %s",
-      bytes / 1024.0.pow(digitGroups.toDouble()),
-      units[digitGroups],
-    )
-  }
+  private fun formatFileSize(bytes: Long): String =
+    app.gyrolet.mpvrx.utils.storage.VideoScanUtils.formatFileSize(bytes)
 
   private fun isNetworkUri(path: String): Boolean =
-    path.startsWith("http://", ignoreCase = true) ||
-      path.startsWith("https://", ignoreCase = true) ||
-      path.startsWith("rtmp://", ignoreCase = true) ||
-      path.startsWith("rtsp://", ignoreCase = true)
+    app.gyrolet.mpvrx.utils.storage.FileTypeUtils.isNetworkStreamUri(path)
 
   /**
    * Checks if a URL is likely a streaming playlist (M3U, HLS, DASH, etc.)
@@ -568,7 +556,11 @@ class RecentlyPlayedViewModel(
     fun isGenericStreamName(name: String?): Boolean =
       name.isNullOrBlank() || name.trim().lowercase() in GENERIC_STREAM_NAMES
 
-    fun factory(application: Application): ViewModelProvider.Factory =
+    const val DEFAULT_HISTORY_LIMIT = 50
+
+    fun factory(
+      application: Application,
+    ): ViewModelProvider.Factory =
       viewModelFactory {
         initializer {
           RecentlyPlayedViewModel(application)

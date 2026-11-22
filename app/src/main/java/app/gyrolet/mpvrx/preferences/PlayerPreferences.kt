@@ -31,7 +31,7 @@ enum class IntroSegmentProvider(
   THE_INTRO_DB("TIDB", "theintrodb"),
   ANI_SKIP("AniSkip (Anime)", "aniskip"),
   ANIME_SKIP("Anime Skip", "animeskip"),
-  HYBRID("Hybrid (Fastest)", "hybrid"),
+  HYBRID("Hybrid (All Providers)", "hybrid"),
   SKIP_DB("SkipDB", "skipdb"),
 }
 
@@ -74,7 +74,6 @@ class PlayerPreferences(
   val customAspectRatios = preferenceStore.getStringSet("custom_aspect_ratios", emptySet())
   val lastVideoAspect = preferenceStore.getEnum("last_video_aspect", VideoAspect.Fit)
   val lastCustomAspectRatio = preferenceStore.getFloat("last_custom_aspect_ratio", -1f)
-  val autoCropBlackBars = preferenceStore.getBoolean("auto_crop_black_bars", false)
 
   val defaultSpeed = preferenceStore.getFloat("default_speed", 1f)
   val speedPresets =
@@ -111,8 +110,11 @@ class PlayerPreferences(
   val playerTimeToDisappear = preferenceStore.getInt("player_time_to_disappear", 4000)
   val clockFormat = preferenceStore.getEnum("player_clock_format", PlayerClockFormat.SYSTEM)
 
-  /** Subtitles and the statistics OSD (pages 1-6) scale together with video zoom. */
+  /** Subtitles and the statistics OSD (pages 1-7) scale together with video zoom. */
   val overlaysFollowVideoZoom = preferenceStore.getBoolean("overlays_follow_video_zoom", false)
+
+  /** FongMi build: keep the outgoing picture until the next video's first frame. */
+  val keepVideoFrameBetweenFiles = preferenceStore.getBoolean("keep_video_frame_between_files", true)
   val defaultVideoZoom = preferenceStore.getFloat("default_video_zoom", 0f)
   val panAndZoomEnabled = preferenceStore.getBoolean("pan_and_zoom_enabled", false)
 
@@ -333,6 +335,8 @@ class PlayerPreferences(
   val ppCrtRollSpeed = preferenceStore.getFloat("pp_crt_roll_speed", 1.0f)
   val ppCrtBleed = preferenceStore.getFloat("pp_crt_bleed", 1.0f)
 
+
+  val showAppToasts = preferenceStore.getBoolean("show_app_toasts", true)
 
   /** Show the vertical volume pill while swiping for volume. */
   val showVolumeGestureOverlay = preferenceStore.getBoolean("show_volume_gesture_overlay", true)

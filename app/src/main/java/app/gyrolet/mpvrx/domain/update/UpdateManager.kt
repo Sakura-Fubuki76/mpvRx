@@ -14,7 +14,6 @@ import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.network.awaitResponse
-import app.gyrolet.mpvrx.utils.telemetry.withMeasureTelemetry
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -38,7 +37,7 @@ private object RetryWithoutRangeSignal : IOException("Stored partial is not resu
 class UpdateManager(
   private val context: Context,
 ) {
-  private val client = OkHttpClient.Builder().withMeasureTelemetry().build()
+  private val client = OkHttpClient.Builder().build()
   private val json = Json {
     ignoreUnknownKeys = true
     coerceInputValues = true
@@ -58,10 +57,8 @@ class UpdateManager(
         when (channel) {
           AppUpdateChannel.STABLE -> STABLE_RELEASE_URL
           AppUpdateChannel.PREVIEW -> PREVIEW_RELEASE_URL
-          AppUpdateChannel.EXPERIMENTAL -> EXPERIMENTAL_RELEASE_URL
         },
-        allowMissing = channel == AppUpdateChannel.EXPERIMENTAL,
-      ) ?: return null
+      )
     if (selectUpdateAsset(release) == null) {
       return null
     }
@@ -84,7 +81,7 @@ class UpdateManager(
           val currentVersion = BuildConfig.VERSION_NAME.substringBefore('-')
           isNewerVersion(release.tagName.removePrefix("v"), currentVersion)
         }
-        AppUpdateChannel.PREVIEW, AppUpdateChannel.EXPERIMENTAL -> isNewerCiBuild(release, channel)
+        AppUpdateChannel.PREVIEW -> isNewerPreviewBuild(release)
       }
 
     return if (isNewer) {
@@ -95,20 +92,15 @@ class UpdateManager(
   }
 
   /**
-   * Preview and experimental feeds both publish the newest CI build of master. Commit counts order
+   * Preview feeds publish the newest CI build of master. Commit counts order
    * builds, but an amended or force-pushed master publishes a different commit at the same count,
    * which must still reach users who already run that count.
    */
-  private fun isNewerCiBuild(
-    release: Release,
-    channel: AppUpdateChannel,
-  ): Boolean {
-    val isPreview = channel == AppUpdateChannel.PREVIEW
-    val remoteBuild = (if (isPreview) release.previewBuildNumber else release.experimentalBuildNumber) ?: return false
+  private fun isNewerPreviewBuild(release: Release): Boolean {
+    val remoteBuild = release.previewBuildNumber ?: return false
     if (remoteBuild != BuildConfig.GIT_COUNT) return remoteBuild > BuildConfig.GIT_COUNT
 
-    val alreadyOnChannel = if (isPreview) BuildConfig.IS_PREVIEW_BUILD else BuildConfig.IS_EXPERIMENTAL_BUILD
-    return !alreadyOnChannel || isDifferentCommit(release.commitSha)
+    return !BuildConfig.IS_PREVIEW_BUILD || isDifferentCommit(release.commitSha)
   }
 
   private fun isDifferentCommit(remoteSha: String?): Boolean {
@@ -120,11 +112,9 @@ class UpdateManager(
 
   internal fun isInstalledRelease(release: Release): Boolean =
     when {
-      release.isExperimental -> BuildConfig.IS_EXPERIMENTAL_BUILD &&
-        release.experimentalBuildNumber == BuildConfig.GIT_COUNT && !isDifferentCommit(release.commitSha)
       release.isPreview -> BuildConfig.IS_PREVIEW_BUILD &&
         release.previewBuildNumber == BuildConfig.GIT_COUNT && !isDifferentCommit(release.commitSha)
-      else -> !BuildConfig.IS_EXPERIMENTAL_BUILD && !BuildConfig.IS_PREVIEW_BUILD &&
+      else -> !BuildConfig.IS_PREVIEW_BUILD &&
         release.tagName.removePrefix("v") == BuildConfig.VERSION_NAME.substringBefore('-')
     }
 
@@ -144,12 +134,10 @@ class UpdateManager(
       .apply()
   }
 
-  private suspend fun getLatestRelease(url: String, allowMissing: Boolean = false): Release? =
+  private suspend fun getLatestRelease(url: String): Release =
     withContext(Dispatchers.IO) {
       val request = Request.Builder().url(url).header("Cache-Control", "no-cache").build()
       client.newCall(request).awaitResponse().use { response ->
-        // The channel becomes available after the first successful signed CI publication.
-        if (allowMissing && response.code == 404) return@withContext null
         if (!response.isSuccessful) throw IOException("Unexpected code $response")
         val responseBody = response.body.string()
         json.decodeFromString<Release>(responseBody)
@@ -443,10 +431,9 @@ class UpdateManager(
   }
 
   private companion object {
-      const val STABLE_RELEASE_URL = "https://api.github.com/repos/Sakura-Fubuki76/mpvRx/releases/latest"
-      const val PREVIEW_RELEASE_URL = "https://sakura-fubuki76.github.io/mpvRx/latest.json"
-      const val EXPERIMENTAL_RELEASE_URL = "https://sakura-fubuki76.github.io/mpvRx/experimental.json"
-      const val LEGACY_IGNORED_VERSION_KEY = "ignored_version"
+    const val STABLE_RELEASE_URL = "https://api.github.com/repos/Sakura-Fubuki76/mpvRx/releases/latest"
+    const val PREVIEW_RELEASE_URL = "https://sakura-fubuki76.github.io/mpvRx/latest.json"
+    const val LEGACY_IGNORED_VERSION_KEY = "ignored_version"
     const val PART_SUFFIX = ".part"
     const val LOCAL_HASH_LENGTH = 12
     const val HTTP_PARTIAL_CONTENT = 206

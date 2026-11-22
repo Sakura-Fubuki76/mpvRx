@@ -3,7 +3,6 @@ package app.gyrolet.mpvrx.ui.preferences.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -14,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
@@ -59,7 +58,6 @@ import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
 import app.gyrolet.mpvrx.ui.player.controls.LandscapeActionGroup
 import app.gyrolet.mpvrx.ui.player.controls.LandscapeActionSize
 import app.gyrolet.mpvrx.ui.player.controls.LandscapeControlsRow
-import app.gyrolet.mpvrx.ui.player.controls.resolveLandscapeHeaderWidth
 import app.gyrolet.mpvrx.ui.player.controls.BottomSlot
 import app.gyrolet.mpvrx.ui.player.controls.PlaybackControlsGeometry
 import app.gyrolet.mpvrx.ui.player.controls.PortraitSectionGap
@@ -105,8 +103,17 @@ internal fun PlayerLayoutPreview(
   val configuration = LocalConfiguration.current
   val shortSide = minOf(configuration.screenWidthDp, configuration.screenHeightDp).coerceAtLeast(1).dp
   val longSide = maxOf(configuration.screenWidthDp, configuration.screenHeightDp).coerceAtLeast(1).dp
-  val sceneWidth = if (region.isPortrait) shortSide else longSide
-  val sceneHeight = if (region.isPortrait) longSide else shortSide
+  val isTablet = configuration.smallestScreenWidthDp >= 600
+  val sceneWidth = if (region.isPortrait) {
+    if (isTablet) 360.dp else shortSide
+  } else {
+    if (isTablet) 720.dp else longSide
+  }
+  val sceneHeight = if (region.isPortrait) {
+    if (isTablet) (sceneWidth * (16f / 9f)) else longSide
+  } else {
+    if (isTablet) (sceneWidth / (16f / 9f)) else shortSide
+  }
   Surface(modifier, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerLow) {
     Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
       Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -222,9 +229,13 @@ private fun PreviewScene(
         if (!region.isPortrait) {
           LandscapeActionGroup(
             buttons = topRightButtons,
-            modifier = Modifier.width(resolveLandscapeHeaderWidth(topRightButtons, sceneWidth))
-              .then(highlightRegion(region == ControlRegion.TOP_RIGHT)),
+            modifier = Modifier.widthIn(
+              max = (sceneWidth - spacing.large * 2 - LandscapeActionSize - spacing.extraSmall)
+                .coerceAtLeast(LandscapeActionSize),
+            ).then(highlightRegion(region == ControlRegion.TOP_RIGHT))
+              .fadingHorizontalScroll(rememberScrollState(), reverseScrolling = true, shadowRoom = 0.dp),
             endAligned = true,
+            fillWidth = false,
             renderButton = previewLandscapeButton,
           )
         }
@@ -331,12 +342,12 @@ private fun PreviewButtons(
       ),
   ) {
     Row(
-      Modifier.fillMaxWidth().horizontalScroll(rememberScrollState(), reverseScrolling = endAligned),
-      verticalAlignment = Alignment.CenterVertically,
+      Modifier.fillMaxWidth().fadingHorizontalScroll(rememberScrollState(), shadowRoom = 0.dp),
       horizontalArrangement = Arrangement.spacedBy(
         buttonGap,
         if (endAligned) Alignment.End else if (centered) Alignment.CenterHorizontally else Alignment.Start,
       ),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
       buttons.forEach { button ->
         AdaptiveControlsContainer(
@@ -367,7 +378,7 @@ private fun PreviewPlayback(
   modifier: Modifier = Modifier,
 ) {
   Row(
-    modifier.fadingHorizontalScroll(rememberScrollState(), shadowRoom = 0.dp),
+    modifier,
     verticalAlignment = Alignment.CenterVertically,
     horizontalArrangement = Arrangement.spacedBy(geometry.buttonGap, Alignment.CenterHorizontally),
   ) {

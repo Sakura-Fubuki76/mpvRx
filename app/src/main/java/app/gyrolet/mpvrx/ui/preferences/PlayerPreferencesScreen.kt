@@ -49,7 +49,6 @@ import app.gyrolet.mpvrx.preferences.BackgroundPlaybackBehavior
 import app.gyrolet.mpvrx.preferences.IntroSegmentProvider
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.player.NotificationStyle
 import app.gyrolet.mpvrx.ui.player.PlaybackPhase
 import app.gyrolet.mpvrx.ui.player.PlaybackSession
@@ -70,7 +69,7 @@ import org.koin.compose.koinInject
 import kotlin.math.roundToInt
 
 @Serializable
-object PlayerPreferencesScreen : Screen {
+object PlayerPreferencesScreen : ScrollableSettingsScreen {
   @OptIn(ExperimentalMaterial3Api::class)
   @Composable
   override fun Content() {
@@ -104,6 +103,7 @@ object PlayerPreferencesScreen : Screen {
           rememberSettingsSearchList(PlayerPreferencesScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
           state = settingsListState,
+          contentPadding = settingsContentPadding(),
           modifier =
             Modifier
               .fillMaxSize()
@@ -319,6 +319,23 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                   )
                 },
               )
+
+              if (app.gyrolet.mpvrx.BuildConfig.MPV_SUPPORTS_FONGMI_EXTENSIONS) {
+                PreferenceDivider()
+                val keepVideoFrame by preferences.keepVideoFrameBetweenFiles.collectAsState()
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_keep_video_frame_title),
+                  value = keepVideoFrame,
+                  onValueChange = preferences.keepVideoFrameBetweenFiles::set,
+                  title = { Text(stringResource(R.string.pref_keep_video_frame_title)) },
+                  summary = {
+                    Text(
+                      stringResource(R.string.pref_keep_video_frame_summary),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+              }
 
               PreferenceDivider()
 
@@ -1066,6 +1083,22 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
           item { PreferenceSectionHeader(position = PreferenceSectionPosition.Last, title = stringResource(R.string.pref_section_overlays)) }
           item {
             PreferenceCard {
+              val showAppToasts by preferences.showAppToasts.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_app_toasts_title),
+                value = showAppToasts,
+                onValueChange = preferences.showAppToasts::set,
+                title = { Text(stringResource(R.string.pref_app_toasts_title)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_app_toasts_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
+
+              PreferenceDivider()
+
               val showVolumeGestureOverlay by preferences.showVolumeGestureOverlay.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_volume_overlay_title),

@@ -40,7 +40,6 @@ import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.preferences.GesturePreferences
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.player.CustomKeyCodes
 import app.gyrolet.mpvrx.ui.player.SingleActionGesture
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.toFixed
@@ -55,7 +54,7 @@ import app.gyrolet.mpvrx.ui.preferences.components.AppSliderPreference as Slider
 import org.koin.compose.koinInject
 
 @Serializable
-object GesturePreferencesScreen : Screen {
+object GesturePreferencesScreen : ScrollableSettingsScreen {
   @OptIn(ExperimentalMaterial3Api::class)
   @Composable
   override fun Content() {
@@ -84,6 +83,7 @@ object GesturePreferencesScreen : Screen {
           rememberSettingsSearchList(GesturePreferencesScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
           state = settingsListState,
+          contentPadding = settingsContentPadding(),
           modifier =
             Modifier
               .fillMaxSize()
@@ -296,6 +296,17 @@ object GesturePreferencesScreen : Screen {
 
           item {
             PreferenceCard {
+              val requireDoubleTapForEverySeek by preferences.requireDoubleTapForEverySeek.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_gesture_require_double_tap_title),
+                value = requireDoubleTapForEverySeek,
+                onValueChange = preferences.requireDoubleTapForEverySeek::set,
+                title = { Text(stringResource(R.string.pref_gesture_require_double_tap_title)) },
+                summary = { Text(stringResource(R.string.pref_gesture_require_double_tap_summary)) },
+              )
+
+              PreferenceDivider()
+
               val doubleTapSeekDuration by preferences.doubleTapToSeekDuration.collectAsState()
               val predefinedValues = listOf(3, 5, 10, 15, 20, 25, 30)
               val isCustomValue = !predefinedValues.contains(doubleTapSeekDuration)

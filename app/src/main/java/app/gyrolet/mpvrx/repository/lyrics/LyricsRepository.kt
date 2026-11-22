@@ -11,13 +11,13 @@ import app.gyrolet.mpvrx.data.lyrics.LrcLibApiService
 import app.gyrolet.mpvrx.data.lyrics.providers.BiniLyricsProvider
 import app.gyrolet.mpvrx.data.lyrics.providers.LyricsFetchQuery
 import app.gyrolet.mpvrx.data.lyrics.providers.LyricsProviderRegistry
-import app.gyrolet.mpvrx.data.lyrics.providers.PaxSenixApi
 import app.gyrolet.mpvrx.data.lyrics.providers.ProviderOutcome
 import app.gyrolet.mpvrx.data.lyrics.providers.TrackRef
 import app.gyrolet.mpvrx.data.lyrics.providers.withBackgroundVocals
 import app.gyrolet.mpvrx.domain.lyrics.Lyrics
 import app.gyrolet.mpvrx.domain.lyrics.LyricsProvider
 import app.gyrolet.mpvrx.domain.lyrics.LyricsSourceType
+import app.gyrolet.mpvrx.domain.lyrics.LyricsTiming
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.utils.media.EmbeddedLyricsExtractor
 import java.io.File
@@ -28,6 +28,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -54,6 +56,7 @@ data class LyricsResult(
   val missingProviders: Set<LyricsProvider> = emptySet(),
   /** Providers that errored out or timed out for this track. */
   val failedProviders: Set<LyricsProvider> = emptySet(),
+  val hasSavedEdits: Boolean = false,
 ) {
   /** Folds what one lookup learned about each provider into this track's statuses. */
   fun withOutcomes(result: OnlineLyricsResult): LyricsResult {
@@ -74,6 +77,16 @@ data class OnlineLyricsResult(
   val byProvider: Map<LyricsProvider, Lyrics> = emptyMap(),
   val missing: Set<LyricsProvider> = emptySet(),
   val failed: Set<LyricsProvider> = emptySet(),
+)
+
+internal data class PlaybackLyricsSnapshot(
+  val mediaPath: String,
+  val generation: Long,
+  val lyrics: Lyrics?,
+  val offsetMs: Int,
+  val isLoading: Boolean,
+  val errorMessage: String?,
+  val publisherActive: Boolean = true,
 )
 
 /**
@@ -148,6 +161,26 @@ class LyricsRepository(
   }
 
   private val registry = LyricsProviderRegistry(lrcLibApiService)
+  private val playbackLyricsLock = Any()
+  private var playbackLyricsOwner: Any? = null
+  private val _playbackLyrics = MutableStateFlow<PlaybackLyricsSnapshot?>(null)
+  internal val playbackLyrics = _playbackLyrics.asStateFlow()
+
+  internal fun publishPlaybackLyrics(owner: Any, snapshot: PlaybackLyricsSnapshot) {
+    synchronized(playbackLyricsLock) {
+      playbackLyricsOwner = owner
+      _playbackLyrics.value = snapshot
+    }
+  }
+
+  internal fun releasePlaybackLyrics(owner: Any) {
+    synchronized(playbackLyricsLock) {
+      if (playbackLyricsOwner === owner) {
+        playbackLyricsOwner = null
+        _playbackLyrics.value = _playbackLyrics.value?.copy(publisherActive = false)
+      }
+    }
+  }
 
   /**
    * The online provider to try first for this listening session. Null is the
@@ -171,6 +204,7 @@ class LyricsRepository(
 
   private val cache = LruCache<CacheKey, LyricsResult>(64)
   private val providerCache = LyricsProviderCache(File(context.cacheDir, "lyrics/providers-v4"))
+  private val editedLyricsStore = EditedLyricsStore(File(context.filesDir, "lyrics/edited-v1"))
 
   /**
    * The recording behind a track, once something has worked it out.
@@ -315,7 +349,8 @@ class LyricsRepository(
 
       Log.d(TAG, "Loading lyrics for: $title by $artist ($mediaPath)")
 
-      val embedded = EmbeddedLyricsExtractor.extractEmbeddedLyrics(context, mediaPath)
+      val edited = editedLyricsStore.read(mediaPath)
+      val embedded = edited ?: EmbeddedLyricsExtractor.extractEmbeddedLyrics(context, mediaPath)
 
       // Never delay usable embedded/local lyrics for an automatic provider search.
       // An explicit Search Online action can override this preference.
@@ -387,6 +422,7 @@ class LyricsRepository(
           onlineByProvider = previous?.onlineByProvider.orEmpty() + online.byProvider,
           missingProviders = previous?.missingProviders.orEmpty(),
           failedProviders = previous?.failedProviders.orEmpty(),
+          hasSavedEdits = edited != null,
         ).withOutcomes(online)
 
       currentCoroutineContext().ensureActive()
@@ -428,8 +464,6 @@ class LyricsRepository(
         )
       if (query.refs.isEmpty()) return@withContext OnlineLyricsResult()
 
-      PaxSenixApi.setApiKey(audioPreferences.paxsenixApiKey.get())
-
       val resolved = withRecording(query)
 
       if (provider != null) {
@@ -462,11 +496,12 @@ class LyricsRepository(
       return OnlineLyricsResult(provider, lyrics, false, answers)
     }
     val candidates = LyricsProvider.available.mapNotNull { source -> answers[source]?.let { source to it } }
-    val fitting = candidates.filter { (_, lyrics) -> lyrics.fitsLength(durationMs) }
-    val winner = fitting.firstOrNull { (_, lyrics) -> lyrics.hasWordTiming() }
-      ?: fitting.firstOrNull { (_, lyrics) -> !lyrics.synced.isNullOrEmpty() }
-      ?: fitting.firstOrNull()
-      ?: return null
+    // Best timing grade wins; maxWith keeps the first of equals, so priority order breaks ties.
+    val winner =
+      candidates
+        .filter { (_, lyrics) -> lyrics.fitsLength(durationMs) }
+        .maxWithOrNull(compareBy<Pair<LyricsProvider, Lyrics>> { it.second.timing() })
+        ?: return null
     return OnlineLyricsResult(winner.first, winner.second, true, answers)
   }
 
@@ -572,7 +607,12 @@ class LyricsRepository(
     return last.toLong() <= durationMs.toLong() + LENGTH_OVERRUN_MS
   }
 
-  /** Every provider is asked together; actual timing quality wins, then provider priority. */
+  /**
+   * Every provider is asked together; the best timing grade wins, then provider priority.
+   *
+   * Answers are read in priority order, so the first full word-timed one ends the race: nothing
+   * after it can beat it. A weaker answer is held while the rest still have time to do better.
+   */
   private suspend fun raceProviders(
     query: LyricsFetchQuery,
     mediaPath: String?,
@@ -589,15 +629,14 @@ class LyricsRepository(
         }
 
       try {
-        var wordTimed: Pair<LyricsProvider, Lyrics>? = null
-        var lineTimed: Pair<LyricsProvider, Lyrics>? = null
-        var plainFallback: Pair<LyricsProvider, Lyrics>? = null
+        var winner: Pair<LyricsProvider, Lyrics>? = null
+        var winnerTiming = LyricsTiming.PLAIN
         val seen = mutableMapOf<LyricsProvider, Lyrics>()
         val missing = mutableSetOf<LyricsProvider>()
         val failed = mutableSetOf<LyricsProvider>()
 
         for ((provider, job) in jobs) {
-          if ((wordTimed != null || lineTimed != null) && provider in LyricsProvider.LAZY_PROVIDERS) continue
+          if (winner != null && winnerTiming > LyricsTiming.PLAIN && provider in LyricsProvider.LAZY_PROVIDERS) continue
           val outcome =
             runCatching { job.await() }
               .getOrElse { error -> if (error is CancellationException) throw error else ProviderOutcome.Failed }
@@ -622,15 +661,15 @@ class LyricsRepository(
             continue
           }
           seen[provider] = found
-          if (found.hasWordTiming()) {
-            wordTimed = provider to found
-            break
+          val timing = found.timing()
+          Log.d(TAG, "${provider.label}: $timing")
+          if (winner == null || timing > winnerTiming) {
+            winner = provider to found
+            winnerTiming = timing
           }
-          if (lineTimed == null && !found.synced.isNullOrEmpty()) lineTimed = provider to found
-          if (plainFallback == null) plainFallback = provider to found
+          if (timing == LyricsTiming.WORD) break
         }
 
-        val winner = wordTimed ?: lineTimed ?: plainFallback
         if (winner != null) {
           seen[winner.first] = winner.second
           OnlineLyricsResult(
@@ -750,6 +789,32 @@ class LyricsRepository(
       ).withOutcomes(result)
     cache.put(cacheKey, updated)
     return updated
+  }
+
+  fun hasEditedLyrics(mediaPath: String): Boolean = editedLyricsStore.contains(mediaPath)
+
+  suspend fun saveEditedLyrics(mediaPath: String, lyrics: Lyrics) = withContext(Dispatchers.IO) {
+    val edited = lyrics.copy(areFromRemote = false, sourceType = LyricsSourceType.LOCAL)
+    editedLyricsStore.write(mediaPath, edited)
+    cache.snapshot().forEach { (key, existing) ->
+      if (key.mediaPath == mediaPath) {
+        cache.put(
+          key,
+          existing.copy(
+            embeddedLyrics = edited,
+            activeLyrics = edited,
+            selectedSource = LyricsSourceType.LOCAL,
+            availableSources = (existing.availableSources.filter { it == LyricsSourceType.ONLINE } + LyricsSourceType.LOCAL).distinct(),
+            hasSavedEdits = true,
+          ),
+        )
+      }
+    }
+  }
+
+  suspend fun removeEditedLyrics(mediaPath: String) = withContext(Dispatchers.IO) {
+    editedLyricsStore.remove(mediaPath)
+    cache.snapshot().keys.filter { it.mediaPath == mediaPath }.forEach { cache.remove(it) }
   }
 
   fun invalidate(

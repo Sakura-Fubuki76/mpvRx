@@ -94,9 +94,10 @@ internal object PlayerLifecyclePolicy {
     currentGeneration: Long,
     completingStop: Boolean,
     isShutdown: Boolean,
+    coreEvent: Boolean = false,
   ): Boolean =
     observerIsCurrent &&
-      (expectedGeneration == null || expectedGeneration == currentGeneration || completingStop || isShutdown)
+      (coreEvent || expectedGeneration == null || expectedGeneration == currentGeneration || completingStop || isShutdown)
 
   fun isShutdownInProgress(message: String?): Boolean =
     message?.contains("shutdown", ignoreCase = true) == true && message.contains("progress", ignoreCase = true)

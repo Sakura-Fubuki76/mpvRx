@@ -16,6 +16,7 @@ internal object TvSettingsPolicy {
   private val mobileTitles = setOf(
     R.string.pref_player_orientation,
     R.string.pref_audio_orientation_title,
+    R.string.pref_floating_lyrics_title,
     R.string.pref_player_remember_brightness,
     R.string.pref_auto_pip_home_only_title,
     R.string.pref_auto_pip_title,
@@ -67,6 +68,12 @@ internal object TvSettingsPolicy {
       screen !is ControlLayoutEditorScreen
 
   fun supportsTitle(@StringRes title: Int?): Boolean = title !in mobileTitles
+
+  // Remote-only behaviour that phones never show.
+  private val televisionTitles = setOf(R.string.pref_tv_double_back_exit_title)
+
+  fun supportsMobileSearch(preference: SearchablePreference): Boolean =
+    preference.titleRes !in televisionTitles && preference.targetRes !in televisionTitles
 
   fun supportsSearch(preference: SearchablePreference): Boolean =
     supportsScreen(preference.screen) && supportsTitle(preference.titleRes) &&

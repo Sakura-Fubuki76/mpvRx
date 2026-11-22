@@ -12,8 +12,7 @@ package app.gyrolet.mpvrx.ui.preferences
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import app.gyrolet.mpvrx.BuildConfig
-import app.gyrolet.mpvrx.utils.telemetry.MeasureTelemetry
+import app.gyrolet.mpvrx.domain.fonts.MpvFontConfig
 import android.os.Build
 import android.os.Environment
 import app.gyrolet.mpvrx.ui.components.AppToast as Toast
@@ -62,13 +61,13 @@ import app.gyrolet.mpvrx.preferences.FoldersPreferences
 import app.gyrolet.mpvrx.preferences.SettingsManager
 import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.presentation.components.ConfirmDialog
 import app.gyrolet.mpvrx.presentation.crash.CrashActivity
 import app.gyrolet.mpvrx.presentation.crash.DebugLogReader
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.NotificationStyle
+import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.MpvConfigCache
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.preferences.components.RestartRequiredDialog
@@ -129,7 +128,7 @@ private enum class AppLanguage(
 }
 
 @Serializable
-object AdvancedPreferencesScreen : Screen {
+object AdvancedPreferencesScreen : ScrollableSettingsScreen {
   @OptIn(ExperimentalMaterial3Api::class)
   @Composable
   override fun Content() {
@@ -341,6 +340,7 @@ object AdvancedPreferencesScreen : Screen {
               LocaleListCompat.forLanguageTags(language.languageTag)
             }
           AppCompatDelegate.setApplicationLocales(locales)
+          PlaybackSession.updateStatisticsLanguage(context.applicationContext, locales)
         },
       )
     }
@@ -359,6 +359,7 @@ object AdvancedPreferencesScreen : Screen {
           rememberSettingsSearchList(AdvancedPreferencesScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
           state = settingsListState,
+          contentPadding = settingsContentPadding(),
           modifier =
             Modifier
               .fillMaxSize()
@@ -888,19 +889,16 @@ object AdvancedPreferencesScreen : Screen {
                       size
                     }
 
-                  // Fonts cache size
-                  val fontsDir = File(context.filesDir, "font-bank")
-                  if (fontsDir.exists()) {
-                    val fontFiles =
-                      fontsDir.listFiles()?.filter {
-                        it.isFile && it.name.lowercase().matches(".*\\.[ot]tf$".toRegex())
-                      } ?: emptyList()
-                    fontsFileCount = fontFiles.size
-                    fontsCacheSize = fontFiles.sumOf { it.length() }
-                  } else {
-                    fontsFileCount = 0
-                    fontsCacheSize = 0
-                  }
+                  // Fonts cache size, including the downloaded subtitle fallback fonts
+                  val fontFiles =
+                    listOf(File(context.filesDir, "font-bank"), MpvFontConfig.fallbackFontsDirectory(context))
+                      .flatMap { directory ->
+                        directory.listFiles()?.filter {
+                          it.isFile && it.name.lowercase().matches(".*\\.[ot]tf$".toRegex())
+                        }.orEmpty()
+                      }
+                  fontsFileCount = fontFiles.size
+                  fontsCacheSize = fontFiles.sumOf { it.length() }
                 }
               }
 
@@ -1048,6 +1046,7 @@ object AdvancedPreferencesScreen : Screen {
                       check(!fontsDir.exists() || fontsDir.deleteRecursively()) {
                         "Unable to clear fonts cache directory: ${fontsDir.absolutePath}"
                       }
+                      MpvFontConfig.fallbackFontsDirectory(context).listFiles()?.forEach(File::delete)
                     }.onSuccess {
                       withContext(Dispatchers.Main) {
                         fontsCacheSize = 0L
@@ -1089,29 +1088,6 @@ object AdvancedPreferencesScreen : Screen {
               val activity = LocalActivity.current!!
               val verboseLogging by preferences.verboseLogging.collectAsState()
               val debugLogSizeMb by preferences.debugLogSizeMb.collectAsState()
-
-              val measureEnabled by preferences.measureEnabled.collectAsState()
-
-              SwitchPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_measure_enabled_title),
-                value = measureEnabled && BuildConfig.MEASURE_CONFIGURED,
-                enabled = BuildConfig.MEASURE_CONFIGURED,
-                onValueChange = { enabled ->
-                  if (MeasureTelemetry.setEnabled(enabled)) preferences.measureEnabled.set(enabled)
-                },
-                title = { Text(stringResource(R.string.pref_measure_enabled_title)) },
-                summary = {
-                  Text(
-                    stringResource(
-                      if (BuildConfig.MEASURE_CONFIGURED) R.string.pref_measure_enabled_summary
-                      else R.string.pref_measure_not_configured,
-                    ),
-                    color = MaterialTheme.colorScheme.outline,
-                  )
-                },
-              )
-
-              PreferenceDivider()
 
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_advanced_verbose_logging_title),
@@ -1251,8 +1227,4 @@ fun getSimplifiedPathFromUri(uri: String): String =
   File(Environment.getExternalStorageDirectory(), Uri.decode(uri).substringAfterLast(":")).canonicalPath
 
 private fun formatFileSize(bytes: Long): String =
-  when {
-    bytes < 1024 -> "$bytes B"
-    bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
-    else -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
-  }
+  app.gyrolet.mpvrx.utils.storage.VideoScanUtils.formatFileSize(bytes)

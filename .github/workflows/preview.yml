@@ -8,12 +8,10 @@ on:
 permissions:
   contents: read
   actions: read
-  deployments: read
   pages: write
   id-token: write
 
-# Preview runs queue behind each other. Only the publish job takes the shared Pages lock, so a long
-# preview build never parks an experimental deploy in a queue where the next scheduled run cancels it.
+# Preview runs queue behind each other so scheduled builds cannot cancel a pending publication.
 concurrency:
   group: mpvrx-preview
   cancel-in-progress: false
@@ -146,7 +144,6 @@ jobs:
             abis: universal
             asset: no-vulkan
     env:
-      MEASURE_API_KEY: ${{ secrets.MEASURE_API_KEY }}
       COMMIT_COUNT: ${{ needs.check.outputs.commit_count }}
       GRADLE_FLAVOR: ${{ matrix.distribution.gradle }}
       APK_DIR: ${{ matrix.distribution.dir }}
@@ -167,6 +164,9 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
+
+      - name: Install compile SDK
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.2"'
 
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
@@ -241,13 +241,6 @@ jobs:
             cp "$out_dir/$base.apk" "downloads/mpvRx-preview-r${COMMIT_COUNT}-${ASSET_NAME:-$abi}.apk"
           done
 
-      - name: Upload R8 diagnostics
-        uses: actions/upload-artifact@v7
-        with:
-          name: r8-${{ matrix.distribution.id }}-${{ github.sha }}
-          path: app/build/outputs/mapping/
-          if-no-files-found: error
-          retention-days: 30
 
       - name: Upload preview APKs
         uses: actions/upload-artifact@v7
@@ -264,8 +257,7 @@ jobs:
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Staging and deployment share one lock with the experimental feed, so neither can overwrite the
-    # other's freshly deployed feed with the copy it staged earlier.
+    # Keep staging and deployment serialized.
     concurrency:
       group: mpvrx-pages
       cancel-in-progress: false
@@ -295,17 +287,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
-
-      - name: Restore live GitHub Pages site
-        env:
-          GH_REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Pages deploys replace the whole site, so carry over exactly what is live (including the experimental feed).
-          bash scripts/fetch-live-pages-site.sh site
-          rm -rf site/downloads site/latest.json
 
       - name: Download preview APKs
         uses: actions/download-artifact@v7

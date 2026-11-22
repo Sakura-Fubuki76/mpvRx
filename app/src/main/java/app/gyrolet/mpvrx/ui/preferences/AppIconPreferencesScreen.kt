@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -87,11 +88,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.ui.components.ExpressiveColorPicker
 import app.gyrolet.mpvrx.ui.components.ColorPickerMode
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.appPressFeedback
+import app.gyrolet.mpvrx.ui.theme.animatedConnectedContainerColor
+import app.gyrolet.mpvrx.ui.theme.rememberConnectedShape
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.theme.AppConnectedShapeTokens
@@ -108,7 +110,7 @@ import kotlin.math.abs
  * the chosen background. Nothing changes on the launcher until the pick is applied and confirmed.
  */
 @Serializable
-object AppIconPreferencesScreen : Screen {
+object AppIconPreferencesScreen : ScrollableSettingsScreen {
   @Composable
   override fun Content() {
     val context = LocalContext.current
@@ -154,6 +156,7 @@ object AppIconPreferencesScreen : Screen {
             .widthIn(max = 600.dp)
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
+            .padding(settingsContentPadding())
             .padding(
               start = 16.dp,
               end = 16.dp,
@@ -191,10 +194,23 @@ object AppIconPreferencesScreen : Screen {
                 "sliders" to R.string.color_picker_sliders,
               ).forEachIndexed { index, choice ->
                 val selected = customMode == choice.first
-                val shape = connectedShape(index, 3, ConnectedLayout.Horizontal)
+                val interactionSource = remember { MutableInteractionSource() }
+                val pressed by interactionSource.collectIsPressedAsState()
+                val shape = rememberConnectedShape(
+                  index, 3, ConnectedLayout.Horizontal, pressed = pressed, selected = selected,
+                )
                 androidx.compose.material3.Surface(
-                  modifier = Modifier.weight(1f).clip(shape).selectable(selected = selected, role = Role.RadioButton) { customMode = choice.first },
-                  color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                  modifier = Modifier.weight(1f)
+                    .appPressFeedback(interactionSource, pressedScale = 0.985f)
+                    .clip(shape)
+                    .selectable(
+                      selected = selected, role = Role.RadioButton,
+                      interactionSource = interactionSource, indication = androidx.compose.material3.ripple(),
+                      onClick = { customMode = choice.first },
+                    ),
+                  color = animatedConnectedContainerColor(
+                    selected = selected, pressed = pressed, containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                  ),
                   shape = shape,
                 ) {
                   Text(

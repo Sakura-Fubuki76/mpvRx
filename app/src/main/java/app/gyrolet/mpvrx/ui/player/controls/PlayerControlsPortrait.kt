@@ -11,15 +11,16 @@ package app.gyrolet.mpvrx.ui.player.controls
 
 import androidx.compose.foundation.BorderStroke
 import app.gyrolet.mpvrx.ui.liquidglass.liquidGlassActive
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
@@ -48,6 +49,7 @@ import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.VideoAspect
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsButton
 import app.gyrolet.mpvrx.ui.player.controls.components.ControlsGroup
+import app.gyrolet.mpvrx.ui.player.controls.components.fadingHorizontalScroll
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonBorderColor
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContainerColor
 import app.gyrolet.mpvrx.ui.player.controls.components.playerButtonContentColor
@@ -261,42 +263,48 @@ fun BottomPlayerControlsPortrait(
       MaterialTheme.spacing.small,
       Alignment.CenterHorizontally,
     ),
+  modifier: Modifier = Modifier,
 ) {
   PlayerButtonTheme {
     val enableLiquidGlass = liquidGlassActive()
+    // fillMaxWidth hands the scroll content a minimum width, so a short row still centers.
     Row(
       modifier =
-        Modifier
+        modifier
           .fillMaxWidth()
-          .horizontalScroll(rememberScrollState(), reverseScrolling = alignToEnd)
-          // Padding after horizontalScroll belongs to scroll content, not its clipping viewport.
-          // Vertical room is only for the liquid-glass shadow; the player places this row with its shared gaps.
-          .padding(
-            horizontal = if (enableLiquidGlass) 8.dp else 0.dp,
-            vertical = if (enableLiquidGlass) PortraitActionShadowRoom else 0.dp,
-          ),
-      horizontalArrangement = horizontalArrangement,
+          .fadingHorizontalScroll(
+            rememberScrollState(),
+            shadowRoom = if (enableLiquidGlass) PortraitActionShadowRoom else 0.dp,
+          )
+          .padding(horizontal = if (enableLiquidGlass) 8.dp else 0.dp),
+      horizontalArrangement = if (alignToEnd) {
+        Arrangement.spacedBy(MaterialTheme.spacing.small, Alignment.End)
+      } else horizontalArrangement,
       verticalAlignment = Alignment.CenterVertically,
     ) {
       buttons.forEach { button ->
-        RenderPlayerButton(
-          button = button,
-          chapters = chapters,
-          currentChapter = currentChapter,
-          isPortrait = true,
-          isSpeedNonOne = isSpeedNonOne,
-          currentZoom = currentZoom,
-          aspect = aspect,
-          mediaTitle = mediaTitle,
-          onBackPress = onBackPress,
-          onOpenSheet = onOpenSheet,
-          onOpenPanel = onOpenPanel,
-          viewModel = viewModel,
-          activity = activity,
-          decoder = decoder,
-          playbackSpeed = playbackSpeed,
-          buttonSize = 48.dp,
-        )
+        val renderButton: @Composable () -> Unit = {
+          RenderPlayerButton(
+            button = button,
+            chapters = chapters,
+            currentChapter = currentChapter,
+            isPortrait = true,
+            isSpeedNonOne = isSpeedNonOne,
+            currentZoom = currentZoom,
+            aspect = aspect,
+            mediaTitle = mediaTitle,
+            onBackPress = onBackPress,
+            onOpenSheet = onOpenSheet,
+            onOpenPanel = onOpenPanel,
+            viewModel = viewModel,
+            activity = activity,
+            decoder = decoder,
+            playbackSpeed = playbackSpeed,
+            buttonSize = 48.dp,
+          )
+        }
+        // Unbounded scroll width would stretch a long title pill across the whole row.
+        if (button == PlayerButton.VIDEO_TITLE) Box(Modifier.widthIn(max = 220.dp)) { renderButton() } else renderButton()
       }
       if (showVideoQualitySelector) {
         ControlsButton(

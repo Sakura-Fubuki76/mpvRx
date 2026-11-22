@@ -54,9 +54,9 @@ enum class VideoAspect(
 
   @StringRes val titleRes: Int,
 ) {
-  Crop(R.string.player_aspect_crop),
   Fit(R.string.player_aspect_fit),
   Stretch(R.string.player_aspect_stretch),
+  Crop(R.string.player_aspect_crop),
 }
 
 enum class SingleActionGesture(
@@ -172,6 +172,7 @@ enum class Sheets {
   VisualizerStyle,
   Lyrics,
   LyricsProvider,
+  LyricsEditor,
   LyricsTranslate,
   Scopes,
   PostProcessingConfig,

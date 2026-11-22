@@ -18,8 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.domain.media.model.Video
 import app.gyrolet.mpvrx.presentation.components.AppPickerSheet
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetSearchField
 import app.gyrolet.mpvrx.ui.icons.Icon
@@ -61,12 +63,22 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import app.gyrolet.mpvrx.ui.tv.canLaunch
 import app.gyrolet.mpvrx.utils.device.DeviceFormFactor
+import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
 import app.gyrolet.mpvrx.utils.media.isPathBasedDocumentAuthority
 import app.gyrolet.mpvrx.utils.storage.StorageVolumeUtils
+import app.gyrolet.mpvrx.utils.storage.mediaPathKey
+import app.gyrolet.mpvrx.utils.storage.normalizeStoragePath
+import app.gyrolet.mpvrx.utils.storage.storagePickerParentPath
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** A copy or move waiting for its destination; the picker shows the space it needs there. */
+class FolderTransfer(
+  val operationType: CopyPasteOps.OperationType,
+  val videos: suspend () -> List<Video>,
+)
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -78,6 +90,7 @@ fun FolderPickerDialog(
   onFolderSelected: (String) -> Unit,
   allowCurrentFolder: Boolean = false,
   useSystemPickerOnTv: Boolean = true,
+  transfer: FolderTransfer? = null,
 ) {
   if (!isOpen) return
 
@@ -115,15 +128,14 @@ fun FolderPickerDialog(
   // Determine what to show based on selectedPath
   val showStorageRoot = selectedPath == null
 
-  val currentDir =
-    remember(selectedPath) {
-      selectedPath?.let { File(it) }
-    }
   val storageRoots = remember(storageVolumes) {
-    storageVolumes.mapNotNull(StorageVolumeUtils::getVolumePath).toSet() +
-      Environment.getExternalStorageDirectory().absolutePath
+    (storageVolumes.mapNotNull(StorageVolumeUtils::getVolumePath) +
+      Environment.getExternalStorageDirectory().absolutePath)
+      .mapNotNull(::normalizeStoragePath).distinctBy(::mediaPathKey).toSet()
   }
-  val parentPath = if (selectedPath in storageRoots) null else currentDir?.parent
+  val parentPath = remember(selectedPath, storageRoots) {
+    storagePickerParentPath(selectedPath, storageRoots)
+  }
 
   LaunchedEffect(selectedPath) {
     query = ""
@@ -150,6 +162,33 @@ fun FolderPickerDialog(
       !allowCurrentFolder && selectedPath != null && selectedPath == currentPath
     }
 
+  val latestTransfer by rememberUpdatedState(transfer)
+  // Resolved once: a folder selection expands to its videos, which can take a scan.
+  val transferVideos by produceState<List<Video>?>(null, transfer != null) {
+    value =
+      try {
+        latestTransfer?.videos?.invoke()
+      } catch (cancelled: kotlinx.coroutines.CancellationException) {
+        throw cancelled
+      } catch (_: Exception) {
+        // Without the sizes the picker simply omits the space line; the operation still checks.
+        null
+      }
+  }
+  val space by produceState<Pair<String, CopyPasteOps.SpaceRequirement>?>(null, selectedPath, transferVideos) {
+    val path = selectedPath
+    val videos = transferVideos
+    val type = latestTransfer?.operationType
+    value =
+      if (path == null || videos == null || type == null) {
+        null
+      } else {
+        path to withContext(Dispatchers.IO) { CopyPasteOps.spaceRequirement(videos, path, type) }
+      }
+  }
+  val currentSpace = space?.takeIf { it.first == selectedPath }?.second
+  val lacksSpace = currentSpace?.fits == false
+
   if (showCreateFolderDialog && selectedPath != null) {
     CreateFolderDialog(
       parentPath = selectedPath!!,
@@ -174,10 +213,14 @@ fun FolderPickerDialog(
       if (isSameAsSource) {
         androidx.compose.ui.res
           .stringResource(app.gyrolet.mpvrx.R.string.ui_cannot_select_the_same_folder)
+      } else if (lacksSpace) {
+        androidx.compose.ui.res
+          .stringResource(app.gyrolet.mpvrx.R.string.ui_not_enough_space_here)
       } else {
         null
       },
     scrollContent = false,
+    fixedHeight = true,
     headerActions = {
       if (selectedPath != null) {
         FilledTonalIconButton(
@@ -199,7 +242,7 @@ fun FolderPickerDialog(
         }
       }
       FilledTonalIconButton(
-        onClick = { selectedPath = Environment.getExternalStorageDirectory().absolutePath },
+        onClick = { selectedPath = storageRoots.singleOrNull() },
         modifier = Modifier.size(40.dp).tvInitialFocus(initialFocusRequester),
         colors =
           IconButtonDefaults.filledTonalIconButtonColors(
@@ -212,7 +255,7 @@ fun FolderPickerDialog(
           imageVector = Icons.RoundedFilled.Home,
           contentDescription =
             androidx.compose.ui.res.stringResource(
-              app.gyrolet.mpvrx.R.string.ui_go_to_internal_storage,
+              app.gyrolet.mpvrx.R.string.generic_home,
             ),
         )
       }
@@ -248,7 +291,7 @@ fun FolderPickerDialog(
       }
       Button(
         onClick = { selectedPath?.let { onFolderSelected(it) } },
-        enabled = selectedPath != null && !isSameAsSource && currentListing?.accessible == true,
+        enabled = selectedPath != null && !isSameAsSource && !lacksSpace && currentListing?.accessible == true,
         colors =
           ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
@@ -268,9 +311,13 @@ fun FolderPickerDialog(
       selectedPath = parentPath
     }
     Column(
-      modifier = Modifier.fillMaxWidth(),
+      modifier = Modifier.fillMaxSize(),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (!showStorageRoot && currentSpace != null) {
+          SpaceSummary(currentSpace)
+        }
+
         if (!showStorageRoot) {
           PlayerSheetSearchField(
             query = query,
@@ -284,7 +331,7 @@ fun FolderPickerDialog(
           modifier =
             Modifier
               .fillMaxWidth()
-              .heightIn(min = 120.dp, max = 360.dp),
+              .weight(1f),
           verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
           if (showStorageRoot) {
@@ -496,6 +543,28 @@ private fun CreateFolderDialog(
     containerColor = MaterialTheme.colorScheme.surface,
     tonalElevation = 6.dp,
     shape = MaterialTheme.shapes.extraLarge,
+  )
+}
+
+/** One line: what the transfer writes here and what this volume has free. */
+@Composable
+private fun SpaceSummary(space: CopyPasteOps.SpaceRequirement) {
+  val needed = CopyPasteOps.formatBytes(space.requiredBytes)
+  val free = space.availableBytes?.let(CopyPasteOps::formatBytes)
+  val text =
+    when {
+      space.requiredBytes > 0L && free != null ->
+        androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_space_needed_free, needed, free)
+      space.requiredBytes > 0L ->
+        androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_space_needed, needed)
+      free != null -> androidx.compose.ui.res.stringResource(app.gyrolet.mpvrx.R.string.ui_space_free, free)
+      else -> return
+    }
+  Text(
+    text = text,
+    style = MaterialTheme.typography.labelLarge,
+    fontWeight = FontWeight.Medium,
+    color = if (space.fits) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
   )
 }
 

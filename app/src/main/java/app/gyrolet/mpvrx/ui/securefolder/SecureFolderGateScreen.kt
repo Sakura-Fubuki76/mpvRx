@@ -9,8 +9,10 @@
 
 package app.gyrolet.mpvrx.ui.securefolder
 
+import android.os.Build
 import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.keyframes
@@ -27,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -69,6 +72,9 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error as semanticsError
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,6 +84,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.preferences.SecureFolderPreferences
@@ -135,14 +144,17 @@ data object SecureFolderGateScreen : Screen {
     val storedPinLength by viewModel.preferences.pinLength.collectAsState()
     val pinChangedMessage = stringResource(R.string.secure_folder_pin_changed)
     val keyboardController = LocalSoftwareKeyboardController.current
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val isGateOnTop = backstack.lastOrNull() == SecureFolderGateScreen
 
     // Biometric authentication
     val biometricManager = BiometricManager.from(context)
     val canAuthenticateBiometric = !app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(context) &&
       biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
-    val canAuthenticateDeviceCredential = !app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(context) &&
+    val canAuthenticateDeviceCredential = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+      !app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(context) &&
       biometricManager.canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL) == BiometricManager.BIOMETRIC_SUCCESS
-    val fragmentActivity = context as? FragmentActivity
+    val fragmentActivity = LocalActivity.current as? FragmentActivity
     val isBiometricAvailable = fragmentActivity != null && (canAuthenticateBiometric || canAuthenticateDeviceCredential)
     val isBiometricEnabled by viewModel.preferences.isBiometricEnabled.collectAsState()
     var initialBiometricRequested by rememberSaveable { mutableStateOf(false) }
@@ -189,17 +201,22 @@ data object SecureFolderGateScreen : Screen {
       val promptInfoBuilder = BiometricPrompt.PromptInfo.Builder()
         .setTitle(context.getString(R.string.secure_folder_title))
         .setSubtitle(context.getString(R.string.secure_folder_enter_pin))
-      if (canAuthenticateBiometric) {
+      if (canAuthenticateBiometric && canAuthenticateDeviceCredential) {
         promptInfoBuilder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+      } else if (canAuthenticateBiometric) {
+        promptInfoBuilder.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+        promptInfoBuilder.setNegativeButtonText(context.getString(R.string.secure_folder_enter_pin))
       } else {
         promptInfoBuilder.setAllowedAuthenticators(BiometricManager.Authenticators.DEVICE_CREDENTIAL)
       }
       biometricPrompt.authenticate(promptInfoBuilder.build())
     }
 
-    LaunchedEffect(Unit) {
-      viewModel.refreshGateStep()
-      if (!initialBiometricRequested) {
+    LaunchedEffect(isGateOnTop, lifecycleState, isBiometricEnabled, isBiometricAvailable) {
+      if (!isGateOnTop) {
+        initialBiometricRequested = false
+      } else if (lifecycleState.isAtLeast(Lifecycle.State.RESUMED) && !initialBiometricRequested) {
+        viewModel.refreshGateStep()
         initialBiometricRequested = true
         if (viewModel.preferences.isPinSet() && isBiometricEnabled && isBiometricAvailable) {
           showBiometricPrompt()
@@ -343,6 +360,7 @@ private fun EnterPinContent(
 ) {
   var pin by rememberSaveable { mutableStateOf("") }
   val shakeOffset = remember { Animatable(0f) }
+  val reduceMotion = AppMotion.shouldReduceMotion()
   val scope = rememberCoroutineScope()
   val focusRequester = remember { FocusRequester() }
   val keyboardController = LocalSoftwareKeyboardController.current
@@ -357,7 +375,9 @@ private fun EnterPinContent(
     } else {
       pin = ""
       scope.launch {
-        shakeOffset.animateTo(
+        if (reduceMotion) {
+          shakeOffset.snapTo(0f)
+        } else shakeOffset.animateTo(
           targetValue = 0f,
           animationSpec =
             keyframes {
@@ -439,11 +459,12 @@ private fun EnterPinContent(
       modifier =
         Modifier
           .fillMaxWidth()
-          .height(32.dp)
+          .height(48.dp)
           .offset { IntOffset(shakeOffset.value.toInt(), 0) },
     ) {
       PinDots(filledCount = pin.length, total = pinLength)
 
+      val pinEntryLabel = stringResource(R.string.secure_folder_enter_pin)
       BasicTextField(
         value = pin,
         onValueChange = { pin = it.filter(Char::isDigit).take(pinLength) },
@@ -451,8 +472,13 @@ private fun EnterPinContent(
           Modifier
             .matchParentSize()
             .focusRequester(focusRequester)
+            .semantics {
+              contentDescription = pinEntryLabel
+              error?.let { message -> semanticsError(message) }
+            }
             .alpha(0f),
         singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
         textStyle = LocalTextStyle.current.copy(color = Color.Transparent),
         cursorBrush = SolidColor(Color.Transparent),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
@@ -474,7 +500,7 @@ private fun EnterPinContent(
     if (isBiometricAvailable && isBiometricEnabled) {
       OutlinedButton(
         onClick = onBiometricClick,
-        modifier = Modifier.fillMaxWidth().height(54.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
         shape = AppShapeScale.large,
       ) {
         Icon(

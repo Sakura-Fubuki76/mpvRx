@@ -1046,6 +1046,16 @@ val MIGRATION_34_35 = object : Migration(34, 35) {
   }
 }
 
+/** The fork's versions 32-35 contain cloud/anime data, not upstream's reverted audio schemas. */
+val MIGRATION_35_36 =
+  object : Migration(35, 36) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `hasManualAudioSelection` INTEGER NOT NULL DEFAULT 0")
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `manualAudioId` INTEGER NOT NULL DEFAULT -1")
+      db.execSQL("ALTER TABLE `PlaybackStateEntity` ADD COLUMN `externalAudio` TEXT NOT NULL DEFAULT ''")
+    }
+  }
+
 val DatabaseModule =
   module {
     single<Json> {
@@ -1096,6 +1106,7 @@ val DatabaseModule =
           MIGRATION_32_33,
           MIGRATION_33_34,
           MIGRATION_34_35,
+          MIGRATION_35_36,
         ).build()
     }
 

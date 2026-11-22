@@ -28,7 +28,12 @@ enum class MpvConfigOverride(
         "profile",
         "gpu-api",
         "gpu-context",
-      ),
+      ) +
+        if (app.gyrolet.mpvrx.BuildConfig.MPV_SUPPORTS_FONGMI_EXTENSIONS) {
+          setOf("android-keep-video-frame")
+        } else {
+          emptySet()
+        },
   ),
   DECODER(
     preferenceKey = "decoder",
@@ -38,7 +43,12 @@ enum class MpvConfigOverride(
         "hwdec-codecs",
         "vd-lavc-dr",
         "vd-lavc-film-grain",
-      ),
+      ) +
+        if (app.gyrolet.mpvrx.BuildConfig.MPV_SUPPORTS_FONGMI_EXTENSIONS) {
+          setOf("android-vulkan-aimagereader-backend")
+        } else {
+          emptySet()
+        },
   ),
   HDR_AND_SHADERS(
     preferenceKey = "hdr_and_shaders",
@@ -61,7 +71,13 @@ enum class MpvConfigOverride(
         "opengl-early-flush",
         "video-scale-x",
         "video-scale-y",
-      ),
+      ) +
+        // Only FongMi's mpv can send Dolby Vision straight to MediaCodec.
+        if (app.gyrolet.mpvrx.BuildConfig.MPV_SUPPORTS_DOLBY_VISION_DIRECT) {
+          setOf("android-dolby-vision-output", "demuxer-dovi-profile7")
+        } else {
+          emptySet()
+        },
   ),
   VIDEO_FILTERS(
     preferenceKey = "video_filters",
@@ -89,6 +105,7 @@ enum class MpvConfigOverride(
         "video-pan-x",
         "video-pan-y",
         "video-aspect-override",
+        "video-crop",
         "panscan",
       ),
   ),
@@ -97,10 +114,14 @@ enum class MpvConfigOverride(
     optionNames =
       setOf(
         "alang",
+        "audio-file-auto",
+        "cover-art-auto",
         "audio-display",
         "audio-delay",
         "audio-normalize-downmix",
         "volume-max",
+        "ao",
+        "audio-spdif",
       ),
   ),
   AUDIO_FILTERS(
@@ -153,7 +174,18 @@ enum class MpvConfigOverride(
         "secondary-sub-pos",
         "secondary-sub-ass-override",
         "blend-subtitles",
-      ),
+      ) +
+        if (app.gyrolet.mpvrx.BuildConfig.MPV_SUPPORTS_FONGMI_EXTENSIONS) {
+          setOf(
+            "sub-offset-y",
+            "secondary-sub-offset-y",
+            "image-subs-brightness",
+            "image-subs-override",
+            "image-subs-color",
+          )
+        } else {
+          emptySet()
+        },
   ),
   PLAYBACK_TIMING(
     preferenceKey = "playback_timing",
@@ -277,8 +309,6 @@ object MpvConfigControlledFeatures {
   val VIDEO_ZOOM = setOf("video-zoom")
 
   val VIDEO_ASPECT = setOf("video-aspect-override", "panscan")
-
-  val AUTO_CROP = setOf("video-crop")
 
   val HARDWARE_DECODER = setOf("hwdec", "gpu-api", "gpu-context")
 }

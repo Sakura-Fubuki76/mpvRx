@@ -36,6 +36,8 @@ private val livePlayerSettings = setOf(
   R.string.pref_background_playback_behavior,
   R.string.pref_player_remember_brightness,
   R.string.pref_autoplay_next_video_title,
+  // Applied when the next item loads.
+  R.string.pref_keep_video_frame_title,
   R.string.pref_auto_pip_title,
   R.string.pref_auto_pip_home_only_title,
   R.string.pref_enable_video_mini_player_title,
@@ -90,12 +92,16 @@ private val liveAudioSettings = setOf(
   R.string.pref_audio_spatial_title,
   R.string.pref_audio_channels,
   R.string.pref_audio_volume_boost_cap,
+  R.string.pref_audio_output_title,
+  R.string.pref_audio_passthrough_title,
 )
 
 private val liveSubtitleSettings = setOf(
   R.string.player_sheets_sub_override_ass,
   R.string.player_sheets_sub_scale_by_window,
   R.string.pref_subtitles_secondary_pinch_zoom,
+  // The player starts or stops downloading fonts as soon as this changes.
+  R.string.pref_subtitles_auto_download_fonts,
   // These configure the next manual search, which can be performed in the current video.
   R.string.pref_subtitle_search_title,
   R.string.pref_subtitles_search_mode_title,
@@ -121,9 +127,20 @@ private val liveDecoderSettings = setOf(
   // MotionInterpolationController applies these to the running player immediately.
   R.string.motion_title,
   R.string.motion_target_title,
-  R.string.motion_target_fps_title,
-  R.string.motion_switch_display_title,
-)
+  R.string.pref_decoder_dolby_vision_direct_title,
+) +
+  if (app.gyrolet.mpvrx.BuildConfig.MPV_SUPPORTS_FONGMI_EXTENSIONS) {
+    setOf(
+      // FongMi's mpv swaps the renderer of the playing video (android-set-gpu-output).
+      R.string.pref_decoder_gpu_next_title,
+      R.string.pref_decoder_vulkan_experimental_title,
+      // These take effect with the next decoder or file.
+      R.string.pref_decoder_vulkan_import_title,
+      R.string.pref_decoder_dovi_p7_title,
+    )
+  } else {
+    emptySet()
+  }
 
 private val settingNativeOptions = mapOf(
   R.string.pref_audio_pitch_correction_title to setOf("audio-pitch-correction"),
@@ -132,6 +149,8 @@ private val settingNativeOptions = mapOf(
   R.string.pref_audio_spatial_title to setOf("af"),
   R.string.pref_audio_channels to setOf("af", "audio-channels"),
   R.string.pref_audio_volume_boost_cap to setOf("volume-max"),
+  R.string.pref_audio_output_title to setOf("ao"),
+  R.string.pref_audio_passthrough_title to setOf("audio-spdif"),
   R.string.pref_player_use_precise_seeking to setOf("hr-seek", "hr-seek-framedrop"),
   R.string.player_sheets_sub_override_ass to setOf(
     "sub-ass-override", "secondary-sub-ass-override", "sub-pos", "secondary-sub-pos",
@@ -139,6 +158,13 @@ private val settingNativeOptions = mapOf(
   R.string.player_sheets_sub_scale_by_window to setOf("sub-scale-by-window", "sub-use-margins"),
   R.string.pref_subtitles_secondary_pinch_zoom to setOf("sub-scale", "secondary-sub-scale"),
   R.string.pref_decoder_try_hw_dec_title to setOf("hwdec", "hwdec-codecs"),
+  R.string.pref_decoder_mediacodec_embed_title to setOf("vo", "hwdec"),
+  R.string.pref_decoder_dolby_vision_direct_title to setOf("android-dolby-vision-output"),
+  R.string.pref_decoder_gpu_next_title to setOf("gpu-api", "gpu-context"),
+  R.string.pref_decoder_vulkan_experimental_title to setOf("gpu-api", "gpu-context"),
+  R.string.pref_decoder_vulkan_import_title to setOf("android-vulkan-aimagereader-backend"),
+  R.string.pref_decoder_dovi_p7_title to setOf("demuxer-dovi-profile7"),
+  R.string.pref_keep_video_frame_title to setOf("android-keep-video-frame"),
   R.string.pref_decoder_debanding_title to setOf(
     "vf", "deband", "deband-iterations", "deband-threshold", "deband-range", "deband-grain",
   ),

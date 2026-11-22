@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
@@ -45,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.LocalMotionPolicy
 import app.gyrolet.mpvrx.ui.theme.MotionPolicy
+import app.gyrolet.mpvrx.ui.tv.TvSafeArea
 
 /**
  * The sheet the app's pickers sit in: a heading, an optional path and warning,
@@ -56,6 +60,8 @@ import app.gyrolet.mpvrx.ui.theme.MotionPolicy
  * they were doing. The body is capped instead, at a fraction of the screen
  * that is much smaller in landscape — where the height is the scarce axis and
  * a half-screen body would leave nothing for the actions.
+ *
+ * Storage browsers use [fixedHeight] to keep navigation and footer actions stationary as paths change.
  *
  * Player callers can opt into [PlayerSheet] to share its glass material and backdrop window.
  *
@@ -75,6 +81,8 @@ fun AppPickerSheet(
   headerActions: @Composable RowScope.() -> Unit = {},
   actions: @Composable RowScope.() -> Unit = {},
   usePlayerSheet: Boolean = false,
+  fixedHeight: Boolean = false,
+  embeddedTvPicker: Boolean = false,
   content: @Composable () -> Unit,
 ) {
   val configuration = LocalConfiguration.current
@@ -91,6 +99,13 @@ fun AppPickerSheet(
         modifier =
           Modifier
             .fillMaxWidth()
+            .then(
+              when {
+                embeddedTvPicker -> Modifier.fillMaxHeight()
+                fixedHeight -> Modifier.fillMaxHeight(0.85f)
+                else -> Modifier
+              },
+            )
             .then(if (usePlayerSheet) Modifier else Modifier.navigationBarsPadding().imePadding())
             .padding(horizontal = 20.dp)
             .padding(bottom = if (usePlayerSheet) 0.dp else 12.dp),
@@ -147,8 +162,8 @@ fun AppPickerSheet(
           modifier =
             Modifier
               .fillMaxWidth()
-              .weight(1f, fill = false)
-              .heightIn(max = bodyMaxHeight)
+              .weight(1f, fill = fixedHeight)
+              .then(if (fixedHeight) Modifier else Modifier.heightIn(max = bodyMaxHeight))
               .then(if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier),
         ) {
           content()
@@ -164,6 +179,15 @@ fun AppPickerSheet(
         )
       }
     }
+  }
+
+  if (embeddedTvPicker) {
+    Surface(modifier = modifier.fillMaxSize()) {
+      Column(modifier = Modifier.fillMaxSize().padding(TvSafeArea.Padding)) {
+        sheetContent()
+      }
+    }
+    return
   }
 
   if (usePlayerSheet) {

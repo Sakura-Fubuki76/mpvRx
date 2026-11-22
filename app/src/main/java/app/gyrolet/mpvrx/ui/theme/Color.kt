@@ -12,6 +12,7 @@ package app.gyrolet.mpvrx.ui.theme
 import androidx.compose.ui.graphics.Color
 
 val controlColor = Color(0xFFFFFFFF)
+
 val primaryLight = Color(0xFF794F81)
 val secondaryLight = Color(0xFF6A596C)
 val tertiaryLight = Color(0xFF82524D)

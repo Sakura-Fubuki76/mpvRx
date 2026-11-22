@@ -92,6 +92,7 @@ object PlaybackStartupAssets : KoinComponent {
     val startedAt = SystemClock.elapsedRealtime()
     synchronized(assetLock) {
       syncBundledAssetsIfNeeded()
+      app.gyrolet.mpvrx.domain.fonts.MpvFontConfig.ensure(context)
       prepareUserMpvAssetsForStartup()
       googleFontsRepository.syncMpvFonts()
     }

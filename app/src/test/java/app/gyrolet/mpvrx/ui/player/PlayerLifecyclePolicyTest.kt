@@ -58,6 +58,29 @@ class PlayerLifecyclePolicyTest {
     assertFalse(PlayerLifecyclePolicy.shouldDispatchNativeEvent(false, null, 12L, true, true))
   }
 
+  @Test fun coreEventsCanReachTheCurrentObserverAcrossMediaGenerations() {
+    assertTrue(
+      PlayerLifecyclePolicy.shouldDispatchNativeEvent(
+        observerIsCurrent = true,
+        expectedGeneration = 11L,
+        currentGeneration = 12L,
+        completingStop = false,
+        isShutdown = false,
+        coreEvent = true,
+      ),
+    )
+    assertFalse(
+      PlayerLifecyclePolicy.shouldDispatchNativeEvent(
+        observerIsCurrent = false,
+        expectedGeneration = 11L,
+        currentGeneration = 12L,
+        completingStop = false,
+        isShutdown = false,
+        coreEvent = true,
+      ),
+    )
+  }
+
   @Test fun transientShutdownErrorsAreRecognizedThroughWrappedCauses() {
     val message = "MPV shutdown is in progress"
     val error = IllegalStateException("initialization failed", RuntimeException(message))

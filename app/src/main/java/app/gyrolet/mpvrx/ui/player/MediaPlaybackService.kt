@@ -26,6 +26,7 @@ import android.graphics.Color
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.Uri
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -45,6 +46,7 @@ import androidx.media.MediaBrowserServiceCompat
 import androidx.media.session.MediaButtonReceiver
 import app.gyrolet.mpvrx.BuildConfig
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.data.lyrics.LyricsTranslationService
 import app.gyrolet.mpvrx.database.entities.PlaybackStateEntity
 import app.gyrolet.mpvrx.database.repository.PlaylistRepository
 import app.gyrolet.mpvrx.domain.playbackstate.repository.PlaybackStateRepository
@@ -55,8 +57,14 @@ import app.gyrolet.mpvrx.preferences.AdvancedPreferences
 import app.gyrolet.mpvrx.preferences.AudioPreferences
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
 import app.gyrolet.mpvrx.preferences.GesturePreferences
+import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
+import app.gyrolet.mpvrx.preferences.MpvConfigOverridePolicy
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
+import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
+import app.gyrolet.mpvrx.repository.lyrics.LyricsRepository
+import app.gyrolet.mpvrx.ui.components.AppToast
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.floating.FloatingLyricsController
 import app.gyrolet.mpvrx.utils.media.PlaybackStateEvents
 import app.gyrolet.mpvrx.utils.storage.FileTypeUtils
 import `is`.xyz.mpv.MPVLib
@@ -280,6 +288,20 @@ class MediaPlaybackService :
   private val playlistRepository: PlaylistRepository by inject()
   private val playbackStateRepository: PlaybackStateRepository by inject()
   private val torrentStreamingEngine: TorrentStreamingEngine by inject()
+  private val subtitlesPreferences: SubtitlesPreferences by inject()
+  private val lyricsRepository: LyricsRepository by inject()
+  private val lyricsTranslationService: LyricsTranslationService by inject()
+  private var floatingLyrics: FloatingLyricsController? = null
+
+  // Audio decision for loads this service drives on its own (detached playback), using the
+  // same TrackSelector rules as the Activity path.
+  private val detachedTrackSelector: TrackSelector by lazy {
+    TrackSelector(audioPreferences, subtitlesPreferences)
+  }
+
+  @Volatile
+  private var detachedRestoreGeneration: Long = 0L
+  private var detachedRestoreJob: Job? = null
 
   private var mediaIdentifier = ""
   private var mediaTitle = ""
@@ -331,6 +353,12 @@ class MediaPlaybackService :
   @Volatile private var mpvAccessReleased = false
   @Volatile private var isCurrentFavorite = false
   private var usesAudioBackgroundPlayback = false
+    set(value) {
+      if (field != value) {
+        field = value
+        floatingLyrics?.onPlaybackKindChanged()
+      }
+    }
   private var externalDisplayWakeLock: PowerManager.WakeLock? = null
   private var playbackWakeLock: PowerManager.WakeLock? = null
   private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
@@ -482,6 +510,52 @@ class MediaPlaybackService :
   private fun startPlaybackObservers() {
     if (playbackObserversStarted) return
     playbackObserversStarted = true
+    serviceScope.launch {
+      audioPreferences.floatingLyricsEnabled.changes().distinctUntilChanged().collect { wanted ->
+        if (!wanted || app.gyrolet.mpvrx.utils.device.DeviceFormFactor.isTelevision(this@MediaPlaybackService)) {
+          stopFloatingLyrics()
+          return@collect
+        }
+        if (floatingLyrics != null) return@collect
+        val controller = FloatingLyricsController(
+          context = this@MediaPlaybackService,
+          preferences = audioPreferences,
+          playerPreferences = playerPreferences,
+          lyricsRepository = lyricsRepository,
+          translations = lyricsTranslationService,
+          thumbnails = thumbnailRepository,
+          scope = serviceScope,
+          isAudio = { resolveNotificationIsAudio(it, usesAudioBackgroundPlayback) },
+          openPlayer = {
+            if (!mpvAccessReleased) {
+              try {
+                buildContentIntent().send()
+              } catch (error: PendingIntent.CanceledException) {
+                Log.e(TAG, "Could not open the player from floating lyrics", error)
+                AppToast.makeText(this@MediaPlaybackService, R.string.floating_lyrics_unavailable, AppToast.LENGTH_LONG).show()
+              }
+            }
+          },
+          togglePlay = {
+            if (!mpvAccessReleased && ::mediaSession.isInitialized) {
+              if (PlaybackSession.state.value.paused) mediaSession.controller.transportControls.play()
+              else mediaSession.controller.transportControls.pause()
+            }
+          },
+          previous = {
+            if (!mpvAccessReleased && ::mediaSession.isInitialized) mediaSession.controller.transportControls.skipToPrevious()
+          },
+          next = {
+            if (!mpvAccessReleased && ::mediaSession.isInitialized) mediaSession.controller.transportControls.skipToNext()
+          },
+          seek = {
+            if (!mpvAccessReleased && ::mediaSession.isInitialized) mediaSession.controller.transportControls.seekTo(it)
+          },
+        )
+        floatingLyrics = controller
+        controller.start()
+      }
+    }
 
     ContextCompat.registerReceiver(
       this,
@@ -537,6 +611,29 @@ class MediaPlaybackService :
 
     serviceScope.launch {
       PlaybackSession.queue.collect(::syncQueueState)
+    }
+
+    serviceScope.launch {
+      // Detached loads (queue playback with no foreground Activity) have no Activity
+      // restore path: without this collector nothing would re-add the file's external
+      // audio, restore its saved manual selection, or correct mpv's automatic pick.
+      // One restore runs per load generation, and only while this service — not an
+      // Activity — owns playback, so the two paths never fight over the same load.
+      PlaybackSession.state.collect { session ->
+        if (session.phase != PlaybackPhase.READY && session.phase != PlaybackPhase.BACKGROUND) {
+          return@collect
+        }
+        val generation = session.generation
+        if (generation <= 0L || generation == detachedRestoreGeneration) return@collect
+        if (!canHandleDetachedTransport()) return@collect
+        val item = session.currentItem ?: return@collect
+        detachedRestoreGeneration = generation
+        detachedRestoreJob?.cancel()
+        detachedRestoreJob =
+          serviceScope.launch(Dispatchers.IO) {
+            restoreDetachedAudioSelection(item.stableId, generation)
+          }
+      }
     }
 
     serviceScope.launch {
@@ -2012,6 +2109,37 @@ class MediaPlaybackService :
     }
   }
 
+  /**
+   * The detached counterpart of PlayerActivity's restore, audio side only: re-add the
+   * file's stored external audio tracks, apply its saved manual selection, and — only
+   * when no manual selection applied — run the automatic correction, in the same order
+   * and under the same mpv.conf ownership rule as the foreground path.
+   */
+  private suspend fun restoreDetachedAudioSelection(identifier: String, generation: Long) {
+    if (identifier.isBlank()) return
+    if (!PlaybackSession.isCurrentGeneration(generation) || !canHandleDetachedTransport()) return
+    ExternalAudioDiscovery.autoload(this@MediaPlaybackService, generation)
+    if (!PlaybackSession.isCurrentGeneration(generation) || !canHandleDetachedTransport()) return
+    if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AUDIO_TRACK_SELECTION)) return
+
+    val state = runCatching { playbackStateRepository.getVideoDataByTitle(identifier) }.getOrNull()
+    if (!PlaybackSession.isCurrentGeneration(generation) || !canHandleDetachedTransport()) return
+
+    if (state != null && state.externalAudio.isNotBlank()) {
+      for (audioUri in state.externalAudio.split("|").filter { it.isNotBlank() }) {
+        if (!PlaybackSession.isCurrentGeneration(generation)) return
+        val uri = Uri.parse(audioUri)
+        val path = runCatching { uri.resolveUri(this@MediaPlaybackService) }.getOrNull() ?: audioUri
+        // "auto": present but not force-selected; the manual restore below decides.
+        ExternalAudioDiscovery.addIfAbsent(path, generation)
+      }
+    }
+    if (!PlaybackSession.isCurrentGeneration(generation)) return
+
+    if (state != null && detachedTrackSelector.applySavedAudioSelection(state, generation)) return
+    detachedTrackSelector.applyAutomaticAudioSelection(generation)
+  }
+
   private fun schedulePlaybackStateSave(force: Boolean = false) {
     val identifier = mediaIdentifier
     if (identifier.isBlank()) return
@@ -2104,6 +2232,7 @@ class MediaPlaybackService :
         duration = duration.toInt(),
         isPositionRestorePending =
           PlaybackSession.isPositionRestorePending(PlaybackSession.state.value.activeGeneration),
+        isLive = PlaybackSession.isLiveMedia(),
         playbackSpeed = readMpvDouble("speed", oldState?.playbackSpeed ?: DEFAULT_PLAYBACK_STATE_SPEED),
         videoZoom = PlaybackSession.videoZoom.value,
         sid = readMpvTrackId("sid", oldState?.sid ?: -1),
@@ -2117,6 +2246,7 @@ class MediaPlaybackService :
           ).toInt(),
         subSpeed = readMpvDouble("sub-speed", oldState?.subSpeed ?: DEFAULT_PLAYBACK_STATE_SUB_SPEED),
         aid = readMpvTrackId("aid", oldState?.aid ?: -1),
+        sessionManualAudioId = captureSessionManualAudioId(identifier),
         audioDelayMs =
           (
             readMpvDouble(
@@ -2127,6 +2257,21 @@ class MediaPlaybackService :
         externalSubtitles = oldState?.externalSubtitles.orEmpty(),
       )
     }
+  }
+
+  /**
+   * Same rule as PlayerActivity's capture: a manual decision is persisted only when the
+   * user picked a track by hand for this file and the current track is still that pick
+   * (readMpvTrackId reports "no" as -1; the manual convention uses 0 for audio off).
+   * External audio needs no field here: the snapshot leaves it blank and buildEntity
+   * keeps the stored list, exactly like externalSubtitles on this path.
+   */
+  private fun captureSessionManualAudioId(identifier: String): Int? {
+    if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AUDIO_TRACK_SELECTION)) return null
+    val marked = ManualAudioSelectionTracker.markedTrackId(identifier) ?: return null
+    val current = readMpvTrackId("aid", -1)
+    val currentSelectionId = if (current < 0) 0 else current
+    return marked.takeIf { it == currentSelectionId }
   }
 
   private fun readMpvDouble(
@@ -2156,6 +2301,7 @@ class MediaPlaybackService :
    */
   private fun releaseMpvAccessBeforeShutdown() {
     if (mpvAccessReleased) return
+    stopFloatingLyrics()
     mpvAccessReleased = true
     updatePlaybackWakeLock()
 
@@ -2173,6 +2319,11 @@ class MediaPlaybackService :
         Log.e(TAG, "Error disabling MediaSession callbacks", error)
       }
     }
+  }
+
+  private fun stopFloatingLyrics() {
+    floatingLyrics?.stop()
+    floatingLyrics = null
   }
 
   override fun onDestroy() {

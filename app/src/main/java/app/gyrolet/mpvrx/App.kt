@@ -22,11 +22,8 @@ import android.os.Process
 import android.os.StrictMode
 import android.os.SystemClock
 import android.util.Log
-import android.view.View
 import androidx.compose.ui.AndroidComposeUiFlags
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import app.gyrolet.mpvrx.database.repository.VideoMetadataCacheRepository
 import app.gyrolet.mpvrx.di.DatabaseModule
 import app.gyrolet.mpvrx.di.FileManagerModule
@@ -36,7 +33,6 @@ import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.DecoderPreferences
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.SettingsRestoreGuard
-import app.gyrolet.mpvrx.utils.telemetry.MeasureTelemetry
 import app.gyrolet.mpvrx.remote.TvInputDispatcher
 import app.gyrolet.mpvrx.remote.TvRemoteServer
 import app.gyrolet.mpvrx.presentation.crash.CrashMonitor
@@ -58,6 +54,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
@@ -104,8 +102,13 @@ class App :
   )
 
   companion object {
+    private val _foregroundState = MutableStateFlow(false)
+    val foregroundState = _foregroundState.asStateFlow()
     @Volatile var isInForeground: Boolean = false
-      private set
+      private set(value) {
+        field = value
+        _foregroundState.value = value
+      }
     private const val TAG = "App"
     private const val POST_START_MAINTENANCE_DELAY_MS = 10_000L
     private const val THUMBNAIL_WARMUP_DELAY_MS = 1_500L
@@ -164,8 +167,6 @@ class App :
         app.gyrolet.mpvrx.di.DownloadModule,
       )
     }
-    // Third-party diagnostics require consent; disabled users do not start collection.
-    MeasureTelemetry.initialize(this, getKoin().get<AdvancedPreferences>().measureEnabled.get())
     if (!BuildConfig.MPV_SUPPORTS_VULKAN) {
       getKoin().get<DecoderPreferences>().useVulkan.set(false)
     }
@@ -188,6 +189,12 @@ class App :
     startIdleMpvCoreReaper()
     startWidgetUpdates()
     startWatchStatsTracking()
+    applicationScope.launch(Dispatchers.IO) {
+      delay(2_000L)
+      runCatching {
+        getKoin().get<app.gyrolet.mpvrx.domain.jellyfin.JellyfinOfflineSyncManager>().ensureStarted()
+      }.onFailure { Log.w(TAG, "Failed to start Jellyfin offline sync manager", it) }
+    }
 
     applicationScope.launch {
       runCatching {
@@ -256,6 +263,7 @@ class App :
 
   override fun onConfigurationChanged(newConfig: Configuration) {
     super.onConfigurationChanged(newConfig)
+    PlaybackSession.updateStatisticsLanguage(this)
     MediaPlayerWidget.requestUpdate(this)
   }
 
@@ -401,22 +409,6 @@ class App :
     savedInstanceState: Bundle?,
   ) {
     if (activity is PlayerActivity) PlaybackPerformanceTrace.mark("PLAYER_ACTIVITY_CREATE_END")
-    if (activity.javaClass.name.contains("leakcanary", ignoreCase = true)) {
-      val rootView = activity.findViewById<View>(android.R.id.content)
-      rootView?.let { view ->
-        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
-          val statusBarInsets = insets.getInsets(WindowInsetsCompat.Type.statusBars())
-          val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-          v.setPadding(
-            v.paddingLeft,
-            statusBarInsets.top,
-            v.paddingRight,
-            navBarInsets.bottom,
-          )
-          insets
-        }
-      }
-    }
   }
 
   override fun onActivityResumed(activity: Activity) {

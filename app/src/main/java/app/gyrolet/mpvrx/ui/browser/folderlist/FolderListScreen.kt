@@ -122,6 +122,7 @@ import app.gyrolet.mpvrx.ui.browser.components.fastScrollGlyph
 import app.gyrolet.mpvrx.ui.browser.dialogs.DeleteConfirmationDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.FileOperationProgressDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.FolderPickerDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.FolderTransfer
 import app.gyrolet.mpvrx.ui.browser.dialogs.FolderSortDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.BrowserSortDialogScope
 import app.gyrolet.mpvrx.ui.browser.dialogs.rememberBrowserSortDialogOpen
@@ -211,7 +212,6 @@ object FolderListScreen : Screen {
     val browserPreferences = koinInject<BrowserPreferences>()
     val gesturePreferences = koinInject<GesturePreferences>()
     val foldersPreferences = koinInject<FoldersPreferences>()
-    val advancedPreferences = koinInject<app.gyrolet.mpvrx.preferences.AdvancedPreferences>()
     val appearancePreferences = koinInject<AppearancePreferences>()
     val showQuickPlayFab by appearancePreferences.showQuickPlayFab.collectAsState()
     val quickPlayFabDirect by appearancePreferences.quickPlayFabDirect.collectAsState()
@@ -231,7 +231,6 @@ object FolderListScreen : Screen {
     val folderSortType by browserPreferences.folderSortType.collectAsState()
     val folderSortOrder by browserPreferences.folderSortOrder.collectAsState()
     val tapThumbnailToSelect by gesturePreferences.tapThumbnailToSelect.collectAsState()
-    val enableRecentlyPlayed by advancedPreferences.enableRecentlyPlayed.collectAsState()
     val pinnedFolderPaths by foldersPreferences.pinnedFolders.collectAsState()
     val dualPaneForTablet by browserPreferences.dualPaneForTablet.collectAsState()
 
@@ -736,7 +735,12 @@ object FolderListScreen : Screen {
               },
               onTitleDoubleTap = { backstack.navigateTo(SecureFolderGateScreen) },
               onTitleLongPress = { backstack.navigateTo(SecureFolderGateScreen) },
-              showBetaBadge = BuildConfig.IS_PREVIEW_BUILD,
+              titleBadge =
+                when {
+                  BuildConfig.IS_PREVIEW_BUILD -> stringResource(R.string.ui_beta_badge_suffix)
+                  BuildConfig.IS_PLAY_STORE_BUILD -> stringResource(R.string.ui_tester_badge_suffix)
+                  else -> null
+                },
               onRenameClick = null,
               isSingleSelection = selectionManager.isSingleSelection,
               onInfoClick = showSelectionInfo,
@@ -1198,6 +1202,16 @@ object FolderListScreen : Screen {
       isOpen = folderPickerOpen.value,
       currentPath = "",
       onDismiss = { folderPickerOpen.value = false },
+      transfer =
+        operationType.value?.let { type ->
+          FolderTransfer(type) {
+            app.gyrolet.mpvrx.repository.MediaFileRepository.getVideosForBuckets(
+              context,
+              selectionManager.getSelectedItems().map { it.bucketId }.toSet(),
+              includeAudioOverride = if (audioOnly) true else null,
+            )
+          }
+        },
       onFolderSelected = { destinationPath ->
         folderPickerOpen.value = false
         val op = operationType.value

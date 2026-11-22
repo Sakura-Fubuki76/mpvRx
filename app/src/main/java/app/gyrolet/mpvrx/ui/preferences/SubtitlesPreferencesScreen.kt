@@ -69,7 +69,6 @@ import app.gyrolet.mpvrx.preferences.DEFAULT_SUBTITLE_FONT_FAMILY
 import app.gyrolet.mpvrx.preferences.LEGACY_DEFAULT_SUBTITLE_FONT_FAMILY
 import app.gyrolet.mpvrx.preferences.SubtitlesPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.presentation.Screen
 import app.gyrolet.mpvrx.presentation.components.AppPickerSheet
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetSearchField
 import app.gyrolet.mpvrx.repository.subtitle.OnlineSubtitleSearchMode
@@ -104,7 +103,7 @@ import app.gyrolet.mpvrx.ui.preferences.components.AppTextFieldPreference as Tex
 import org.koin.compose.koinInject
 
 @Serializable
-object SubtitlesPreferencesScreen : Screen {
+object SubtitlesPreferencesScreen : ScrollableSettingsScreen {
   @OptIn(ExperimentalMaterial3Api::class)
   @Composable
   override fun Content() {
@@ -303,6 +302,7 @@ object SubtitlesPreferencesScreen : Screen {
           rememberSettingsSearchList(SubtitlesPreferencesScreen, MaterialTheme.colorScheme.primary)
         LazyColumn(
           state = settingsListState,
+          contentPadding = settingsContentPadding(),
           modifier =
             Modifier
               .fillMaxSize()
@@ -531,6 +531,22 @@ object SubtitlesPreferencesScreen : Screen {
                 },
               )
               }
+
+              PreferenceDivider()
+
+              val autoDownloadFonts by preferences.autoDownloadFonts.collectAsState()
+              SwitchPreference(
+                modifier = Modifier.settingsSearchTarget(R.string.pref_subtitles_auto_download_fonts),
+                value = autoDownloadFonts,
+                onValueChange = { preferences.autoDownloadFonts.set(it) },
+                title = { Text(stringResource(R.string.pref_subtitles_auto_download_fonts)) },
+                summary = {
+                  Text(
+                    stringResource(R.string.pref_subtitles_auto_download_fonts_summary),
+                    color = MaterialTheme.colorScheme.outline,
+                  )
+                },
+              )
 
               PreferenceDivider()
 

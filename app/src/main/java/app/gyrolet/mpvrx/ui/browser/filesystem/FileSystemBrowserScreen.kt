@@ -112,6 +112,7 @@ import app.gyrolet.mpvrx.ui.browser.dialogs.FileOperationProgressDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.FileSystemSortDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.rememberBrowserSortDialogOpen
 import app.gyrolet.mpvrx.ui.browser.dialogs.FolderPickerDialog
+import app.gyrolet.mpvrx.ui.browser.dialogs.FolderTransfer
 import app.gyrolet.mpvrx.ui.browser.dialogs.RenameDialog
 import app.gyrolet.mpvrx.ui.browser.dialogs.VideoCompressorOverlay
 import app.gyrolet.mpvrx.ui.browser.dialogs.rememberSelectionInfoAction
@@ -132,6 +133,7 @@ import app.gyrolet.mpvrx.ui.utils.calculateResponsiveGridSpans
 import app.gyrolet.mpvrx.ui.utils.popSafely
 import app.gyrolet.mpvrx.ui.tv.focusableWhen
 import app.gyrolet.mpvrx.ui.tv.isTelevision
+import app.gyrolet.mpvrx.utils.history.RecentlyPlayedOps
 import app.gyrolet.mpvrx.utils.media.CopyPasteOps
 import app.gyrolet.mpvrx.utils.media.MediaUtils
 import app.gyrolet.mpvrx.utils.media.OpenDocumentTreeContract
@@ -228,6 +230,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
       }
     }
   val videoFilesWithPlayback by viewModel.videoFilesWithPlayback.collectAsState()
+  val recentlyPlayedFilePath by viewModel.recentlyPlayedFilePath.collectAsState()
   val newVideoIds by viewModel.newVideoIds.collectAsState()
   val watchedVideoIds by viewModel.watchedVideoIds.collectAsState()
   val isLoading by viewModel.isLoading.collectAsState()
@@ -812,6 +815,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 searchResults = searchResults,
                 isLoading = isSearchLoading,
                 videoFilesWithPlayback = videoFilesWithPlayback,
+                recentlyPlayedFilePath = recentlyPlayedFilePath,
                 newVideoIds = newVideoIds,
                 showSubtitleIndicator = showSubtitleIndicator && !isArchiveBrowser,
                 archiveMode = isArchiveBrowser,
@@ -834,6 +838,7 @@ fun FileSystemBrowserScreen(path: String? = null) {
                 gridState = gridState,
                 items = items,
                 videoFilesWithPlayback = videoFilesWithPlayback,
+                recentlyPlayedFilePath = recentlyPlayedFilePath,
                 newVideoIds = newVideoIds,
                 watchedVideoIds = watchedVideoIds,
                 isLoading = isLoading && items.isEmpty(),
@@ -1095,6 +1100,12 @@ fun FileSystemBrowserScreen(path: String? = null) {
       isOpen = folderPickerOpen.value,
       currentPath = currentPath,
       onDismiss = { folderPickerOpen.value = false },
+      transfer =
+        operationType.value?.let { type ->
+          FolderTransfer(type) {
+            selectedVideos + selectedFolders.flatMap { collectVideosRecursively(context, it.path) }
+          }
+        },
       onFolderSelected = { destinationPath ->
         folderPickerOpen.value = false
         val op = operationType.value
@@ -1381,6 +1392,7 @@ private fun FileSystemBrowserContent(
   gridState: LazyGridState,
   items: List<FileSystemItem>,
   videoFilesWithPlayback: Map<Long, Float>,
+  recentlyPlayedFilePath: String?,
   newVideoIds: Set<Long>,
   watchedVideoIds: Set<Long>,
   isLoading: Boolean,
@@ -1686,7 +1698,7 @@ private fun FileSystemBrowserContent(
                   VideoCard(
                       video = videoFile.video,
                       progressPercentage = videoFilesWithPlayback[videoFile.video.id],
-                      isRecentlyPlayed = false,
+                      isRecentlyPlayed = RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, videoFile.video),
                       isSelected = selectionManager.isSelected(videoFile),
                       selectionNeighbors = mediaSelectionNeighbors(index, videoItems.size, (spansInfo.spans / spansInfo.videoSpan).coerceAtLeast(1)) { neighbor ->
                         selectionManager.isSelected(videoItems[neighbor])
@@ -1814,7 +1826,7 @@ private fun FileSystemBrowserContent(
                 VideoCard(
                     video = videoFile.video,
                     progressPercentage = videoFilesWithPlayback[videoFile.video.id],
-                    isRecentlyPlayed = false,
+                    isRecentlyPlayed = RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, videoFile.video),
                     isSelected = selectionManager.isSelected(videoFile),
                       selectionNeighbors = mediaSelectionNeighbors(index, videoItems.size, 1) { neighbor ->
                         selectionManager.isSelected(videoItems[neighbor])
@@ -1882,6 +1894,7 @@ private fun FileSystemSearchContent(
   searchResults: List<FileSystemItem>,
   isLoading: Boolean,
   videoFilesWithPlayback: Map<Long, Float>,
+  recentlyPlayedFilePath: String?,
   newVideoIds: Set<Long>,
   showSubtitleIndicator: Boolean,
   isAtRoot: Boolean,
@@ -2142,7 +2155,7 @@ private fun FileSystemSearchContent(
                     progressPercentage =
                       videoFilesWithPlayback[videoFile.video.id]
                         ?: swipePlaybackInfo[videoFile.video.path]?.progressPercentage,
-                    isRecentlyPlayed = false,
+                    isRecentlyPlayed = RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, videoFile.video),
                     isSelected = false,
                     onClick = { onVideoClick(videoFile.video) },
                     onLongClick = null,
@@ -2231,7 +2244,7 @@ private fun FileSystemSearchContent(
                   progressPercentage =
                     videoFilesWithPlayback[videoFile.video.id]
                       ?: swipePlaybackInfo[videoFile.video.path]?.progressPercentage,
-                  isRecentlyPlayed = false,
+                  isRecentlyPlayed = RecentlyPlayedOps.matchesVideoPath(recentlyPlayedFilePath, videoFile.video),
                   isSelected = false,
                   onClick = { onVideoClick(videoFile.video) },
                   onLongClick = null,
