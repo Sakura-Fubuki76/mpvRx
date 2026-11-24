@@ -73,6 +73,7 @@ import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvContextMenu
 import app.gyrolet.mpvrx.ui.tv.tvFocusMemory
 import app.gyrolet.mpvrx.ui.theme.AppShapeScale
+import app.gyrolet.mpvrx.utils.storage.VideoScanUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
@@ -295,7 +296,12 @@ fun VideoCard(
       video.sizeFormatted.isNotBlank() &&
       video.sizeFormatted != "0 B" &&
       video.sizeFormatted != "--"
-  val hasResolution = !video.isAudio && video.resolution.isNotBlank() && video.resolution != "--"
+  // Built from the stored dimensions every time, so every screen labels a video the way its
+  // MediaStore size does; a cached label string can be stale or missing ("--").
+  val resolutionBase =
+    VideoScanUtils.formatResolution(video.width, video.height).takeUnless { it == "--" }
+      ?: video.resolution.substringBefore("@").trim().takeUnless { it.isBlank() || it == "--" }
+  val hasResolution = !video.isAudio && resolutionBase != null
   // Some sources keep the frame rate in Video.fps without an '@' suffix in resolution.
   // Prefer the numeric metadata, then fall back to older cached resolution strings.
   val fpsOnly =
@@ -304,11 +310,13 @@ fun VideoCard(
       else "%.2f".format(java.util.Locale.US, fps).trimEnd('0').trimEnd('.')
     } ?: video.resolution.substringAfter("@", "").trim().removeSuffix("FPS").removeSuffix("fps").trim()
   val hasFps = !video.isAudio && fpsOnly.isNotBlank()
-  val resolutionText = video.resolution.substringBefore("@").trim().let { base ->
+  val resolutionText = resolutionBase.orEmpty().let { base ->
     if (showFramerateInResolution && hasFps) "${base}@$fpsOnly" else base
   }
   val hasCodecChip = showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()
-  val hasSubtitleChips = showSubtitleIndicator && !video.isAudio && video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()
+  val hasSubtitleChips = showSubtitleIndicator && !video.isAudio &&
+    (video.hasEmbeddedSubtitles || video.subtitleCodec.isNotBlank())
+  val subtitleCodecs = video.subtitleCodec.split(" ").filter(String::isNotBlank).ifEmpty { listOf("TEXT") }
   val hasDateMetadataChip = showDateChip && video.dateModified > 0
   val hasResolutionMetadataChip = !gridTile && showResolutionChip && hasResolution
   val hasFramerateMetadataChip = showFramerateInResolution && hasFps && (gridTile || !showResolutionChip)
@@ -691,21 +699,19 @@ fun VideoCard(
               if (sourceLabel != null) {
                 SourceChip(label = sourceLabel, color = sourceColor ?: MaterialTheme.colorScheme.surfaceContainerHigh)
               }
-              if (showSubtitleIndicator && !video.isAudio) {
-                if (video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()) {
-                  video.subtitleCodec.split(" ").forEach { codec ->
-                    Text(
-                      text = codec,
-                      style = MaterialTheme.typography.labelSmall,
-                      modifier =
-                        Modifier
-                          .background(
-                            MaterialTheme.colorScheme.primary,
-                            AppShapeScale.small,
-                          ).padding(horizontal = 8.dp, vertical = 4.dp),
-                      color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                  }
+              if (hasSubtitleChips) {
+                subtitleCodecs.forEach { codec ->
+                  Text(
+                    text = codec,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier =
+                      Modifier
+                        .background(
+                          MaterialTheme.colorScheme.primary,
+                          AppShapeScale.small,
+                        ).padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.onPrimary,
+                  )
                 }
               }
               if (hasSizeChip) {
@@ -1045,21 +1051,19 @@ fun VideoCard(
                 if (showCodecSupportIndicator && !video.isAudio && video.videoCodec.isNotBlank()) {
                   CodecSupportIndicator(video = video)
                 }
-                if (showSubtitleIndicator && !video.isAudio) {
-                  if (video.hasEmbeddedSubtitles && video.subtitleCodec.isNotBlank()) {
-                    video.subtitleCodec.split(" ").forEach { codec ->
-                      Text(
-                        text = codec,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier =
-                          Modifier
-                            .background(
-                              MaterialTheme.colorScheme.primary,
-                              AppShapeScale.small,
-                            ).padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                      )
-                    }
+                if (hasSubtitleChips) {
+                  subtitleCodecs.forEach { codec ->
+                    Text(
+                      text = codec,
+                      style = MaterialTheme.typography.labelSmall,
+                      modifier =
+                        Modifier
+                          .background(
+                            MaterialTheme.colorScheme.primary,
+                            AppShapeScale.small,
+                          ).padding(horizontal = 8.dp, vertical = 4.dp),
+                      color = MaterialTheme.colorScheme.onPrimary,
+                    )
                   }
                 }
                 if (hasSizeChip) {

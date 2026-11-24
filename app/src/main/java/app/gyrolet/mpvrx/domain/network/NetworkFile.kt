@@ -31,4 +31,9 @@ data class NetworkFile(
   val videoCodec: String = "",
   val hasEmbeddedSubtitles: Boolean = false,
   val subtitleCodec: String = "",
+  val artist: String? = null,
+  val album: String? = null,
+  val artworkUrl: String? = null,
+  val trackNumber: Int = 0,
+  val year: Int = 0,
 )

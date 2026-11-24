@@ -335,6 +335,14 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
+          titleRes = R.string.pref_player_watched_threshold_title,
+          keywords = listOf("watched", "threshold", "completed", "finished", "mark", "progress", "percent"),
+          category = "Player",
+          screen = PlayerPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
           titleRes = R.string.pref_player_close_after_eof,
           keywords = listOf("close", "end", "playback", "quit", "finish"),
           category = "Player",
@@ -1723,6 +1731,16 @@ object SearchablePreferences {
         SearchEntrySpec(R.string.pref_player_buttons_opacity, listOf("opacity", "transparency", "transparent", "alpha", "background", "buttons", "player")),
         SearchEntrySpec(R.string.ui_time_network_clock, listOf("clock", "time", "network", "format", "12 hour", "24 hour")),
       )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_layout_media_format_badges_title,
+          summaryRes = R.string.pref_layout_media_format_badges_summary,
+          keywords = listOf("badge", "format", "codec", "resolution", "hdr", "video title", "player layout"),
+          category = "Appearance",
+          screen = PlayerControlsPreferencesScreen,
+          anchorItemIndex = 9,
+        ),
+      )
 
       addSearchEntries(
         category = "Player",
@@ -1844,12 +1862,20 @@ object SearchablePreferences {
         SearchEntrySpec(R.string.pref_audio_ambient_mode_title, listOf("audio", "ambient", "background", "visualizer")),
         SearchEntrySpec(R.string.pref_audio_immersive_artwork_title, listOf("audio", "music", "immersive", "artwork", "album", "cover", "background")),
         SearchEntrySpec(R.string.pref_audio_wavy_seekbar_title, listOf("audio", "wavy", "seekbar", "visualizer", "animation", "wave")),
-        SearchEntrySpec(R.string.pref_audio_animated_artwork_title, listOf("audio", "music", "animated", "artwork", "album", "cover", "apple", "tidal", "motion")),
+        SearchEntrySpec(R.string.pref_audio_high_quality_artwork_title, listOf("audio", "music", "artwork", "album", "cover", "high quality", "hd", "resolution", "apple", "tidal", "download")),
+        SearchEntrySpec(R.string.pref_audio_animated_artwork_title, listOf("audio", "music", "animated", "artwork", "album", "cover", "apple", "tidal", "spotify", "canvas", "motion")),
         SearchEntrySpec(R.string.pref_audio_animated_artwork_apple_music_title, listOf("audio", "music", "animated", "artwork", "apple", "motion", "cover")),
         SearchEntrySpec(R.string.pref_audio_animated_artwork_tidal_title, listOf("audio", "music", "animated", "artwork", "tidal", "video", "cover")),
-        SearchEntrySpec(R.string.pref_tidal_client_id, listOf("tidal", "client", "id", "developer", "credentials", "artwork")),
-        SearchEntrySpec(R.string.pref_tidal_client_secret, listOf("tidal", "client", "secret", "developer", "credentials", "artwork")),
       )
+      if (!app.gyrolet.mpvrx.BuildConfig.IS_PLAY_STORE_BUILD) {
+        addSearchEntries(
+          category = "Audio",
+          screen = AudioPreferencesScreen,
+          anchorItemIndex = 3,
+          SearchEntrySpec(R.string.pref_audio_animated_artwork_spotify_title, listOf("audio", "music", "animated", "artwork", "spotify", "canvas", "video")),
+          SearchEntrySpec(R.string.pref_spotify_sp_dc_cookie, listOf("spotify", "cookie", "sp_dc", "session", "canvas", "artwork")),
+        )
+      }
       addSearchEntries(
         category = "Audio",
         screen = AudioPreferencesScreen,
@@ -2202,7 +2228,6 @@ object SearchablePreferences {
           screen = AboutScreen,
           anchorItemIndex = 0,
           SearchEntrySpec(R.string.ui_auto_check_for_updates, listOf("update", "automatic", "startup")),
-          SearchEntrySpec(R.string.ui_update_channel, listOf("update", "channel", "stable", "preview", "experimental")),
         )
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
           addSearchEntries(

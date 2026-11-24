@@ -39,6 +39,7 @@ import app.gyrolet.mpvrx.preferences.MpvConfigControlledFeatures
 import app.gyrolet.mpvrx.preferences.MpvConfigOverride
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.browser.dialogs.subtitlePickerExtensions
+import app.gyrolet.mpvrx.ui.mediainfo.PlaybackMediaInfoSheet
 import app.gyrolet.mpvrx.ui.player.Decoder
 import app.gyrolet.mpvrx.ui.player.Panels
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
@@ -48,6 +49,7 @@ import app.gyrolet.mpvrx.ui.player.controls.components.MpvConfigOwnedSheet
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AmbientSheet
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.PostProcessingSheet
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AspectRatioSheet
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioOutputSheet
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioTracksSheet
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioPropertiesSheet
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioPropertyItem
@@ -138,6 +140,7 @@ fun PlayerSheets(
 
   when (sheetShown) {
     Sheets.None -> {}
+    Sheets.MediaInfo -> PlaybackMediaInfoSheet(onDismissRequest)
     Sheets.BookmarkEditor -> PlaybackBookmarkEditor(viewModel, { onShowSheet(Sheets.Chapters) }, onDismissRequest)
     Sheets.AudiobookRewind,
     Sheets.AudiobookSleepTimer,
@@ -638,6 +641,11 @@ fun PlayerSheets(
         onDismissRequest = onDismissRequest,
       )
     }
+
+    Sheets.AudioOutput -> AudioOutputSheet(
+      onDismissRequest = onDismissRequest,
+      onOpenAudioInfo = { onShowSheet(Sheets.AudioProperties) },
+    )
 
     Sheets.AudioProperties -> {
       val playback by app.gyrolet.mpvrx.ui.player.PlaybackSession.state.collectAsState()

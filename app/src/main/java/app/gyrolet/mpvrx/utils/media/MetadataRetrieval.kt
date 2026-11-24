@@ -56,7 +56,7 @@ object MetadataRetrieval {
     return (preferences.showDurationField.get() && video.duration <= 0L) ||
       (!video.isAudio && (
         (preferences.showResolutionChip.get() && (video.width == 0 || video.height == 0)) ||
-          (preferences.showFramerateInResolution.get() && video.fps == 0f) ||
+          (preferences.showFramerateInResolution.get() && (!video.fps.isFinite() || video.fps <= 0f)) ||
           (preferences.showSubtitleIndicator.get() && video.subtitleCodec.isEmpty()) ||
           (preferences.showCodecSupportIndicator.get() && video.videoCodec.isBlank())
         ))
@@ -64,9 +64,12 @@ object MetadataRetrieval {
 
   internal fun withMetadata(video: Video, metadata: MediaInfoOps.VideoMetadata): Video {
     val duration = metadata.durationMs.takeIf { it > 0L } ?: video.duration
-    val width = metadata.width.takeIf { it > 0 } ?: video.width
-    val height = metadata.height.takeIf { it > 0 } ?: video.height
-    val fps = metadata.fps.takeIf { it > 0f } ?: video.fps
+    // MediaStore's dimensions are what the library and resolution chip report; a probe only
+    // fills them in when the index has none, so enrichment never changes a shown resolution.
+    val hasIndexedSize = video.width > 0 && video.height > 0
+    val width = if (hasIndexedSize) video.width else metadata.width.takeIf { it > 0 } ?: video.width
+    val height = if (hasIndexedSize) video.height else metadata.height.takeIf { it > 0 } ?: video.height
+    val fps = metadata.fps.takeIf { it.isFinite() && it > 0f } ?: video.fps
     return video.copy(
       duration = duration,
       durationFormatted = if (duration > 0L) formatDuration(duration) else "",
@@ -74,8 +77,8 @@ object MetadataRetrieval {
       height = height,
       fps = fps,
       resolution = VideoScanUtils.formatResolutionWithFps(width, height, fps),
-      hasEmbeddedSubtitles = metadata.hasEmbeddedSubtitles,
-      subtitleCodec = metadata.subtitleCodec,
+      hasEmbeddedSubtitles = metadata.hasEmbeddedSubtitles || video.hasEmbeddedSubtitles,
+      subtitleCodec = metadata.subtitleCodec.ifBlank { video.subtitleCodec },
       videoCodec = metadata.videoCodec.ifBlank { video.videoCodec },
       videoCodecMimeType = metadata.videoCodecMimeType.ifBlank { video.videoCodecMimeType },
     )

@@ -51,12 +51,9 @@ val sideloadDistributions = setOf("standard", "noVulkan", "fongmi")
 // AGP cannot build an app bundle while ABI splits produce multiple APKs (issuetracker 402800800).
 val isBundleBuild =
   gradle.startParameter.taskNames.any { it.substringAfterLast(':').startsWith("bundle") }
-val releaseVersionCode = 304
+val releaseVersionCode = 305
 val versionCodeBandSize = 10_000
 val stableVersionCode = releaseVersionCode * versionCodeBandSize + (versionCodeBandSize - 1)
-val previewVersionCode =
-  (releaseVersionCode + 1) * versionCodeBandSize +
-    (getCommitCount().toIntOrNull() ?: 1).coerceIn(1, versionCodeBandSize - 2)
 
 plugins {
   alias(libs.plugins.android.application)
@@ -90,10 +87,9 @@ android {
     applicationId = "app.gyrolet.mpvrx"
     minSdk = 26
     targetSdk = 36
-    // Stable occupies the top of its version band. Preview uses the next band's commit-count
-    // offset, so Stable -> Preview -> newer Preview -> next Stable is always an Android upgrade.
+    // Stable occupies the top of its version band.
     versionCode = stableVersionCode
-    versionName = "3.0.3"
+    versionName = "3.1.1"
 
     vectorDrawables {
       useSupportLibrary = true
@@ -239,7 +235,6 @@ android {
 
   buildTypes {
     named("release") {
-      buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(
@@ -253,15 +248,7 @@ android {
       }
     }
 
-    create("preview") {
-      initWith(getByName("release"))
-      signingConfig = signingConfigs.getByName("debug")
-      buildConfigField("boolean", "IS_PREVIEW_BUILD", "true")
-      versionNameSuffix = "-beta.r${getCommitCount()}"
-    }
-
     named("debug") {
-      buildConfigField("boolean", "IS_PREVIEW_BUILD", "false")
       applicationIdSuffix = ".debug"
       versionNameSuffix = "-${getCommitCount()}"
       resValue("string", "app_name", "mpvRx-Debug")
@@ -352,12 +339,6 @@ androidComponents {
         output.enabled.set(false)
       }
 
-      val channelVersionCode =
-        if (variant.buildType == "preview") {
-          previewVersionCode
-        } else {
-          output.versionCode.orNull ?: stableVersionCode
-        }
       if (isPlayStoreRelease) {
         output.versionCode.set(providers.provider {
           check(runCommand("git rev-parse --is-shallow-repository") == "false") {
@@ -374,7 +355,7 @@ androidComponents {
           playStoreVersionCode.toInt()
         })
       } else {
-        output.versionCode.set(channelVersionCode * 10 + (abiCodes[abi] ?: 0))
+        output.versionCode.set((output.versionCode.orNull ?: stableVersionCode) * 10 + (abiCodes[abi] ?: 0))
       }
     }
   }

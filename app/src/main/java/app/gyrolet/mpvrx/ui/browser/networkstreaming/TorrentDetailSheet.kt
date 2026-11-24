@@ -39,13 +39,10 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import app.gyrolet.mpvrx.presentation.components.AppTextField as OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import app.gyrolet.mpvrx.database.entities.NetworkStreamEntryEntity
 import app.gyrolet.mpvrx.domain.torrent.formatTorrentBytes
 import app.gyrolet.mpvrx.presentation.components.RemoteImage
+import app.gyrolet.mpvrx.presentation.components.ResponsiveBottomSheet
 import app.gyrolet.mpvrx.ui.torrent.TorrentDownloadButton
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
@@ -91,11 +89,6 @@ fun TorrentDetailSheet(
 ) {
   if (group == null) return
 
-  val sheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
   val context = LocalContext.current
   var isOverviewExpanded by remember(group.id) { mutableStateOf(false) }
   var canExpandOverview by remember(group.id) { mutableStateOf(false) }
@@ -135,11 +128,10 @@ fun TorrentDetailSheet(
       base.firstOrNull { it.fileIndex !in viewedFileIndices } ?: base.firstOrNull()
     }
 
-  ModalBottomSheet(
+  ResponsiveBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
     containerColor = MaterialTheme.colorScheme.surface,
-    dragHandle = null,
+    showDragHandle = false,
     modifier = modifier,
   ) {
     val listState = rememberLazyListState()

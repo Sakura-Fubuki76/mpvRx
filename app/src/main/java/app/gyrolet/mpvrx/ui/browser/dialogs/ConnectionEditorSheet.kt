@@ -31,12 +31,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import app.gyrolet.mpvrx.presentation.components.AppTextField as OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.presentation.components.AppComboBox
+import app.gyrolet.mpvrx.presentation.components.ResponsiveBottomSheet
 import app.gyrolet.mpvrx.data.network.ServerSuggestion
 import app.gyrolet.mpvrx.domain.network.NetworkAddress
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
@@ -102,11 +100,6 @@ internal fun ConnectionEditorSheet(
   val pathFocusRequester = remember { FocusRequester() }
   val usernameFocusRequester = remember { FocusRequester() }
   val passwordFocusRequester = remember { FocusRequester() }
-  val sheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
   val parsedPort = port.toIntOrNull()
   val isPortValid = parsedPort != null && parsedPort in MIN_PORT..MAX_PORT
   val address = remember(host, protocol, useHttps) {
@@ -157,10 +150,9 @@ internal fun ConnectionEditorSheet(
     }
   }
 
-  ModalBottomSheet(
+  ResponsiveBottomSheet(
     onDismissRequest = dismiss,
     modifier = modifier,
-    sheetState = sheetState,
     containerColor = MaterialTheme.colorScheme.surfaceContainer,
   ) {
     Column(
@@ -371,8 +363,8 @@ internal fun ConnectionEditorSheet(
       }
 
       FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        modifier = Modifier.align(Alignment.End).padding(bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         TextButton(onClick = dismiss, shapes = ButtonDefaults.shapes()) {

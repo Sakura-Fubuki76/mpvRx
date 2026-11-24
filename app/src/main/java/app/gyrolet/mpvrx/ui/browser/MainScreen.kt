@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
+import app.gyrolet.mpvrx.ui.browser.fab.LocalFabTrailingInset
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.ime
@@ -570,12 +571,14 @@ object MainScreen : Screen, TvEdgeToEdgeScreen {
       }
     // TV: reserve the rail on the start edge, but avoid wasting a full overscan gutter on
     // the trailing edge. TV lists reserve their own clearance for scaled focus highlights.
+    val tvTrailingPadding = 12.dp
+    val fabTrailingInset = if (isTelevision) TvSafeArea.Horizontal - tvTrailingPadding else 0.dp
     val tvContentPadding =
       if (isTelevision) {
         PaddingValues(
           start = if (showTvRail) TvSideNavigationDefaults.CollapsedWidth else TvSafeArea.Horizontal,
           top = TvSafeArea.Vertical,
-          end = 12.dp,
+          end = tvTrailingPadding,
         )
       } else {
         PaddingValues(0.dp)
@@ -623,6 +626,7 @@ object MainScreen : Screen, TvEdgeToEdgeScreen {
           ) {
             CompositionLocalProvider(
               LocalNavigationBarHeight provides contentBottomPadding,
+              LocalFabTrailingInset provides fabTrailingInset,
               LocalMainNavigationBar provides mainNavBar,
               LocalIsMainTabPage provides true,
             ) {
@@ -632,6 +636,7 @@ object MainScreen : Screen, TvEdgeToEdgeScreen {
         } else {
           CompositionLocalProvider(
             LocalNavigationBarHeight provides contentBottomPadding,
+            LocalFabTrailingInset provides fabTrailingInset,
             LocalMainNavigationBar provides mainNavBar,
             LocalIsMainTabPage provides true,
           ) {

@@ -31,7 +31,6 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,7 +51,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButtonMenu
 import androidx.compose.material3.FloatingActionButtonMenuItem
@@ -61,14 +59,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import app.gyrolet.mpvrx.presentation.components.AppTextField as OutlinedTextField
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import androidx.compose.material3.ToggleFloatingActionButton
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults.animateIcon
@@ -120,6 +115,7 @@ import app.gyrolet.mpvrx.presentation.components.AppPickerSheet
 import app.gyrolet.mpvrx.presentation.components.AppComboBoxChip
 import app.gyrolet.mpvrx.presentation.components.AppComboBoxOption
 import app.gyrolet.mpvrx.presentation.components.PlayerSheetSearchField
+import app.gyrolet.mpvrx.presentation.components.ResponsiveBottomSheet
 import app.gyrolet.mpvrx.ui.browser.LocalNavigationBarHeight
 import app.gyrolet.mpvrx.ui.browser.fab.FabPlacement
 import app.gyrolet.mpvrx.ui.browser.components.BrowserTopBar
@@ -301,6 +297,7 @@ fun AudiobookLibraryContent(
     R.string.audiobook_not_started,
   )
   Scaffold(
+    contentWindowInsets = FabPlacement.scaffoldInsets(),
     containerColor = app.gyrolet.mpvrx.ui.theme.wallpaperAwareBackgroundColor(),
     topBar = {
       BrowserTopBar(
@@ -391,7 +388,7 @@ fun AudiobookLibraryContent(
       floatingActionButton = {
         if (!isAbsSource && importing == null) {
           FloatingActionButtonMenu(
-            modifier = Modifier.padding(bottom = FabPlacement.scaffoldBottomPadding()),
+            modifier = FabPlacement.scaffoldMenu(),
             expanded = importMenu,
             button = {
               TooltipBox(
@@ -849,16 +846,11 @@ private fun AudiobookDetailsBottomSheet(
   extraActions: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null,
   sourceUri: String? = null,
 ) {
-  val sheetState = rememberBottomSheetState(
-    initialValue = SheetValue.Expanded,
-    enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-  )
-  ModalBottomSheet(
+  ResponsiveBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
+    animateEntrance = false,
     shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
     containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     LazyColumn(
       modifier = Modifier.fillMaxWidth(),
@@ -1241,7 +1233,7 @@ private fun AudiobookOnlineSearchDialog(
           }
         } else {
           LazyColumn(
-            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             items(

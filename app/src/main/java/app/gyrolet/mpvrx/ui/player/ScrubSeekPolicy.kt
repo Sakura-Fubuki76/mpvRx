@@ -2,9 +2,12 @@ package app.gyrolet.mpvrx.ui.player
 
 import kotlin.math.abs
 
+/** Seek step used to coalesce scrub seeks and to detect a drag that reaches the end of the media. */
+internal const val SCRUB_SEEK_STEP_SECONDS = 0.5
+
 /** Upstream's 0.5 s coalescing rule, shared by live scrubbing and the final seekbar release. */
 internal fun shouldIssueScrubSeek(lastTarget: Double, target: Double): Boolean =
-  target.isFinite() && (lastTarget.isNaN() || abs(target - lastTarget) >= 0.5)
+  target.isFinite() && (lastTarget.isNaN() || abs(target - lastTarget) >= SCRUB_SEEK_STEP_SECONDS)
 
 /** Do not force exact seeking; only constrain the target to the media and active A-B loop. */
 internal fun clampScrubTarget(position: Double, duration: Double, loopA: Double?, loopB: Double?): Double {

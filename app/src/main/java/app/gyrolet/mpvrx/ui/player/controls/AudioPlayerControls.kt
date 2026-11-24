@@ -109,7 +109,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -136,8 +135,12 @@ import app.gyrolet.mpvrx.ui.player.controls.components.MiniAudioVisualizer
 import app.gyrolet.mpvrx.ui.player.controls.components.stableNumericWidth
 import app.gyrolet.mpvrx.ui.player.controls.components.withTabularDigits
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberSmoothedPositionMs
-import app.gyrolet.mpvrx.ui.player.controls.components.AnimatedLyricWord
+import app.gyrolet.mpvrx.ui.player.controls.components.SweepingLyricText
 import app.gyrolet.mpvrx.ui.player.controls.components.hasRtlDirection
+import app.gyrolet.mpvrx.ui.player.controls.components.lyricCharacterPosition
+import app.gyrolet.mpvrx.ui.player.controls.components.lyricSweepX
+import app.gyrolet.mpvrx.ui.player.controls.components.lyricWordEndTime
+import app.gyrolet.mpvrx.ui.player.controls.components.lyricWordSpans
 import app.gyrolet.mpvrx.ui.player.controls.components.sheets.PlaylistItem
 import sh.calvin.reorderable.ReorderableCollectionItemScope
 import sh.calvin.reorderable.ReorderableItem
@@ -149,7 +152,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
@@ -169,6 +171,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -208,7 +211,6 @@ import app.gyrolet.mpvrx.ui.theme.DarkMode
 import app.gyrolet.mpvrx.ui.theme.appPressFeedback
 import app.gyrolet.mpvrx.ui.icons.Icons
 import app.gyrolet.mpvrx.ui.player.Panels
-import app.gyrolet.mpvrx.ui.player.PlayerActivity
 import app.gyrolet.mpvrx.ui.player.PlayerViewModel
 import app.gyrolet.mpvrx.ui.player.PlaybackPhase
 import app.gyrolet.mpvrx.ui.player.AudioQuality
@@ -216,6 +218,7 @@ import app.gyrolet.mpvrx.ui.player.resolveAudioFormatInfo
 import app.gyrolet.mpvrx.ui.player.RepeatMode
 import app.gyrolet.mpvrx.ui.player.Sheets
 import app.gyrolet.mpvrx.ui.player.controls.components.AbLoopIcon
+import app.gyrolet.mpvrx.ui.player.controls.components.sheets.AudioOutputGlyph
 import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarWithTimers
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusRequester
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
@@ -299,6 +302,17 @@ private object AudioPresentationMetadataCache {
     withContext(Dispatchers.IO) {
       val key = "${cacheKey(pathOrUri, artworkUri)}|$generator|$revision"
       synchronized(cache) { cache.get(key) }?.let { return@withContext it }
+
+      val networkSource = app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(pathOrUri)
+      if (networkSource != null) {
+        val loaded = AudioPresentationMetadata(
+          artwork = EmbeddedArtworkResolver.decodeArtworkUri(context, artworkUri)
+            ?: repository.getThumbnailForNetworkSource(networkSource.connectionId, networkSource.path.value, 512, 512),
+          artist = null,
+        )
+        synchronized(cache) { if (activeRevision == revision) cache.put(key, loaded) }
+        return@withContext loaded
+      }
 
       // An old native retriever may still be unwinding; Android artwork must not wait for it.
       val localFolderMotion = app.gyrolet.mpvrx.domain.thumbnail.EmbeddedArtworkCandidates
@@ -697,6 +711,7 @@ private fun CoverArtCardImage(
   localMotionArtworkUri: String? = null,
   isPlaying: Boolean = false,
   remoteMotionQuery: MotionArtworkQuery? = null,
+  portraitMotion: Boolean = false,
   modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
@@ -765,6 +780,7 @@ private fun CoverArtCardImage(
       RemoteMotionArtwork(
         query = remoteMotionQuery,
         isPlaying = isPlaying,
+        portraitLayout = portraitMotion,
         modifier = Modifier.fillMaxSize(),
       )
     }
@@ -876,6 +892,8 @@ private fun ImmersiveArtworkBackground(
           motionArtwork = motionArtwork.takeUnless { reducedMotion },
           localMotionArtworkUri = localMotionArtworkUri.takeUnless { reducedMotion },
           remoteMotionQuery = remoteMotionQuery.takeUnless { reducedMotion },
+          // The full-window background takes the provider's tall cut, as BitChord's player does.
+          portraitMotion = !landscape,
           isPlaying = isPlaying && !reducedMotion,
         )
       }
@@ -998,7 +1016,9 @@ fun AudioPlayerControls(
 
   val currentAudioPresentation =
     rememberAudioPresentationMetadata(
-      pathOrUri = currentMediaSource?.takeIf { isAudiobook || isLocalArtworkSource(it) } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
+      pathOrUri = currentMediaSource?.takeIf {
+        isAudiobook || isLocalArtworkSource(it) || app.gyrolet.mpvrx.domain.network.NetworkPlaybackUri.parse(it) != null
+      } ?: mediaPath?.takeIf { it.isNotBlank() } ?: currentMediaSource,
       artworkUri = currentArtworkUri,
     )
   // Android's retriever cannot read covers from streams; FongMi's mpv already parsed the file's own.
@@ -1008,7 +1028,7 @@ fun AudioPlayerControls(
       enabled = currentAudioPresentation != null && currentAudioPresentation.artwork == null && hasMpvAlbumArt,
       key = currentItem?.stableId,
     )
-  val albumArtBitmap = currentAudioPresentation?.artwork ?: mpvAlbumArt
+  val embeddedAlbumArt = currentAudioPresentation?.artwork ?: mpvAlbumArt
 
   fun cleanSongTitle(
     title: String,
@@ -1070,12 +1090,13 @@ fun AudioPlayerControls(
   val audioPreferences = koinInject<AudioPreferences>()
   val immersiveArtworkEnabled by audioPreferences.immersiveArtwork.collectAsState()
   val animatedAlbumArtwork by audioPreferences.animatedAlbumArtwork.collectAsState()
-  val motionQuery =
-    if (animatedAlbumArtwork && !isAudiobook &&
+  val highQualityArtwork by audioPreferences.highQualityArtwork.collectAsState()
+  val artworkQuery =
+    if ((animatedAlbumArtwork || highQualityArtwork) && !isAudiobook &&
       (playbackState.phase == PlaybackPhase.READY || playbackState.phase == PlaybackPhase.BACKGROUND)
     ) {
-      // One metadata observer, only while opted in. Tag names vary in case across containers;
-      // metadata/album is not the by-key lookup, and queue titles may still be raw filenames.
+      // One metadata observer, only while an online artwork feature is on. Tag names vary in case
+      // across containers; metadata/album is not the by-key lookup, and queue titles may still be raw filenames.
       val nativeMetadata by PlaybackSession.propNode["metadata"].collectAsState()
       remember(nativeMetadata, playbackState.generation, currentItem?.title, mediaTitle, displayArtist) {
         // Use the event as a trigger, then take one generation-checked native snapshot.
@@ -1098,10 +1119,14 @@ fun AudioPlayerControls(
     } else {
       null
     }
+  val motionQuery = artworkQuery?.takeIf { animatedAlbumArtwork }
+  // The catalogue's own cover replaces the embedded one whatever its resolution; until it is
+  // cached the embedded art shows, and it stays when no catalogue knows the song.
+  val highQualityCover = rememberHighQualityArtwork(artworkQuery?.takeIf { highQualityArtwork })
+  val albumArtBitmap = highQualityCover ?: embeddedAlbumArt
   val appearancePreferences = koinInject<AppearancePreferences>()
   val audioVisualizerStyle by audioPreferences.audioVisualizerStyle.collectAsState()
   val audioWavySeekbar by audioPreferences.audioWavySeekbar.collectAsState()
-  val backgroundPlaybackEnabled by audioPreferences.audioBackgroundPlayback.collectAsState()
   val colorScheme = MaterialTheme.colorScheme
   val palette =
     remember(colorScheme) {
@@ -1464,7 +1489,22 @@ fun AudioPlayerControls(
   val swipeNextCoverBitmap by rememberUpdatedState(nextCoverBitmap ?: albumArtBitmap)
   val swipePrevCoverBitmap by rememberUpdatedState(prevCoverBitmap ?: albumArtBitmap)
   BoxWithConstraints(
-    modifier.fillMaxSize().background(immersiveSurface).drawWithCache {
+    Modifier
+      .fillMaxSize()
+      .then(
+        if (inAppSheet == null) {
+          Modifier.playerSheetAnchor(
+            destination = PlayerSheetDestination.FULL,
+            mediaId = currentItem?.stableId,
+            backgroundColor = immersiveSurface,
+          )
+        } else {
+          Modifier
+        },
+      )
+      .then(modifier)
+      .background(immersiveSurface)
+      .drawWithCache {
       if (ambientModeEnabled &&
         (animatedAmbientTop != Color.Transparent || animatedAmbientBottom != Color.Transparent)
       ) {
@@ -1550,17 +1590,11 @@ fun AudioPlayerControls(
                 enabled = !isSheetOpen && !showInPlaceLyrics && !isLyricsFullscreen,
               )
             } else {
-              Modifier
-                .playerSheetAnchor(
-                  destination = PlayerSheetDestination.FULL,
-                  mediaId = currentItem?.stableId,
-                  backgroundColor = MaterialTheme.colorScheme.surface,
-                )
-                .swipeDownToMiniPlayer(
-                  mediaId = currentItem?.stableId,
-                  enabled = !isSheetOpen && !showInPlaceLyrics && !isLyricsFullscreen,
-                  onMinimize = viewModel::minimizeToMiniPlayer,
-                )
+              Modifier.swipeDownToMiniPlayer(
+                mediaId = currentItem?.stableId,
+                enabled = !isSheetOpen && !showInPlaceLyrics && !isLyricsFullscreen,
+                onMinimize = viewModel::minimizeToMiniPlayer,
+              )
             },
           )
           .fillMaxSize()
@@ -1638,10 +1672,15 @@ fun AudioPlayerControls(
             modifier = Modifier.align(Alignment.CenterEnd),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            ReactiveIconButton(onClick = { onOpenSheet(Sheets.AudioProperties) }, modifier = Modifier.size(audioHeaderSize)) {
+            ReactiveIconButton(
+              onClick = { onOpenSheet(Sheets.MediaInfo) },
+              onLongClick = if (isShortLandscape) null else ({ onOpenSheet(Sheets.AudioProperties) }),
+              onLongClickLabel = stringResource(R.string.audio_information_title),
+              modifier = Modifier.size(audioHeaderSize),
+            ) {
               Icon(
                 imageVector = Icons.RoundedFilled.Info,
-                contentDescription = stringResource(R.string.player_sheets_more_title),
+                contentDescription = stringResource(R.string.ui_media_info),
                 tint = if (showImmersiveArtwork) immersiveHeaderContentColor else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(28.dp),
               )
@@ -1880,7 +1919,6 @@ fun AudioPlayerControls(
                     if (isAudioOnly && !isAudiobook && activeCoverOverride == null) {
                       AudioFormatArtworkBadge(
                         format = audioFormatInfo,
-                        size = if (isCompactLandscape) 18.dp else 22.dp,
                         modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
                       )
                     }
@@ -2324,22 +2362,23 @@ fun AudioPlayerControls(
                 ) { (line, nextLineTime, text) ->
                   val words = if (line != null && text == line.line.trim()) line.words else null
                   val scrollState = rememberScrollState()
-                  val wordWidths = remember(line, text) { mutableStateMapOf<Int, Int>() }
+                  val lyricLayout = remember(line, text) { mutableStateOf<TextLayoutResult?>(null) }
+                  val isRtl = text.hasRtlDirection()
                   val lineStartMs = line?.time?.toLong() ?: 0L
                   val lineEndMs = nextLineTime?.toLong()?.takeIf { it > lineStartMs } ?: (lineStartMs + 8_000L)
-                  val wordEndTimes = remember(words, lineStartMs, nextLineTime) {
-                    words.orEmpty().mapIndexed { wordIndex, word ->
-                      val wordStartMs = word.time.toLong()
-                      words?.getOrNull(wordIndex + 1)?.time?.toLong()
-                        ?.takeIf { it > wordStartMs }
-                        ?: nextLineTime?.toLong()
-                          ?.coerceAtMost(lineStartMs + 8_000L)
-                          ?.takeIf { it > wordStartMs }
-                        ?: (wordStartMs + 600L)
-                    }
+                  val sweepEndMs = if (!words.isNullOrEmpty()) {
+                    lyricWordEndTime(
+                      words, words.lastIndex, line?.endTime?.toLong(),
+                      nextLineTime?.toLong()?.coerceAtMost(lineStartMs + 8_000L),
+                    )
+                  } else {
+                    lineEndMs
+                  }
+                  val spans = remember(text, words, sweepEndMs) {
+                    lyricWordSpans(text, words.orEmpty(), sweepEndMs)
                   }
 
-                  LaunchedEffect(line, nextLineTime, text, scrollState) {
+                  LaunchedEffect(line, nextLineTime, text, scrollState, spans, isRtl) {
                     snapshotFlow {
                       val maxScroll = scrollState.maxValue
                       val viewportWidth = scrollState.viewportSize
@@ -2348,15 +2387,13 @@ fun AudioPlayerControls(
                       } else {
                         val positionMs = smoothPositionMs.value
                         val highlightPosition = if (!words.isNullOrEmpty()) {
-                          val activeWordIndex = words.indexOfLast { it.time.toLong() <= positionMs }
-                          if (activeWordIndex < 0 || wordWidths.size != words.size) {
+                          val layout = lyricLayout.value
+                          if (layout == null || spans.isEmpty()) {
                             0f
                           } else {
-                            val wordStartMs = words[activeWordIndex].time.toLong()
-                            val wordDurationMs = (wordEndTimes[activeWordIndex] - wordStartMs).coerceAtLeast(1L)
-                            val progress = ((positionMs - wordStartMs).toFloat() / wordDurationMs).coerceIn(0f, 1f)
-                            val precedingWidth = (0 until activeWordIndex).sumOf { wordWidths[it] ?: 0 }
-                            precedingWidth + (wordWidths[activeWordIndex] ?: 0) * progress
+                            val head = lyricCharacterPosition(text.length, spans, positionMs)
+                            val x = lyricSweepX(layout, head, isRtl)
+                            if (isRtl) layout.size.width - x else x
                           }
                         } else {
                           val progress = ((positionMs - lineStartMs).toFloat() / (lineEndMs - lineStartMs))
@@ -2373,31 +2410,25 @@ fun AudioPlayerControls(
                   if (!words.isNullOrEmpty()) {
                     val activeColor = MaterialTheme.colorScheme.onSurface
                     val inactiveColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
-                    val isRtl = text.hasRtlDirection()
                     CompositionLocalProvider(
                       LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     ) {
-                      Row(
+                      SweepingLyricText(
+                        text = text,
+                        words = words,
+                        endTimeMs = sweepEndMs,
+                        positionMs = smoothPositionMs,
+                        activeColor = activeColor,
+                        inactiveColor = inactiveColor,
+                        fontSize = 19.sp,
+                        textAlign = TextAlign.Start,
                         modifier = Modifier
                           .fillMaxWidth()
                           .horizontalScroll(scrollState, enabled = false),
-                        horizontalArrangement = Arrangement.Start,
-                        verticalAlignment = Alignment.CenterVertically,
-                      ) {
-                        words.forEachIndexed { wordIndex, word ->
-                          Box(Modifier.onSizeChanged { wordWidths[wordIndex] = it.width }) {
-                            AnimatedLyricWord(
-                              word = word,
-                              endTimeMs = wordEndTimes[wordIndex],
-                              positionMs = smoothPositionMs,
-                              activeColor = activeColor,
-                              inactiveColor = inactiveColor,
-                              fontSize = 19.sp,
-                              isRtl = isRtl,
-                            )
-                          }
-                        }
-                      }
+                        maxLines = 1,
+                        softWrap = false,
+                        onTextLayout = { lyricLayout.value = it },
+                      )
                     }
                   } else {
                     Text(
@@ -2791,27 +2822,14 @@ fun AudioPlayerControls(
               }
               if (!isAudiobook) {
                 ExpressiveConnectedBarButton(
-                  index = 3, itemCount = centerCount, height = barHeight, selected = backgroundPlaybackEnabled,
+                  index = 3, itemCount = centerCount, height = barHeight, selected = sheetShown == Sheets.AudioOutput,
                   onClick = {
-                    val enabled = !audioPreferences.audioBackgroundPlayback.get()
-                    val activity = context as? PlayerActivity
-                    if (activity != null) {
-                      activity.toggleAudioBackgroundPlayback()
-                    } else {
-                      audioPreferences.audioBackgroundPlayback.set(enabled)
-                      viewModel.showToast(
-                        context.getString(
-                          if (enabled) R.string.toast_audio_background_playback_on
-                          else R.string.toast_audio_background_playback_off,
-                        ),
-                      )
-                    }
-                    actionHaptics.selection(enabled)
+                    onOpenSheet(Sheets.AudioOutput)
+                    actionHaptics.confirm()
                   },
                 ) { tint ->
-                  Icon(
-                    Icons.RoundedFilled.Headset,
-                    contentDescription = stringResource(R.string.btn_label_background_playback),
+                  AudioOutputGlyph(
+                    label = stringResource(R.string.pref_audio_output_title),
                     tint = tint,
                     modifier = Modifier.size(iconSize),
                   )

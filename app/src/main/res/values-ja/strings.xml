@@ -173,6 +173,8 @@
   <string name="pref_clear_thumbnail_cache_title">サムネイルキャッシュを消去</string>
   <string name="pref_clear_thumbnail_cache_summary">キャッシュされた動画サムネイルをすべて削除します</string>
   <string name="pref_layout_title">プレーヤーのレイアウト</string>
+  <string name="pref_layout_media_format_badges_title">メディア形式バッジ</string>
+  <string name="pref_layout_media_format_badges_summary">動画のタイトルの下に解像度、コーデック、HDR、音声情報を表示します。</string>
   <string name="pref_layout_summary">プレーヤーボタンの配置をカスタマイズします</string>
   <string name="pref_layout_reset_default">デフォルトに戻す</string>
   <string name="pref_layout_top_right_controls">右上のコントロール</string>
@@ -192,6 +194,9 @@
   <string name="pref_player_orientation_reverse_landscape">逆横向き</string>
   <string name="pref_player_orientation_sensor_landscape">センサー横向き</string>
   <string name="pref_player_save_position_on_quit">終了時に位置を保存</string>
+  <string name="pref_player_watched_threshold_title">視聴済みのしきい値</string>
+  <string name="pref_player_watched_threshold_summary">再生が%d%%に達したら動画を視聴済みにします</string>
+  <string name="pref_player_watched_threshold_summary_never">自動で視聴済みにしない</string>
   <string name="pref_player_double_tap_seek_duration">タップシーク時間</string>
   <string name="pref_player_custom_skip_duration_title">カスタムスキップ時間</string>
   <string name="pref_player_custom_skip_duration_summary">カスタムスキップボタンで進める時間</string>
@@ -1284,6 +1289,8 @@
   <string name="ui_script_runtime">スクリプト実行環境</string>
   <string name="ui_newly_enabled_scripts_can_load_during_playback_scripts_you_turn">有効なスクリプトは即時読み込み。無効にしたものを完全に止めるには動画を開き直します。</string>
   <string name="ui_media_info">メディア情報</string>
+  <string name="media_info_playback_snapshot">プレーヤーがこのストリームから読み取れる情報を表示しています。ファイルの詳細の一部は表示できない場合があります。</string>
+  <string name="media_info_unavailable">このソースのメディア情報は取得できません。</string>
   <string name="ui_analyzing_media_file">メディアファイルを解析中...</string>
   <string name="ui_media_tracks_summary">メディアトラックの概要</string>
   <string name="ui_container_metadata">コンテナのメタデータ</string>
@@ -1827,7 +1834,6 @@
   <string name="ui_yt_dlp_version">バージョン %1$s</string>
   <string name="ui_yt_dlp_commit">コミット %1$s</string>
   <string name="ui_version_unavailable">バージョンを取得できません</string>
-  <string name="ui_update_channel">アップデートチャンネル</string>
   <string name="update_whats_new">新機能</string>
   <string name="update_no_release_notes">リリースノートはありません。</string>
   <string name="update_ready_to_install">インストール準備完了</string>
@@ -1837,8 +1843,6 @@
   <string name="update_size">サイズ</string>
   <string name="update_package">パッケージ</string>
   <string name="update_unknown_size">サイズ不明</string>
-  <string name="update_beta_build_format">ベータ r%1$d</string>
-  <string name="ui_beta_badge_suffix">\u0020(ベータ)</string>
   <string name="player_video_quality">動画品質</string>
   <string name="player_video_quality_button">動画品質</string>
   <string name="network_bookmark_add">フォルダーをブックマーク</string>
@@ -2686,7 +2690,6 @@
   <string name="pref_thumbnail_generator_mediastore">MediaStore</string>
   <string name="pref_thumbnail_generator_native_summary">ローカルファイルからサムネイルとカバーを抽出。切り替えるとキャッシュを消去。</string>
   <string name="pref_thumbnail_generator_mediastore_summary">Androidのサムネイルとカバーを使用。切り替えるとキャッシュを消去。ネットワークはネイティブ抽出です。</string>
-  <string name="ui_update_channels_summary">安定版、ナイトリープレビュー、実験的な CI ビルド。</string>
   <string name="tv_nav_settings">設定</string>
   <string name="tv_move_up">上へ移動</string>
   <string name="tv_move_down">下へ移動</string>

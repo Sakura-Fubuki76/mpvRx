@@ -32,13 +32,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalBottomSheetProperties
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.components.ResponsiveBottomSheet
 import app.gyrolet.mpvrx.domain.update.Release
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
@@ -71,22 +68,13 @@ fun UpdateSheet(
   onIgnore: () -> Unit,
   onRetryCheck: () -> Unit,
 ) {
-  val sheetState = rememberBottomSheetState(
-    initialValue = SheetValue.Hidden,
-    enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-  )
   val release = state.release
   val asset = state.asset
   val busy = state.isDownloading || state.isInstalling
 
-  ModalBottomSheet(
-    onDismissRequest = { if (!busy) onDismiss() },
-    sheetState = sheetState,
-    sheetGesturesEnabled = !busy,
-    properties = ModalBottomSheetProperties(
-      shouldDismissOnBackPress = !busy,
-      shouldDismissOnClickOutside = !busy,
-    ),
+  ResponsiveBottomSheet(
+    onDismissRequest = onDismiss,
+    dismissEnabled = !busy,
   ) {
     val notesScroll = rememberScrollState()
     Column(
@@ -175,8 +163,8 @@ fun UpdateSheet(
         Text(stringResource(R.string.update_checking_download), style = MaterialTheme.typography.bodySmall)
       }
       FlowRow(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        modifier = Modifier.align(Alignment.End).padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         if (state.isDownloading) {
@@ -208,10 +196,7 @@ fun UpdateSheet(
   }
 }
 
-@Composable
-private fun releaseVersion(release: Release): String =
-  release.previewBuildNumber?.let { stringResource(R.string.update_beta_build_format, it) }
-    ?: release.tagName.removePrefix("v")
+private fun releaseVersion(release: Release): String = release.tagName.removePrefix("v")
 
 @Composable
 private fun SheetHeader(

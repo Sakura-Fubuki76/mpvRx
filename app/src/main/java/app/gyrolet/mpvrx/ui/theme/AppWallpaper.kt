@@ -50,6 +50,7 @@ import app.gyrolet.mpvrx.ui.background.AnimatedBackground
 import app.gyrolet.mpvrx.ui.background.BackdropGate
 import app.gyrolet.mpvrx.ui.background.BackgroundType
 import app.gyrolet.mpvrx.ui.background.rememberActiveBackground
+import app.gyrolet.mpvrx.ui.player.playerSheetWallpaper
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -154,6 +155,7 @@ fun AppWallpaperHost(content: @Composable () -> Unit) {
       modifier =
         Modifier
           .matchParentSize()
+          .playerSheetWallpaper(MaterialTheme.colorScheme.background)
           .then(if (backgroundBackdrop != null) Modifier.layerBackdrop(backgroundBackdrop) else Modifier)
           .background(MaterialTheme.colorScheme.background),
     ) {

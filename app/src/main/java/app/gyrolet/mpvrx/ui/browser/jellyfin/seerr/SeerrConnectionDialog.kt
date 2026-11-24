@@ -41,14 +41,10 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import app.gyrolet.mpvrx.presentation.components.AppTextField as OutlinedTextField
-import androidx.compose.material3.SheetState
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +63,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.gyrolet.mpvrx.R
+import app.gyrolet.mpvrx.presentation.components.ResponsiveBottomSheet
 import app.gyrolet.mpvrx.domain.jellyfin.JellyfinServer
 import app.gyrolet.mpvrx.domain.seerr.JellyseerrUser
 import app.gyrolet.mpvrx.presentation.components.RemoteImage
@@ -94,11 +91,6 @@ fun SeerrConnectionDialog(
   onConnectWithCredentials: (serverUrl: String, user: String, pass: String, useJellyfin: Boolean) -> Unit,
   onConnectWithApiKey: (serverUrl: String, apiKey: String) -> Unit,
   onDisconnect: () -> Unit,
-  sheetState: SheetState =
-    rememberBottomSheetState(
-      initialValue = SheetValue.Hidden,
-      enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    ),
 ) {
   if (!isOpen) return
 
@@ -128,9 +120,8 @@ fun SeerrConnectionDialog(
   var isPasswordVisible by remember { mutableStateOf(false) }
   var apiKey by remember(currentApiKey) { mutableStateOf(currentApiKey) }
 
-  ModalBottomSheet(
+  ResponsiveBottomSheet(
     onDismissRequest = onDismiss,
-    sheetState = sheetState,
     containerColor = MaterialTheme.colorScheme.surfaceContainer,
   ) {
     Column(

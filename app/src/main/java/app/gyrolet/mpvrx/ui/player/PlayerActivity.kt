@@ -1204,18 +1204,18 @@ class PlayerActivity :
 
   private fun handleBackPress() {
     returnToBrowserAfterMinimize = false
-    // Dismiss overlays first
+    // Dismiss overlays first; touch devices keep the controls hidden after closing one.
     if (viewModel.sheetShown.value != Sheets.None) {
       lastExitBackPressAtMs = null
       viewModel.sheetShown.update { Sheets.None }
-      viewModel.showControls()
+      if (isTelevision) viewModel.showControls()
       return
     }
 
     if (viewModel.panelShown.value != Panels.None) {
       lastExitBackPressAtMs = null
       viewModel.panelShown.update { Panels.None }
-      viewModel.showControls()
+      if (isTelevision) viewModel.showControls()
       return
     }
 
@@ -1546,6 +1546,35 @@ class PlayerActivity :
     return Rect(bounds.left * scale + dx, bounds.top * scale + dy, bounds.right * scale + dx, bounds.bottom * scale + dy)
   }
 
+  private var lastVideoTransformGeneration = -1L
+  private var lastVideoTransformZoom: Float? = null
+  private var lastVideoTransformPanX: Float? = null
+  private var lastVideoTransformPanY: Float? = null
+  private var lastVideoTransformFollowVideo: Boolean? = null
+  private var lastZoomAspectKey: List<Any?>? = null
+  private var lastZoomAspect = 0f
+
+  private fun videoZoomPanAspect(): Float {
+    val crop = PlaybackSession.propString["video-crop"].value
+    val key =
+      listOf(
+        PlaybackSession.state.value.generation,
+        crop,
+        PlaybackSession.propDouble["video-aspect-override"].value,
+        PlaybackSession.propDouble["video-out-params/aspect"].value,
+        PlaybackSession.propDouble["video-params/aspect"].value,
+      )
+    if (key == lastZoomAspectKey) return lastZoomAspect
+    lastZoomAspectKey = key
+    val croppedAspect = crop?.takeIf { it.isNotEmpty() }
+      ?.let { VideoAspectGeometry.currentEffectiveDisplayAspect() }
+    lastZoomAspect = (
+      croppedAspect ?: PlaybackSession.propDouble["video-out-params/aspect"].value
+        ?: PlaybackSession.propDouble["video-params/aspect"].value ?: 0.0
+      ).toFloat()
+    return lastZoomAspect
+  }
+
   private fun setupVideoTransformObserver() {
     binding.player.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyVideoTransform() }
     lifecycleScope.launch {
@@ -1573,14 +1602,20 @@ class PlayerActivity :
     binding.player.translationX = if (followVideo) panX else 0f
     binding.player.translationY = if (followVideo) panY else 0f
     if (!canIssueMpvCommands()) return
+    val generation = PlaybackSession.state.value.generation
+    if (generation == lastVideoTransformGeneration &&
+      zoom == lastVideoTransformZoom && panX == lastVideoTransformPanX &&
+      panY == lastVideoTransformPanY && followVideo == lastVideoTransformFollowVideo
+    ) return
+    lastVideoTransformGeneration = generation
+    lastVideoTransformZoom = zoom
+    lastVideoTransformPanX = panX
+    lastVideoTransformPanY = panY
+    lastVideoTransformFollowVideo = followVideo
     val (mpvPanX, mpvPanY) = if (followVideo) {
       0f to 0f
     } else {
-      val croppedAspect = PlaybackSession.propString["video-crop"].value
-        ?.takeIf { it.isNotEmpty() }
-        ?.let { VideoAspectGeometry.currentEffectiveDisplayAspect() }
-      val aspect = (croppedAspect ?: PlaybackSession.getPropertyDouble("video-out-params/aspect")
-        ?: PlaybackSession.getPropertyDouble("video-params/aspect") ?: 0.0).toFloat()
+      val aspect = videoZoomPanAspect()
       videoPanFractions(player.width.toFloat(), player.height.toFloat(), aspect, zoom, panX, panY)
     }
     PlaybackSession.setPropertyFloat("video-zoom", if (followVideo) 0f else zoom)
@@ -4150,8 +4185,10 @@ class PlayerActivity :
     if (!MediaPlaybackService.activityForeground) return
     // A dropped network stream can drain the demuxer and flip eof-reached mid-file. Only a
     // position at (or within a couple of seconds of) the known duration is a real end.
+    // The ViewModel copy of time-pos lags a seek that lands straight on EOF; eof-reached will not
+    // fire again, so also read the session value mpv's event thread has already published.
     val durationSecs = viewModel.duration ?: 0
-    val positionSecs = viewModel.pos ?: 0
+    val positionSecs = maxOf(viewModel.pos ?: 0, PlaybackSession.propInt["time-pos"].value ?: 0)
     if (durationSecs > 0 && positionSecs < durationSecs - 2) return
     if (fileName.isNotBlank()) saveVideoPlaybackState(fileName, immediate = true)
 
@@ -4634,6 +4671,16 @@ class PlayerActivity :
         if (!restored.hasState) viewModel.setVideoZoom(playerPreferences.defaultVideoZoom.get())
         applyVideoTransform()
       }
+      if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
+      // Companion audio is looked up after the unpause: probing ~80 candidate filenames used to hold
+      // every new video paused, and its audio-add is only accepted once the session is READY.
+      try {
+        ExternalAudioDiscovery.autoload(this@PlayerActivity, loadGeneration)
+      } catch (error: CancellationException) {
+        throw error
+      } catch (error: Exception) {
+        Log.e(TAG, "Companion audio discovery failed", error)
+      }
       autoloadJob?.join()
       if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@launch
       trackSelector.onFileLoaded(
@@ -4811,6 +4858,7 @@ class PlayerActivity :
     val borderStyle = subtitlesPreferences.borderStyle.get().value
     val borderSize = subtitlesPreferences.borderSize.get()
     val shadowOffset = subtitlesPreferences.shadowOffset.get()
+    val backgroundRadius = subtitlesPreferences.backgroundRadius.get()
 
     // Color settings
     val textColor = subtitlesPreferences.textColor.get().toColorHexString()
@@ -4832,6 +4880,7 @@ class PlayerActivity :
     PlaybackSession.setPropertyInt("sub-border-size", borderSize)
     PlaybackSession.setPropertyInt("sub-outline-size", borderSize)
     PlaybackSession.setPropertyInt("sub-shadow-offset", shadowOffset)
+    PlaybackSession.setPropertyInt("sub-back-radius", backgroundRadius)
     PlaybackSession.setPropertyString("sub-color", textColor)
     PlaybackSession.setPropertyString("sub-border-color", borderColor)
     PlaybackSession.setPropertyString("sub-back-color", backgroundColor)
@@ -5081,8 +5130,6 @@ class PlayerActivity :
     val restoreStarted = System.nanoTime()
     app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.restore.begin", detail = "generation=$loadGeneration initialPositionApplied=$initialPositionApplied")
     return runCatching {
-      ExternalAudioDiscovery.autoload(this@PlayerActivity, loadGeneration)
-      if (!PlaybackSession.isCurrentGeneration(loadGeneration)) return@runCatching LoadedPlaybackState()
       val state = resolvePlaybackState(identifier, legacyIdentifier)
       app.gyrolet.mpvrx.domain.cloud.CloudTrace.event("player.restore.database", detail = "elapsedMs=${(System.nanoTime() - restoreStarted) / 1000000} saved=${state != null} externalCount=${state?.externalSubtitles?.split("|")?.count { it.isNotBlank() } ?: 0}")
 
@@ -7556,49 +7603,6 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       BackgroundPlaybackStartResult.PendingPermission -> pendingBackgroundTransition = true
       BackgroundPlaybackStartResult.Blocked -> {
         PlaybackSession.setVideoBackgroundPlaybackEnabled(false)
-        isBackgroundPlaybackSessionActive = false
-        pendingBackgroundTransition = false
-      }
-    }
-  }
-
-  /** Toggles the audio-player-specific background playback setting. */
-  fun toggleAudioBackgroundPlayback() {
-    val enabled = !audioPreferences.audioBackgroundPlayback.get()
-
-    if (enabled && !shouldShowPlaybackNotification()) {
-      Toast
-        .makeText(
-          this,
-          getString(R.string.notification_disabled_in_advanced_settings),
-          Toast.LENGTH_LONG,
-        ).show()
-      return
-    }
-
-    audioPreferences.audioBackgroundPlayback.set(enabled)
-
-    if (enabled) ensureNotificationAccessForPlayback(allowUserPrompt = true)
-    if (!enabled) {
-      pendingBackgroundTransition = false
-      isBackgroundPlaybackSessionActive = false
-      endBackgroundPlayback()
-      enableVideoAfterBackground()
-      viewModel.showToast(getString(R.string.toast_audio_background_playback_off))
-      return
-    }
-    if (fileName.isBlank() || !isReady) {
-      viewModel.showToast(getString(R.string.toast_audio_background_playback_on))
-      return
-    }
-    when (startBackgroundPlayback()) {
-      BackgroundPlaybackStartResult.Started -> {
-        isBackgroundPlaybackSessionActive = true
-        viewModel.showToast(getString(R.string.toast_audio_background_playback_on))
-      }
-      BackgroundPlaybackStartResult.PendingPermission -> pendingBackgroundTransition = true
-      BackgroundPlaybackStartResult.Blocked -> {
-        audioPreferences.audioBackgroundPlayback.set(false)
         isBackgroundPlaybackSessionActive = false
         pendingBackgroundTransition = false
       }

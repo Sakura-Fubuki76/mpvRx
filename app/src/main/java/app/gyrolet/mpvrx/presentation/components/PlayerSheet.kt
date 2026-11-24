@@ -11,9 +11,6 @@
 
 package app.gyrolet.mpvrx.presentation.components
 
-import android.annotation.SuppressLint
-import app.gyrolet.mpvrx.ui.liquidglass.liquidGlassActive
-import android.content.res.Configuration.ORIENTATION_PORTRAIT
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.AnimationVector
@@ -31,23 +28,22 @@ import androidx.compose.foundation.gestures.anchoredDraggable
 import androidx.compose.foundation.gestures.animateTo
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.ZeroCornerSize
@@ -69,7 +65,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -82,41 +77,47 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import app.gyrolet.mpvrx.R
 import app.gyrolet.mpvrx.ui.icons.AppIcon
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.player.controls.components.rememberTvInitialFocusRequester
 import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusGroup
+import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.controls.components.tvInitialFocus
 import androidx.compose.ui.focus.focusProperties
 import app.gyrolet.mpvrx.ui.liquidglass.LocalKyantPlayerBackdrop
+import app.gyrolet.mpvrx.ui.liquidglass.playerGlassSurfaceEnabled
 import app.gyrolet.mpvrx.ui.liquidglass.playerGlassSurface
 import app.gyrolet.mpvrx.ui.liquidglass.LocalPlayerGlassSurfaceActive
 import app.gyrolet.mpvrx.ui.theme.AppMotion
 import app.gyrolet.mpvrx.ui.theme.LocalMotionPolicy
 import app.gyrolet.mpvrx.ui.theme.MotionPolicy
-import app.gyrolet.mpvrx.ui.tv.isTelevision
 import app.gyrolet.mpvrx.ui.tv.TvSafeArea
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-@SuppressLint("ConfigurationScreenWidthHeight")
 @Composable
 fun PlayerSheet(
   onDismissRequest: () -> Unit,
   modifier: Modifier = Modifier,
   tonalElevation: Dp = 0.dp,
   customMaxWidth: Dp? = null,
-  customMaxHeight: Dp? = null,
   surfaceColor: Color? = null,
   isSwipeActive: Boolean = false,
   swipeOffset: Float = 0f,
@@ -124,14 +125,13 @@ fun PlayerSheet(
   actions: @Composable RowScope.() -> Unit = {},
   useFrostedGlass: Boolean = true,
   scrimAlpha: Float = 0.5f,
-  bottomBar: (@Composable () -> Unit)? = null,
   dragToDismiss: Boolean = true,
   confirmDismiss: () -> Boolean = { true },
   content: @Composable () -> Unit,
 ) {
-  val scope = rememberCoroutineScope()
-  val television = isTelevision()
-  val liquidGlassEnabled = liquidGlassActive()
+  val window = sheetWindow()
+  val television = window.television
+  val liquidGlassEnabled = playerGlassSurfaceEnabled()
   val playerBackdrop = LocalKyantPlayerBackdrop.current
   val isFrosted = useFrostedGlass && liquidGlassEnabled
   // TV/remote: request focus INTO the sheet content when it opens, so the D-pad can navigate/select
@@ -143,7 +143,7 @@ fun PlayerSheet(
   // which is what makes the sheet modal rather than a panel floating over a
   // still-live screen.
   val currentSheetSpec by rememberUpdatedState<FiniteAnimationSpec<Float>>(
-    if (reducedMotion) AppMotion.ReducedAlpha else AppMotion.Spatial.Expressive,
+    if (reducedMotion) AppMotion.ReducedAlpha else AppMotion.noBounce(380f),
   )
   val sheetAnimationSpec = remember {
     object : FiniteAnimationSpec<Float> {
@@ -155,28 +155,17 @@ fun PlayerSheet(
   val density = LocalDensity.current
   val latestOnDismissRequest by rememberUpdatedState(onDismissRequest)
   val latestConfirmDismiss by rememberUpdatedState(confirmDismiss)
+  var opened by remember { mutableStateOf(false) }
+  var closing by remember { mutableStateOf(false) }
   var dismissalDelivered by remember { mutableStateOf(false) }
+  var sheetHeightPx by remember { mutableStateOf(0) }
   val deliverDismissal: () -> Unit = {
     if (!dismissalDelivered) {
       dismissalDelivered = true
       latestOnDismissRequest()
     }
   }
-  val maxWidth = customMaxWidth ?: 640.dp
   val isImeVisible = WindowInsets.ime.getBottom(density) > 0
-  val maxHeight =
-    customMaxHeight ?: when {
-      isImeVisible -> LocalConfiguration.current.screenHeightDp.dp
-      LocalConfiguration.current.orientation == ORIENTATION_PORTRAIT ->
-        LocalConfiguration.current.screenHeightDp.dp * .85f
-      else -> LocalConfiguration.current.screenHeightDp.dp
-    }
-
-  val screenHeightPx =
-    with(density) {
-      LocalConfiguration.current.screenHeightDp.dp
-        .toPx()
-    }
   val decayAnimationSpec = rememberSplineBasedDecay<Float>()
   val anchoredDraggableState =
     remember {
@@ -188,22 +177,23 @@ fun PlayerSheet(
         velocityThreshold = { with(density) { 125.dp.toPx() } },
       )
     }
+  // The bottom-aligned sheet has left the screen once it travelled its own height; the rest of
+  // the spring toward the closed anchor is invisible.
+  val sheetOffscreen: () -> Boolean = {
+    val offset = anchoredDraggableState.offset
+    sheetHeightPx > 0 && offset.isFinite() && offset >= sheetHeightPx - 1f
+  }
 
   val scaledSwipeOffset = swipeOffset * 2f
   val currentIsSwipeActive by rememberUpdatedState(isSwipeActive)
   val currentScaledSwipeOffset by rememberUpdatedState(scaledSwipeOffset)
-  val height =
-    if (anchoredDraggableState.anchors.size >
-      0
-    ) {
-      anchoredDraggableState.anchors.positionOf(1)
-    } else {
-      screenHeightPx
-    }
+  val height = anchoredDraggableState.anchors.positionOf(1)
   val swipeProgress = if (height > 0) (-scaledSwipeOffset / height).coerceIn(0f, 1f) else 0f
   val targetAlpha =
-    if (isSwipeActive) {
-      if (anchoredDraggableState.anchors.size > 0) scrimAlpha * swipeProgress else 0f
+    if (closing) {
+      0f
+    } else if (isSwipeActive) {
+      scrimAlpha * swipeProgress
     } else if (anchoredDraggableState.targetValue == 0) {
       scrimAlpha
     } else {
@@ -217,209 +207,202 @@ fun PlayerSheet(
 
   // Ask before moving the sheet so an unsaved-changes prompt does not hide the form.
   val internalOnDismissRequest: () -> Unit = {
-    if (!dismissalDelivered && latestConfirmDismiss()) {
-      scope.launch {
-        anchoredDraggableState.animateTo(1)
-        deliverDismissal()
-      }
-    }
+    if (!closing && !dismissalDelivered && latestConfirmDismiss()) closing = true
   }
-  Box(
-    modifier =
-      Modifier
-        .fillMaxSize()
-        .background(Color.Black.copy(alpha))
-        // Before clickable so it targets the scrim's own focus node, not the sheet's descendants.
+  val closeLabel = stringResource(R.string.ui_close)
+  // A leaving sheet must not keep an invisible full-screen scrim over the player's gestures.
+  val scrimBlocksTouches = !closing && !dismissalDelivered && !(opened && anchoredDraggableState.targetValue == 1)
+  val scrimInteractionSource = remember { MutableInteractionSource() }
+  Box(Modifier.fillMaxSize().semantics { isTraversalGroup = true }) {
+    Box(
+      Modifier.matchParentSize().background(Color.Black.copy(alpha))
         .focusProperties { canFocus = false }
-        .clickable(
-          interactionSource = remember { MutableInteractionSource() },
-          indication = null,
-          onClick = internalOnDismissRequest,
-        )
+        .then(
+          if (scrimBlocksTouches) {
+            Modifier.clickable(
+              interactionSource = scrimInteractionSource,
+              indication = null,
+              onClickLabel = closeLabel,
+              onClick = internalOnDismissRequest,
+            )
+          } else Modifier,
+        ),
+    )
+    Box(
+      modifier = Modifier.fillMaxSize()
         // Lifts the whole sheet above the keyboard instead of padding inside a height-capped surface.
         .imePadding()
+        .windowInsetsPadding(
+          CenteredSheetInsets(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
+        )
         .then(if (television) Modifier.padding(TvSafeArea.Padding) else Modifier)
         .onSizeChanged {
+          if (it.height <= 0) return@onSizeChanged
           val anchors =
             DraggableAnchors {
               0 at 0f
               1 at it.height.toFloat()
             }
-          anchoredDraggableState.updateAnchors(anchors)
-        },
-    contentAlignment = Alignment.BottomCenter,
-  ) {
-    val sheetShape =
-      if (television) MaterialTheme.shapes.extraLargeIncreased
-      else MaterialTheme.shapes.extraLargeIncreased.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize)
-    val baseContainerColor = surfaceColor ?: MaterialTheme.colorScheme.surfaceContainerHigh
-    val expressiveContainerColor =
-      baseContainerColor.copy(alpha = 1f)
-    val glassModifier = Modifier.playerGlassSurface(
-      backdrop = playerBackdrop.takeIf { isFrosted },
-      shape = sheetShape,
-      containerColor = baseContainerColor,
-      enabled = isFrosted,
-    )
-
-    Surface(
-      modifier =
-        Modifier
-          .sizeIn(maxWidth = maxWidth, maxHeight = maxHeight)
-          .fillMaxWidth()
-          // While typing, use all the room above the keyboard so the field and results stay visible.
-          .then(if (isImeVisible) Modifier.fillMaxHeight() else Modifier)
-          .focusProperties { canFocus = false }
-          .clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = {},
-          ).then(
-            if (dragToDismiss) {
-              Modifier.nestedScroll(
-                remember(anchoredDraggableState) {
-                  anchoredDraggableState.preUpPostDownNestedScrollConnection()
-                },
-              )
+          anchoredDraggableState.updateAnchors(
+            anchors,
+            // IME/inset changes must not choose the nearest anchor mid-transition.
+            newTarget = if (anchoredDraggableState.isAnimationRunning) {
+              anchoredDraggableState.targetValue
             } else {
-              Modifier
+              anchoredDraggableState.settledValue
             },
-          ).then(modifier)
+          )
+        },
+      contentAlignment = Alignment.BottomCenter,
+    ) {
+      val sheetShape =
+        if (television) MaterialTheme.shapes.extraLargeIncreased
+        else MaterialTheme.shapes.extraLargeIncreased.copy(bottomEnd = ZeroCornerSize, bottomStart = ZeroCornerSize)
+      val baseContainerColor = surfaceColor ?: MaterialTheme.colorScheme.surfaceContainerHigh
+      val canDrag = !television && dragToDismiss
+      val dragEnabled = canDrag && opened && !closing
+      Surface(
+        modifier = Modifier
+          .onSizeChanged { sheetHeightPx = it.height }
+          .sizeIn(maxWidth = window.maxWidth(customMaxWidth))
+          .fillMaxWidth()
+          .then(modifier)
           .tvFocusGroup()
           .tvInitialFocus(sheetInitialFocus)
           .offset {
-            val baseOffset =
-              anchoredDraggableState.offset
-                .takeIf { it.isFinite() }
-                ?: screenHeightPx
+            val baseOffset = anchoredDraggableState.offset.takeIf { it.isFinite() } ?: 0f
             IntOffset(0, baseOffset.roundToInt())
-          }.graphicsLayer {
-            this.alpha = if (anchoredDraggableState.anchors.size > 0) 1f else 0f
-          }.anchoredDraggable(
+          }
+          .graphicsLayer { this.alpha = if (anchoredDraggableState.anchors.size > 0) 1f else 0f }
+          // Stop taps inside the sheet from hitting the scrim without making the sheet a fake button.
+          .pointerInput(Unit) {}
+          .semantics {
+            if (!title.isNullOrBlank()) paneTitle = title
+            dismiss(closeLabel) {
+              internalOnDismissRequest()
+              true
+            }
+          }
+          .then(
+            if (dragEnabled) {
+              Modifier.nestedScroll(
+                remember(anchoredDraggableState) { anchoredDraggableState.preUpPostDownNestedScrollConnection() },
+              )
+            } else Modifier,
+          )
+          .anchoredDraggable(
             state = anchoredDraggableState,
             orientation = Orientation.Vertical,
-            enabled = !television && dragToDismiss,
-          ).windowInsetsPadding(
-            WindowInsets.systemBars
-              .only(WindowInsetsSides.Horizontal),
+            enabled = dragEnabled,
           )
-          .then(glassModifier),
-      shape = sheetShape,
-      color = if (isFrosted) Color.Transparent else expressiveContainerColor,
-      tonalElevation = if (isFrosted) 0.dp else tonalElevation,
-      border =
-        if (isFrosted) {
-          null
-        } else {
-          BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
-          )
-        },
-      content = {
-        BackHandler(
-          enabled = anchoredDraggableState.targetValue == 0,
-          onBack = internalOnDismissRequest,
-        )
+          .playerGlassSurface(playerBackdrop, sheetShape, baseContainerColor, enabled = isFrosted),
+        shape = sheetShape,
+        color = if (isFrosted) Color.Transparent else baseContainerColor.copy(alpha = 1f),
+        tonalElevation = if (isFrosted) 0.dp else tonalElevation,
+        border = if (isFrosted) null else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)),
+      ) {
+        BackHandler(enabled = !closing && !dismissalDelivered, onBack = internalOnDismissRequest)
         CompositionLocalProvider(
           LocalPlayerGlassSurfaceActive provides isFrosted,
           LocalMotionPolicy provides MotionPolicy(reduceMotion = reducedMotion),
           androidx.compose.material3.LocalContentColor provides MaterialTheme.colorScheme.onSurface,
         ) {
-          Column(
-            // The keyboard already covers the navigation bar; its padding would push content under the IME.
-            modifier =
-              if (isImeVisible) {
-                Modifier.fillMaxWidth()
-              } else {
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 12.dp)
-              },
-            horizontalAlignment = Alignment.CenterHorizontally,
-          ) {
-            PlayerSheetDragHandle()
+          ResponsiveSheetContent(
+            window = window,
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+              .padding(bottom = if (isImeVisible) 0.dp else 4.dp),
+          ) { resize ->
+            SheetOpeningHandle(
+              resize = resize,
+              showDragHandle = canDrag || (!television && title != null),
+              gesturesEnabled = canDrag,
+              resizeEnabled = opened && !closing,
+            )
             if (title != null) {
               PlayerSheetHeader(title = title, actions = actions)
             }
             Box(Modifier.fillMaxWidth().weight(1f, fill = false)) {
               content()
             }
-            // Reserve action space before measuring the scrollable body on short screens.
-            bottomBar?.invoke()
-          }
-        }
-      },
-    )
-
-    LaunchedEffect(anchoredDraggableState, screenHeightPx) {
-      snapshotFlow {
-        Triple(
-          currentIsSwipeActive,
-          currentScaledSwipeOffset,
-          anchoredDraggableState.anchors.size,
-        )
-      }.collectLatest { (swipeActive, latestSwipeOffset, anchorCount) ->
-        if (swipeActive && anchorCount > 0) {
-          val closedOffset = anchoredDraggableState.anchors.positionOf(1)
-          val currentOffset = anchoredDraggableState.offset
-          if (closedOffset.isFinite() && currentOffset.isFinite()) {
-            val targetOffset = (closedOffset + latestSwipeOffset).coerceIn(0f, screenHeightPx)
-            anchoredDraggableState.dispatchRawDelta(targetOffset - currentOffset)
           }
         }
       }
     }
 
-    var wasSwipeActive by remember { mutableStateOf(false) }
-    LaunchedEffect(anchoredDraggableState, isSwipeActive) {
-      if (isSwipeActive) {
-        wasSwipeActive = true
+    val openedWithSwipe = remember { isSwipeActive }
+    LaunchedEffect(anchoredDraggableState, closing) {
+      if (closing) {
+        snapshotFlow { anchoredDraggableState.offset.isFinite() }.first { it }
+        launch {
+          anchoredDraggableState.animateTo(1)
+          deliverDismissal()
+        }
+        // Hand the player back as soon as the sheet is out of sight.
+        snapshotFlow { sheetOffscreen() }.first { it }
+        deliverDismissal()
+        return@LaunchedEffect
+      }
+      if (opened) return@LaunchedEffect
+      var swiped = openedWithSwipe
+      val (_, finalSwipeOffset, closedOffset) = snapshotFlow {
+        Triple(currentIsSwipeActive, currentScaledSwipeOffset, anchoredDraggableState.anchors.positionOf(1))
+      }.first { (swipeActive, dragOffset, closed) ->
+        swiped = swiped || swipeActive
+        val offset = anchoredDraggableState.offset
+        if (!closed.isFinite() || !offset.isFinite()) return@first false
+        if (swiped) {
+          anchoredDraggableState.dispatchRawDelta((closed + dragOffset).coerceIn(0f, closed) - offset)
+        }
+        !swipeActive
+      }
+      if (swiped && -finalSwipeOffset <= closedOffset * 0.1f && latestConfirmDismiss()) {
+        closing = true
       } else {
-        if (wasSwipeActive) {
-          val currentOffset = anchoredDraggableState.offset
-          // Settle to open (0) if the user dragged up by more than 10% of the sheet height
-          val target = if (currentOffset >= height * 0.9f) 1 else 0
-          if (target == 1 && !latestConfirmDismiss()) {
-            anchoredDraggableState.animateTo(0)
-          } else {
-            anchoredDraggableState.animateTo(target)
-            if (target == 1) deliverDismissal()
-          }
-          wasSwipeActive = false
-        } else {
-          // Title tap opening: wait for anchors to be measured before animating open (0)
-          snapshotFlow { anchoredDraggableState.anchors.size }
-            .filter { it > 0 }
-            .collectLatest {
-              anchoredDraggableState.animateTo(0)
-            }
-        }
+        anchoredDraggableState.animateTo(0)
+        opened = true
       }
     }
 
-    var wasOpened by remember { mutableStateOf(false) }
     LaunchedEffect(anchoredDraggableState) {
-      snapshotFlow { anchoredDraggableState.currentValue }
-        .collectLatest { value ->
-          if (value == 0) {
-            wasOpened = true
-          } else if (value == 1 && wasOpened && !dismissalDelivered) {
-            if (latestConfirmDismiss()) {
-              deliverDismissal()
-            } else {
-              anchoredDraggableState.animateTo(0)
-            }
-          }
+      while (true) {
+        // A swipe that settles closed is finished once the sheet is out of sight.
+        snapshotFlow {
+          opened && !closing && !dismissalDelivered && (
+            anchoredDraggableState.settledValue == 1 ||
+              (anchoredDraggableState.isAnimationRunning && anchoredDraggableState.targetValue == 1 && sheetOffscreen())
+            )
+        }.first { it }
+        if (latestConfirmDismiss()) {
+          deliverDismissal()
+          return@LaunchedEffect
         }
+        try {
+          anchoredDraggableState.animateTo(0)
+        } catch (e: CancellationException) {
+          // A new drag or a close may take the sheet over; only leaving composition ends this loop.
+          ensureActive()
+        }
+      }
     }
   }
 }
 
 @Composable
-fun PlayerSheetDragHandle() {
-  Box(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp), contentAlignment = Alignment.Center) {
+fun PlayerSheetDragHandle(
+  modifier: Modifier = Modifier,
+  visible: Boolean = true,
+) {
+  Box(
+    modifier.fillMaxWidth()
+      .padding(top = 12.dp, bottom = 12.dp),
+    contentAlignment = Alignment.Center,
+  ) {
     Box(
       Modifier.size(width = 34.dp, height = 4.dp)
-        .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f), RoundedCornerShape(2.dp)),
+        .background(
+          if (visible) MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f) else Color.Transparent,
+          RoundedCornerShape(2.dp),
+        ),
     )
   }
 }
@@ -432,19 +415,21 @@ fun PlayerSheetHeader(
   actions: @Composable RowScope.() -> Unit = {},
 ) {
   Row(
-    modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp),
+    modifier = modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 2.dp),
+    horizontalArrangement = Arrangement.spacedBy(6.dp),
     verticalAlignment = Alignment.CenterVertically,
   ) {
     if (title.isNotBlank()) {
       Text(
         text = title,
         modifier = Modifier.weight(1f).semantics { heading() },
-        style = MaterialTheme.typography.headlineSmall,
+        style = MaterialTheme.typography.titleLargeEmphasized,
         color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
       )
     } else {
-      androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+      Spacer(Modifier.weight(1f))
     }
     Row(
       verticalAlignment = Alignment.CenterVertically,
@@ -499,9 +484,9 @@ fun PlayerSheetAction(
       onClick = onClick,
       enabled = enabled,
       shapes = IconButtonDefaults.shapes(),
-      modifier = Modifier.size(48.dp),
+      modifier = Modifier.size(48.dp).tvFocusHighlight(MaterialTheme.shapes.medium),
     ) {
-      Icon(icon, contentDescription = label, modifier = Modifier.size(24.dp))
+      Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
     }
   }
 }

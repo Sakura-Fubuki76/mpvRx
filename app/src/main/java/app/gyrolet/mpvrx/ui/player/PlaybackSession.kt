@@ -306,7 +306,7 @@ object PlaybackSession : MPVLib.EventObserver {
     val generation: Long,
   )
 
-  private val nativeLock = ReentrantLock(true)
+  private val nativeLock = ReentrantLock()
   private val advancedPreferences by lazy {
     org.koin.java.KoinJavaComponent.get<AdvancedPreferences>(AdvancedPreferences::class.java)
   }
@@ -325,7 +325,6 @@ object PlaybackSession : MPVLib.EventObserver {
   private val _videoZoom = MutableStateFlow(0f)
   private val _videoPanX = MutableStateFlow(0f)
   private val _videoPanY = MutableStateFlow(0f)
-  private var appliedBlackBarCrop: Pair<BlackBarSource, String>? = null
   private val streamSequence = AtomicLong()
   private val observedProperties = mutableSetOf<Pair<String, Int>>()
   private val playbackTransitionAudioGuardHandler = Handler(Looper.getMainLooper())
@@ -588,6 +587,9 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   val propFloat = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_DOUBLE, ::getPropertyFloat)
   val propString = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_STRING, ::getPropertyString)
   val propNode = PlaybackProperty(MPVLib.MpvFormat.MPV_FORMAT_NODE, ::getPropertyNode)
+
+  private fun <T> cachedPropertyOnMain(cache: PlaybackProperty<T>, property: String): T? =
+    if (Looper.myLooper() === Looper.getMainLooper()) cache.cachedValue(property) else null
 
   /** Returns true when this call created the core, false when it was already alive. */
   fun initialize(
@@ -1826,9 +1828,13 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   ): Boolean = withReadyCore(false) {
     val current = _state.value
     val loadedItem = loadedPlaybackItem ?: return@withReadyCore false
+    // FILE_LOADED has run for this generation; a pending saved-position restore only keeps the
+    // phase at LOADING while the Activity re-adds the file's saved external audio.
+    val restoringLoadedFile =
+      current.phase == PlaybackPhase.LOADING && pendingPositionRestoreGeneration == expectedGeneration
     if (expectedGeneration <= 0L || loadedGeneration != expectedGeneration ||
       current.generation != expectedGeneration || current.currentItem?.queueEntryId != loadedItem.queueEntryId ||
-      current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
+      (current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) && !restoringLoadedFile)
     ) return@withReadyCore false
     for (index in 0 until (MPVLib.getPropertyInt("track-list/count") ?: 0)) {
       if (MPVLib.getPropertyString("track-list/$index/type") != "audio") continue
@@ -1843,7 +1849,16 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     true
   }
 
-  fun commandNode(vararg command: String): MPVNode? = withCore(null) { MPVLib.commandNode(*command) }
+  fun commandNode(vararg command: String): MPVNode? {
+    val prepared =
+      withCore(null) {
+        if (MpvConfigOverridePolicy.shouldSuppress(command)) return@withCore null
+        val preparedCommand = prepareSeekCommandLocked(command)
+        if (handleAmbientShaderCommandLocked(preparedCommand)) return@withCore null
+        preparedCommand
+      } ?: return null
+    return MPVLib.commandNode(*prepared)
+  }
 
   /** 0 = Off, 1..7 = stats.lua pages, 8 = Console, 9 = mpv's keyboard-only page 0. */
   fun setStatisticsPage(page: Int) {
@@ -2054,11 +2069,16 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     return 0
   }
 
-  fun getPropertyInt(property: String): Int? = withReadyCore(null) { MPVLib.getPropertyInt(property) }
+  fun getPropertyInt(property: String): Int? {
+    cachedPropertyOnMain(propInt, property)?.let { return it }
+    return withReadyCore(null) { MPVLib.getPropertyInt(property) }
+  }
 
   // mpvlib's getPropertyLong delegates through Int; string conversion preserves all 64 bits.
-  fun getPropertyLong(property: String): Long? =
-    withReadyCore(null) { MPVLib.getPropertyString(property)?.toLongOrNull() }
+  fun getPropertyLong(property: String): Long? {
+    cachedPropertyOnMain(propLong, property)?.let { return it }
+    return withReadyCore(null) { MPVLib.getPropertyString(property)?.toLongOrNull() }
+  }
 
   fun setPropertyInt(
     property: String,
@@ -2099,8 +2119,32 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     }
   }
 
-  fun getPropertyDouble(property: String): Double? = withReadyCore(null) {
-    ambientVideoTransform?.get(property) ?: MPVLib.getPropertyDouble(property)
+  /**
+   * Switches the active HLS variant / MPEG-TS program on mpv 0.42+, where variants are exposed as
+   * editions instead of video tracks. mpv restarts the demuxer at the current playback position for
+   * live inputs, so this is the supported way to change adaptive quality without reloading the URL.
+   */
+  internal fun selectEdition(
+    expectedGeneration: Long,
+    editionIndex: Int,
+  ) {
+    nativeLock.withLock {
+      val current = _state.value
+      if (!initialized || current.generation != expectedGeneration || loadedGeneration != expectedGeneration ||
+        current.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
+        MpvConfigOverridePolicy.isOwnedByMpvConf("edition")
+      ) return@withLock
+      MPVLib.setPropertyInt("edition", editionIndex)
+    }
+  }
+
+  fun getPropertyDouble(property: String): Double? {
+    if (property !in ambientTransformProperties) {
+      cachedPropertyOnMain(propDouble, property)?.let { return it }
+    }
+    return withReadyCore(null) {
+      ambientVideoTransform?.get(property) ?: MPVLib.getPropertyDouble(property)
+    }
   }
 
   fun setPropertyDouble(
@@ -2123,8 +2167,13 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     }
   }
 
-  fun getPropertyFloat(property: String): Float? = withReadyCore(null) {
-    ambientVideoTransform?.get(property)?.toFloat() ?: MPVLib.getPropertyFloat(property)
+  fun getPropertyFloat(property: String): Float? {
+    if (property !in ambientTransformProperties) {
+      cachedPropertyOnMain(propFloat, property)?.let { return it }
+    }
+    return withReadyCore(null) {
+      ambientVideoTransform?.get(property)?.toFloat() ?: MPVLib.getPropertyFloat(property)
+    }
   }
 
   fun setPropertyFloat(
@@ -2156,7 +2205,10 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       true
     }
 
-  fun getPropertyBoolean(property: String): Boolean? = withReadyCore(null) { MPVLib.getPropertyBoolean(property) }
+  fun getPropertyBoolean(property: String): Boolean? {
+    cachedPropertyOnMain(propBoolean, property)?.let { return it }
+    return withReadyCore(null) { MPVLib.getPropertyBoolean(property) }
+  }
 
   internal fun audiobookProgress(reachedEnd: Boolean = false): AudiobookProgress? = withCore(null) {
     val book = loadedPlaybackItem?.audiobook ?: return@withCore null
@@ -2308,7 +2360,10 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
       nextPaused
     }
 
-  fun getPropertyString(property: String): String? = withReadyCore(null) { MPVLib.getPropertyString(property) }
+  fun getPropertyString(property: String): String? {
+    cachedPropertyOnMain(propString, property)?.let { return it }
+    return withReadyCore(null) { MPVLib.getPropertyString(property) }
+  }
 
   /**
    * The current item's source in a form that still resolves after this session ends.
@@ -2551,64 +2606,6 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
   }
 
   fun grabThumbnail(dimension: Int): Bitmap? = withCore(null) { MPVLib.grabThumbnail(dimension) }
-
-  private fun matchesBlackBarSourceLocked(source: BlackBarSource): Boolean {
-    val current = _state.value
-    return loadedGeneration == source.generation && current.generation == source.generation &&
-      MPVLib.getPropertyString("vid")?.toIntOrNull() == source.trackId &&
-      MPVLib.getPropertyInt("video-out-params/w") == source.width &&
-      MPVLib.getPropertyInt("video-out-params/h") == source.height &&
-      (MPVLib.getPropertyInt("video-out-params/rotate") ?: 0) == source.rotation
-  }
-
-  internal fun captureBlackBarFrame(
-    source: BlackBarSource,
-    destination: File,
-    previousPosition: Double?,
-  ): Double? = withCore(null) {
-    if (!matchesBlackBarSourceLocked(source) || !_state.value.surfaceAttached || _state.value.paused ||
-      activeAmbientShaderPaths.isNotEmpty() ||
-      MPVLib.getPropertyBoolean("seeking") == true || MPVLib.getPropertyBoolean("paused-for-cache") == true ||
-      !MPVLib.getPropertyString("video-crop").isNullOrEmpty()
-    ) return@withCore null
-
-    // A container-cropped screenshot cannot be mapped onto the complete source frame.
-    if ((MPVLib.getPropertyInt("video-out-params/crop-w") ?: source.width) in 1 until source.width ||
-      (MPVLib.getPropertyInt("video-out-params/crop-h") ?: source.height) in 1 until source.height
-    ) return@withCore null
-    val position = MPVLib.getPropertyDouble("time-pos") ?: return@withCore null
-    if (previousPosition != null && kotlin.math.abs(position - previousPosition) < 0.05) return@withCore null
-
-    // grabThumbnail center-crops to a square. Request the whole video frame, without OSD or subtitles.
-    MPVLib.commandNode("screenshot-to-file", destination.absolutePath, "video") ?: return@withCore null
-    position
-  }
-
-  internal fun applyBlackBarCrop(source: BlackBarSource, bars: VideoBlackBars) = withCore(Unit) {
-    if (bars.isEmpty || !matchesBlackBarSourceLocked(source) ||
-      MpvConfigOverridePolicy.isOwnedByMpvConf("video-crop") ||
-      !MPVLib.getPropertyString("video-crop").isNullOrEmpty()
-    ) return@withCore
-    val geometry = bars.cropGeometry(source)
-    MPVLib.setPropertyString("file-local-options/video-crop", geometry)
-    if (MPVLib.getPropertyString("video-crop") == geometry) {
-      appliedBlackBarCrop = source to geometry
-    } else {
-      Log.w(TAG, "mpv did not apply black bar crop $geometry")
-    }
-  }
-
-  internal fun clearBlackBarCrop(unlessSource: BlackBarSource? = null) = withCore(Unit) {
-    val (source, geometry) = appliedBlackBarCrop ?: return@withCore
-    if (source == unlessSource) return@withCore
-    appliedBlackBarCrop = null
-    // mpv resets file-local options when the file ends. Never clear another script's crop.
-    if (loadedGeneration == source.generation && _state.value.generation == source.generation &&
-      MPVLib.getPropertyString("video-crop") == geometry
-    ) {
-      MPVLib.setPropertyString("file-local-options/video-crop", "")
-    }
-  }
 
   fun grabThumbnailFast(
     path: String,
@@ -3307,9 +3304,11 @@ internal fun userScriptsNeedReload(currentKey: String): Boolean {
     val context = applicationContext ?: return
     streamingOptionsApplied = true
 
-    // Use adaptive HLS bitrate selection to avoid forcing the heaviest stream profile.
-    // This reduces thermal load and helps prevent jitter/rebuffering on long sessions.
-    setPropertyString("hls-bitrate", "no")
+    // Prefer the highest-bitrate rendition of an HLS master playlist by default. This is mpv's own
+    // default (`max`); `no` means "don't select by bitrate" and makes mpv pick the first variant,
+    // which is almost always the lowest quality one. Users can still switch renditions from the
+    // video quality sheet, and an explicit `hls-bitrate` in mpv.conf takes precedence.
+    setPropertyString("hls-bitrate", "max")
     setPropertyString("cookies", "yes")
     setPropertyString("cookies-file", AndroidCookieJar.playbackCookieFile(context).absolutePath)
     setPropertyString("cache", "auto")

@@ -173,6 +173,8 @@
   <string name="pref_clear_thumbnail_cache_title">Очистить кэш миниатюр</string>
   <string name="pref_clear_thumbnail_cache_summary">Удалить все кэшированные миниатюры видео</string>
   <string name="pref_layout_title">Расположение элементов проигрывателя</string>
+  <string name="pref_layout_media_format_badges_title">Значки медиаформатов</string>
+  <string name="pref_layout_media_format_badges_summary">Показывать разрешение, кодеки, HDR и сведения о звуке под названием видео.</string>
   <string name="pref_layout_summary">Настроить расположение кнопок проигрывателя</string>
   <string name="pref_layout_reset_default">Восстановить по умолчанию</string>
   <string name="pref_layout_top_right_controls">Элементы управления сверху справа</string>
@@ -192,6 +194,9 @@
   <string name="pref_player_orientation_reverse_landscape">Обратная альбомная</string>
   <string name="pref_player_orientation_sensor_landscape">Альбомная по датчику</string>
   <string name="pref_player_save_position_on_quit">Сохранять позицию при выходе</string>
+  <string name="pref_player_watched_threshold_title">Порог просмотра</string>
+  <string name="pref_player_watched_threshold_summary">Отмечать видео как просмотренное при достижении %d%% воспроизведения</string>
+  <string name="pref_player_watched_threshold_summary_never">Никогда не отмечать как просмотренное автоматически</string>
   <string name="pref_player_double_tap_seek_duration">Длительность перемотки касанием</string>
   <string name="pref_player_custom_skip_duration_title">Пользовательская длительность пропуска</string>
   <string name="pref_player_custom_skip_duration_summary">Длительность перемотки вперёд пользовательской кнопкой пропуска</string>
@@ -1317,6 +1322,8 @@
   <string name="ui_script_runtime">Среда выполнения скриптов</string>
   <string name="ui_newly_enabled_scripts_can_load_during_playback_scripts_you_turn">Включённые скрипты загружаются сразу. Для полной остановки отключённых переоткройте видео.</string>
   <string name="ui_media_info">Информация о медиа</string>
+  <string name="media_info_playback_snapshot">Показаны данные, которые проигрыватель может прочитать из потока. Некоторые сведения о файле могут быть недоступны.</string>
+  <string name="media_info_unavailable">Сведения о медиа для этого источника недоступны.</string>
   <string name="ui_analyzing_media_file">Анализ медиафайла...</string>
   <string name="ui_media_tracks_summary">Сводка медиадорожек</string>
   <string name="ui_container_metadata">Метаданные контейнера</string>
@@ -1863,7 +1870,6 @@
   <string name="ui_yt_dlp_version">Версия %1$s</string>
   <string name="ui_yt_dlp_commit">Коммит %1$s</string>
   <string name="ui_version_unavailable">Версия недоступна</string>
-  <string name="ui_update_channel">Канал обновлений</string>
   <string name="update_whats_new">Что нового</string>
   <string name="update_no_release_notes">Примечания к выпуску отсутствуют.</string>
   <string name="update_ready_to_install">Готово к установке</string>
@@ -1873,8 +1879,6 @@
   <string name="update_size">Размер</string>
   <string name="update_package">Пакет</string>
   <string name="update_unknown_size">Размер неизвестен</string>
-  <string name="update_beta_build_format">Бета r%1$d</string>
-  <string name="ui_beta_badge_suffix">\u0020(Бета)</string>
   <string name="player_video_quality">Качество видео</string>
   <string name="player_video_quality_button">Качество видео</string>
   <string name="network_bookmark_add">Добавить папку в закладки</string>
@@ -2758,7 +2762,6 @@
   <string name="pref_thumbnail_generator_mediastore">MediaStore</string>
   <string name="pref_thumbnail_generator_native_summary">Извлекать миниатюры и обложки из локальных файлов. Смена очищает кэш.</string>
   <string name="pref_thumbnail_generator_mediastore_summary">Миниатюры и обложки Android. Смена очищает кэш. Для сетевых превью используется Native.</string>
-  <string name="ui_update_channels_summary">Стабильные версии, ночные предварительные версии или экспериментальные сборки CI.</string>
   <string name="tv_nav_settings">Настройки</string>
   <string name="tv_move_up">Переместить вверх</string>
   <string name="tv_move_down">Переместить вниз</string>

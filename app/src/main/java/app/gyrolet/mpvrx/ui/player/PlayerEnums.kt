@@ -180,6 +180,8 @@ enum class Sheets {
   BookmarkEditor,
   AudiobookRewind,
   AudiobookSleepTimer,
+  MediaInfo,
+  AudioOutput,
 }
 
 enum class Panels {

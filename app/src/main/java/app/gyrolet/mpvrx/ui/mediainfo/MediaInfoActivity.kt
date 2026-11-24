@@ -9,9 +9,12 @@
 
 package app.gyrolet.mpvrx.ui.mediainfo
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.text.format.Formatter
 import android.util.Log
 import app.gyrolet.mpvrx.ui.components.AppToast as Toast
 import androidx.activity.SystemBarStyle
@@ -38,6 +41,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +49,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.DisableSelection
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
@@ -67,8 +72,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -79,6 +86,8 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
@@ -95,6 +104,8 @@ import app.gyrolet.mpvrx.preferences.AppearancePreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
 import app.gyrolet.mpvrx.ui.icons.Icon
 import app.gyrolet.mpvrx.ui.icons.Icons
+import app.gyrolet.mpvrx.ui.player.controls.components.MediaFormatBadges
+import app.gyrolet.mpvrx.ui.player.controls.components.tvFocusHighlight
 import app.gyrolet.mpvrx.ui.player.resolveLocalPath
 import app.gyrolet.mpvrx.ui.theme.AppConnectedShapeTokens
 import app.gyrolet.mpvrx.ui.theme.AppConnectedControlShapeTokens
@@ -103,12 +114,16 @@ import app.gyrolet.mpvrx.ui.theme.DarkMode
 import app.gyrolet.mpvrx.ui.theme.MpvrxTheme
 import app.gyrolet.mpvrx.ui.theme.rememberConnectedShape
 import app.gyrolet.mpvrx.utils.clipboard.SafeClipboard
+import app.gyrolet.mpvrx.utils.media.MediaArtwork
+import app.gyrolet.mpvrx.utils.media.MediaArtworkOps
 import app.gyrolet.mpvrx.utils.media.MediaInfoOps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
+import org.koin.compose.koinInject
 import java.io.File
+import java.util.Locale
 
 private data class ValueDetailSelection(
   val label: String,
@@ -122,7 +137,6 @@ private val LocalValueDetailRequest =
 
 class MediaInfoActivity : AppCompatActivity() {
   private val appearancePreferences by inject<AppearancePreferences>()
-  private val tag = "MediaInfoActivity"
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -141,10 +155,7 @@ class MediaInfoActivity : AppCompatActivity() {
 
       MpvrxTheme {
         Surface {
-          MediaInfoScreen(
-            onBack = { finish() },
-            isDarkMode = isDarkMode,
-          )
+          MediaInfoScreen(onBack = { finish() })
         }
       }
     }
@@ -154,18 +165,14 @@ class MediaInfoActivity : AppCompatActivity() {
   @Composable
   private fun MediaInfoScreen(
     onBack: () -> Unit,
-    isDarkMode: Boolean,
   ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var textContent by remember { mutableStateOf<String?>(null) }
-    var fullMediaInfoText by remember { mutableStateOf<String?>(null) }
-    var fileName by remember { mutableStateOf("Media File") }
+    val fallbackTitle = stringResource(R.string.ui_media_info)
+    var fileName by remember { mutableStateOf(fallbackTitle) }
     var fileUri by remember { mutableStateOf<Uri?>(null) }
-    var mediaInfo by remember { mutableStateOf<MediaInfoOps.MediaInfoData?>(null) }
-    var valueDetail by remember { mutableStateOf<ValueDetailSelection?>(null) }
+    var report by remember { mutableStateOf<MediaInfoOps.Report?>(null) }
 
     LaunchedEffect(Unit) {
       val uri =
@@ -188,55 +195,18 @@ class MediaInfoActivity : AppCompatActivity() {
 
       if (uri == null) {
         error = "No media file provided"
-        isLoading = false
         return@LaunchedEffect
       }
 
       fileUri = uri
-
-      // Get the file name
-      fileName =
-        try {
-          context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (nameIndex >= 0 && cursor.moveToFirst()) {
-              cursor.getString(nameIndex) ?: uri.lastPathSegment ?: "Unknown"
-            } else {
-              uri.lastPathSegment ?: "Unknown"
-            }
-          } ?: uri.lastPathSegment ?: "Unknown"
-        } catch (e: Exception) {
-          Log.e(tag, "Error getting file name", e)
-          uri.lastPathSegment ?: "Unknown"
-        }
-
-      // Load media info
-      scope.launch {
-        try {
-          val result = MediaInfoOps.getMediaInfo(context, uri, fileName)
-          result
-            .onSuccess { mediaInfoResult ->
-              mediaInfo = mediaInfoResult
-
-              // Also generate text content for sharing/copying
-              val textResult = MediaInfoOps.generateTextOutput(context, uri, fileName)
-              textResult.onSuccess { text ->
-                textContent = text
-                fullMediaInfoText = text
-              }
-
-              isLoading = false
-            }.onFailure { e ->
-              error = e.message ?: "Failed to load media information"
-              isLoading = false
-            }
-        } catch (e: Exception) {
-          error = e.message ?: "Unknown error"
-          isLoading = false
-        }
-      }
+      fileName = mediaInfoDisplayName(context, uri, fallbackTitle)
+      MediaInfoOps.getMediaInfoReport(context, uri, fileName)
+        .onSuccess { report = it }
+        .onFailure { error = it.message ?: "Failed to load media information" }
     }
 
+    val loaded = report
+    val failure = error
     Scaffold(
       topBar = {
         TopAppBar(
@@ -269,12 +239,12 @@ class MediaInfoActivity : AppCompatActivity() {
             }
           },
           actions = {
-            if (!isLoading && error == null && textContent != null) {
+            if (loaded != null) {
               Row(modifier = Modifier.padding(end = 12.dp)) {
                 FilledTonalIconButton(
                   onClick = {
                     scope.launch {
-                      copyToClipboard(textContent!!, fileName)
+                      SafeClipboard.copyPlainText(context, "Media Info - $fileName", loaded.rawText)
                     }
                   },
                   colors =
@@ -296,7 +266,7 @@ class MediaInfoActivity : AppCompatActivity() {
                 FilledTonalIconButton(
                   onClick = {
                     scope.launch {
-                      shareMediaInfo(textContent!!, fileName, fileUri)
+                      shareMediaInfo(loaded.rawText, fileName)
                     }
                   },
                   colors =
@@ -331,33 +301,63 @@ class MediaInfoActivity : AppCompatActivity() {
             .padding(padding),
       ) {
         when {
-          isLoading -> LoadingContent()
-          error != null -> ErrorContent(error!!)
-          mediaInfo != null ->
-            CompositionLocalProvider(
-              LocalValueDetailRequest provides { label, value ->
-                valueDetail = ValueDetailSelection(label, value)
-              },
-            ) {
-              MediaInfoContent(mediaInfo!!, fileName, fullMediaInfoText, fileUri)
-            }
+          failure != null -> MediaInfoDetails.ErrorContent(failure)
+          loaded != null -> MediaInfoDetails.Content(loaded, fileName, fileUri)
+          else -> MediaInfoDetails.LoadingContent()
         }
       }
     }
-
-    valueDetail?.let { detail ->
-      ValueDetailDialog(
-        label = detail.label,
-        value = detail.value,
-        onDismiss = {
-          if (valueDetail == detail) valueDetail = null
-        },
-      )
-    }
   }
 
+  private suspend fun shareMediaInfo(content: String, fileName: String) {
+    withContext(Dispatchers.IO) {
+      try {
+        val safeName = fileName.substringBeforeLast('.').replace(Regex("""[\\/:*?"<>|]"""), "_")
+        val file = File(cacheDir, "mediainfo_$safeName.txt")
+        file.writeText(content)
+
+        withContext(Dispatchers.Main) {
+          val fileUri = FileProvider.getUriForFile(this@MediaInfoActivity, "$packageName.provider", file)
+          val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, fileUri)
+            putExtra(Intent.EXTRA_SUBJECT, "Media Info - $fileName")
+            putExtra(Intent.EXTRA_TEXT, "Media information for: $fileName")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+          }
+          startActivity(Intent.createChooser(shareIntent, "Share Media Info"))
+        }
+      } catch (error: java.io.IOException) {
+        withContext(Dispatchers.Main) {
+          Toast.makeText(this@MediaInfoActivity, "Failed to share: ${error.message}", Toast.LENGTH_LONG).show()
+        }
+      }
+    }
+  }
+}
+
+internal suspend fun mediaInfoDisplayName(context: Context, uri: Uri, fallback: String): String =
+  withContext(Dispatchers.IO) {
+    val name = if (uri.scheme == "content") {
+      try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+          val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+          if (index >= 0 && cursor.moveToFirst()) cursor.getString(index) else null
+        }
+      } catch (error: SecurityException) {
+        Log.w("MediaInfo", "File name is not accessible", error)
+        null
+      } catch (error: IllegalArgumentException) {
+        Log.w("MediaInfo", "Provider does not expose a display name", error)
+        null
+      }
+    } else null
+    name?.takeIf(String::isNotBlank) ?: uri.lastPathSegment?.takeIf(String::isNotBlank) ?: fallback
+  }
+
+internal object MediaInfoDetails {
   @Composable
-  private fun LoadingContent() {
+  fun LoadingContent() {
     Box(
       modifier = Modifier.fillMaxSize(),
       contentAlignment = Alignment.Center,
@@ -384,7 +384,7 @@ class MediaInfoActivity : AppCompatActivity() {
   }
 
   @Composable
-  private fun ErrorContent(errorMessage: String) {
+  fun ErrorContent(errorMessage: String) {
     Box(
       modifier =
         Modifier
@@ -410,11 +410,10 @@ class MediaInfoActivity : AppCompatActivity() {
     }
   }
 
-  enum class InfoTab(
+  private enum class InfoTab(
     @androidx.annotation.StringRes val displayNameRes: Int,
   ) {
     OVERVIEW(R.string.media_info_tab_overview),
-    THUMBNAIL(R.string.media_info_tab_thumbnail),
     VIDEO(R.string.media_info_tab_video),
     AUDIO(R.string.media_info_tab_audio),
     SUBTITLES(R.string.media_info_tab_subtitles),
@@ -425,34 +424,42 @@ class MediaInfoActivity : AppCompatActivity() {
   }
 
   @Composable
-  private fun MediaInfoContent(
+  fun Content(
+    report: MediaInfoOps.Report,
+    fileName: String,
+    fileUri: Uri?,
+    inPlayer: Boolean = false,
+    playbackSnapshot: Boolean = false,
+  ) {
+    var valueDetail by remember { mutableStateOf<ValueDetailSelection?>(null) }
+    CompositionLocalProvider(
+      LocalValueDetailRequest provides { label, value -> valueDetail = ValueDetailSelection(label, value) },
+    ) {
+      MediaInfoTabs(report.data, fileName, report.rawText, fileUri, inPlayer, playbackSnapshot)
+    }
+    valueDetail?.let { detail ->
+      ValueDetailDialog(label = detail.label, value = detail.value, onDismiss = { valueDetail = null })
+    }
+  }
+
+  @Composable
+  private fun MediaInfoTabs(
     mediaInfo: MediaInfoOps.MediaInfoData,
     fileName: String,
-    fullMediaInfoText: String?,
+    fullMediaInfoText: String,
     fileUri: Uri?,
+    inPlayer: Boolean,
+    playbackSnapshot: Boolean,
   ) {
-    if (fullMediaInfoText == null) {
-      Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-      ) {
-        CircularProgressIndicator()
-      }
-      return
-    }
-
     val context = LocalContext.current
     val filePath =
       remember(fileUri) {
         fileUri?.let { uri -> uri.resolveLocalPath(context) ?: uri.toString() }
       }
-    val sections = remember(fullMediaInfoText) { parseMediaInfoText(fullMediaInfoText) }
-    val thumbnailVideo = remember(mediaInfo, fileUri, filePath, fileName) {
-      fileUri?.takeIf { mediaInfo.videoStreams.isNotEmpty() || mediaInfo.audioStreams.isNotEmpty() }?.let { uri ->
-        mediaInfoThumbnailVideo(mediaInfo, uri, fileName, filePath ?: uri.toString())
-      }
+    val fileHistory by produceState(emptyList<Pair<String, String>>(), fileUri, fullMediaInfoText) {
+      value = fileUri?.let { loadMediaFileHistory(context, it) }.orEmpty()
     }
-    val requestValueDetail = LocalValueDetailRequest.current
+    val sections = remember(fullMediaInfoText) { parseMediaInfoText(fullMediaInfoText) }
 
     // Group sections dynamically
     val videoSections = remember(sections) { sections.filter { it.name.startsWith("Video", ignoreCase = true) } }
@@ -499,29 +506,55 @@ class MediaInfoActivity : AppCompatActivity() {
           .orEmpty()
       }
 
+    val hasMediaStreams = audioSections.isNotEmpty() || videoSections.isNotEmpty()
+    val artwork by produceState<MediaArtwork?>(null, fileUri, fileName, hasMediaStreams) {
+      value = if (fileUri != null && hasMediaStreams) {
+        MediaArtworkOps.readEmbeddedArtwork(context, fileUri, fileName)
+      } else {
+        null
+      }
+    }
+    val currentArtwork = artwork
+    val displayedImageSections = if (imageSections.isEmpty() && currentArtwork != null) {
+      listOf(
+        InfoSection(
+          "Image",
+          listOf(
+            "Format" to currentArtwork.mimeType.substringAfter('/').uppercase(Locale.ROOT),
+            "Width" to currentArtwork.width.toString(),
+            "Height" to currentArtwork.height.toString(),
+            "Stream size" to Formatter.formatFileSize(context, currentArtwork.bytes.size.toLong()),
+          ),
+        ),
+      )
+    } else {
+      imageSections
+    }
+
     // Determine available tabs
     val availableTabs =
-      remember(sections, thumbnailVideo != null) {
+      remember(sections, currentArtwork != null) {
         buildList {
           add(InfoTab.OVERVIEW)
-          if (thumbnailVideo != null) add(InfoTab.THUMBNAIL)
           if (videoSections.isNotEmpty()) add(InfoTab.VIDEO)
           if (audioSections.isNotEmpty()) add(InfoTab.AUDIO)
           if (subtitleSections.isNotEmpty()) add(InfoTab.SUBTITLES)
-          if (imageSections.isNotEmpty()) add(InfoTab.IMAGE)
+          if (imageSections.isNotEmpty() || currentArtwork != null) add(InfoTab.IMAGE)
           if (menuSections.isNotEmpty()) add(InfoTab.CHAPTERS)
           if (otherSections.isNotEmpty() || attachmentNames.isNotEmpty()) add(InfoTab.OTHER)
           add(InfoTab.RAW)
         }
       }
 
-    var selectedTab by remember(availableTabs) { mutableStateOf(InfoTab.OVERVIEW) }
+    // Artwork discovery can add a tab after the report is already visible.
+    var requestedTab by rememberSaveable(fileUri, fileName) { mutableStateOf(InfoTab.OVERVIEW) }
+    val selectedTab = requestedTab.takeIf { it in availableTabs } ?: InfoTab.OVERVIEW
 
     Column(
       modifier =
         Modifier
           .fillMaxSize()
-          .background(MaterialTheme.colorScheme.surface),
+          .then(if (inPlayer) Modifier else Modifier.background(MaterialTheme.colorScheme.surface)),
     ) {
       // Tab Content
       Box(
@@ -542,15 +575,31 @@ class MediaInfoActivity : AppCompatActivity() {
               subtitleSections.size,
               menuSections.firstOrNull()?.properties?.size ?: 0,
               filePath,
+              fileHistory,
+              playbackSnapshot,
             )
-          InfoTab.THUMBNAIL -> thumbnailVideo?.let { MediaThumbnailTab(it, requestValueDetail) }
           InfoTab.VIDEO -> StreamTabContent(videoSections, "Video Stream")
           InfoTab.AUDIO -> StreamTabContent(audioSections, "Audio Stream")
           InfoTab.SUBTITLES -> StreamTabContent(subtitleSections, "Subtitle Track")
-          InfoTab.IMAGE -> StreamTabContent(imageSections, "Image")
+          InfoTab.IMAGE ->
+            StreamTabContent(
+              displayedImageSections,
+              "Image",
+              header =
+                if (currentArtwork != null) {
+                  {
+                    MediaArtworkPanel(
+                      artwork = currentArtwork,
+                      fileName = fileName,
+                    )
+                  }
+                } else {
+                  null
+                },
+            )
           InfoTab.CHAPTERS -> ChaptersTabContent(menuSections)
           InfoTab.OTHER -> OtherTabContent(otherSections, attachmentNames)
-          InfoTab.RAW -> RawTabContent(fullMediaInfoText)
+          InfoTab.RAW -> RawTabContent(fullMediaInfoText, sectionCount = sections.size)
         }
       }
 
@@ -558,9 +607,9 @@ class MediaInfoActivity : AppCompatActivity() {
       Row(
         modifier =
           Modifier
-            .fillMaxWidth()
+            .align(if (inPlayer) Alignment.CenterHorizontally else Alignment.End)
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = if (inPlayer) 4.dp else 12.dp),
         horizontalArrangement = Arrangement.spacedBy(AppConnectedControlShapeTokens.spacing),
       ) {
         availableTabs.forEachIndexed { index, tab ->
@@ -590,21 +639,23 @@ class MediaInfoActivity : AppCompatActivity() {
           )
 
           Surface(
-            onClick = { selectedTab = tab },
+            onClick = { requestedTab = tab },
             color = containerColor,
             contentColor = contentColor,
             shape = tabShape,
-            modifier = Modifier.animateContentSize(),
+            modifier = Modifier
+              .semantics { selected = isSelected }
+              .tvFocusHighlight(tabShape)
+              .animateContentSize(),
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+              modifier = Modifier.heightIn(min = 48.dp).padding(horizontal = 14.dp, vertical = 6.dp),
               horizontalArrangement = Arrangement.Center,
               verticalAlignment = Alignment.CenterVertically,
             ) {
               val icon =
                 when (tab) {
                   InfoTab.OVERVIEW -> Icons.RoundedFilled.Info
-                  InfoTab.THUMBNAIL -> Icons.RoundedFilled.Image
                   InfoTab.VIDEO -> Icons.RoundedFilled.Videocam
                   InfoTab.AUDIO -> Icons.RoundedFilled.VolumeUp
                   InfoTab.SUBTITLES -> Icons.RoundedFilled.Subtitles
@@ -707,6 +758,8 @@ class MediaInfoActivity : AppCompatActivity() {
     subtitleCount: Int,
     chapterCount: Int,
     filePath: String?,
+    fileHistory: List<Pair<String, String>>,
+    playbackSnapshot: Boolean,
   ) {
     // Quick Stat values
     val primaryVideo = mediaInfo.videoStreams.firstOrNull()
@@ -751,32 +804,15 @@ class MediaInfoActivity : AppCompatActivity() {
     val durationLabel = mediaInfo.general.duration.ifBlank { "Unknown" }
     val formatLabel = mediaInfo.general.format.ifBlank { "Unknown" }
 
+    val colorizeBadges by koinInject<AppearancePreferences>().colorizeMediaFormatBadges.collectAsState()
+    val formatBadges = remember(mediaInfo, fileName) { mediaInfo.overviewBadges(fileName) }
     val heroChips =
       remember(mediaInfo, sections) {
         buildList {
-          primaryVideo?.let { v ->
-            val w = v.width.filter { it.isDigit() }.toIntOrNull() ?: 0
-            val h = v.height.filter { it.isDigit() }.toIntOrNull() ?: 0
-            val res =
-              when {
-                w >= 3840 || h >= 2160 -> "4K UHD"
-                w >= 2560 || h >= 1440 -> "2K QHD"
-                w >= 1920 || h >= 1080 -> "1080p"
-                w >= 1280 || h >= 720 -> "720p"
-                else -> null
-              }
-            res?.let { add(it) }
-            if (v.format.isNotBlank() && v.format != "---") add(v.format)
-          }
-          mediaInfo.audioStreams.firstOrNull()?.let { a ->
-            if (a.format.isNotBlank() && a.format != "---") add(a.format)
-          }
           if (isImageFile) {
             imageValue("Format").takeIf(String::isNotBlank)?.let { add(it) }
             if (imageResolution.isNotBlank()) add(imageResolution)
           }
-          if (sizeLabel != "Unknown") add(sizeLabel)
-          if (durationLabel != "Unknown") add(durationLabel)
         }
       }
 
@@ -841,7 +877,25 @@ class MediaInfoActivity : AppCompatActivity() {
         }
       }
 
-      // Hero summary chips inline row
+      if (playbackSnapshot) {
+        Text(
+          text = stringResource(R.string.media_info_playback_snapshot),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      if (formatBadges.isNotEmpty()) {
+        val background = MaterialTheme.colorScheme.surfaceContainerLow
+        Surface(shape = MaterialTheme.shapes.large, color = background) {
+          MediaFormatBadges(
+            badges = formatBadges,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            background = background,
+            colorize = colorizeBadges,
+            rowSpacing = 8.dp,
+          )
+        }
+      }
       if (heroChips.isNotEmpty()) {
         HeroChipRow(heroChips)
       }
@@ -1035,9 +1089,9 @@ class MediaInfoActivity : AppCompatActivity() {
         }
       }
 
-      // Detailed metadata list: every General field MediaInfo reports, plus the resolved path.
+      // Detailed metadata list: resolved path, device file history, then every General field.
       val generalSection = sections.firstOrNull { it.name.equals("General", ignoreCase = true) }
-      if (generalSection != null || filePath != null) {
+      if (generalSection != null || filePath != null || fileHistory.isNotEmpty()) {
         ExpressiveInfoCard(
           modifier = Modifier.fillMaxWidth(),
         ) {
@@ -1056,6 +1110,7 @@ class MediaInfoActivity : AppCompatActivity() {
             val pathLabel = stringResource(R.string.media_info_file_path)
             val generalEntries = buildList<Pair<String, String>> {
               filePath?.let { add(pathLabel to it) }
+              addAll(fileHistory)
               generalSection?.properties?.let { addAll(it) }
             }
             SelectionContainer {
@@ -1295,6 +1350,7 @@ class MediaInfoActivity : AppCompatActivity() {
   private fun StreamTabContent(
     sections: List<InfoSection>,
     streamTypeLabel: String,
+    header: (@Composable () -> Unit)? = null,
   ) {
     Column(
       modifier =
@@ -1304,6 +1360,7 @@ class MediaInfoActivity : AppCompatActivity() {
           .padding(bottom = 24.dp),
       verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+      header?.invoke()
       sections.forEachIndexed { index, section ->
         val format =
           section.properties.firstOrNull { it.first.equals("Format", ignoreCase = true) }?.second ?: "Unknown"
@@ -1339,15 +1396,13 @@ class MediaInfoActivity : AppCompatActivity() {
               )
           }
 
-        val filteredProperties = section.properties.filter { it.first != "Format" }
-
         StreamCard(
           title = "$streamTypeLabel #${index + 1}",
           badge = badgeLabel,
           icon = icon,
           headerBgColor = headerBgColor,
           headerTextColor = headerTextColor,
-          properties = filteredProperties,
+          properties = section.properties,
         )
       }
     }
@@ -1650,146 +1705,142 @@ class MediaInfoActivity : AppCompatActivity() {
   }
 
   /**
-   * The raw report remains byte-for-byte unchanged for copying/sharing, but renders as a
-   * virtualized code reader with clearly differentiated headings, labels and values.
-   * Rendering per-line avoids building one huge AnnotatedString for long reports.
+   * The summary scrolls with the lazily rendered report, leaving the whole tab available
+   * for reading in landscape. Copying the full report still uses the original text.
    */
   @Composable
-  private fun RawTabContent(rawText: String) {
+  private fun RawTabContent(rawText: String, sectionCount: Int) {
     val context = LocalContext.current
     val lines = remember(rawText) { rawText.lines() }
-    val sectionCount = remember(rawText) { parseMediaInfoText(rawText).size }
     val colors = MaterialTheme.colorScheme
 
-    Column(
-      modifier = Modifier.fillMaxSize().padding(bottom = 20.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = colors.primaryContainer,
-        contentColor = colors.onPrimaryContainer,
+    SelectionContainer {
+      LazyColumn(
+        modifier = Modifier
+          .fillMaxSize()
+          .clip(MaterialTheme.shapes.extraLarge)
+          .background(colors.surfaceContainerLow),
+        contentPadding = PaddingValues(bottom = 8.dp),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          Surface(
-            shape = MaterialTheme.shapes.large,
-            color = colors.onPrimaryContainer.copy(alpha = 0.12f),
-          ) {
-            Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-              Icon(
-                imageVector = Icons.RoundedFilled.Article,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-              )
-            }
-          }
-          Column(modifier = Modifier.weight(1f)) {
-            Text(
-              text = stringResource(R.string.media_info_tab_raw),
-              style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            )
-            Text(
-              text = "${lines.size} lines  •  ${sectionCount} sections",
-              style = MaterialTheme.typography.labelMedium,
-              color = colors.onPrimaryContainer.copy(alpha = 0.76f),
-            )
-          }
-          Surface(
-            onClick = {
-              SafeClipboard.copyPlainText(context, "MediaInfo", rawText)
-            },
-            shape = MaterialTheme.shapes.large,
-            color = colors.onPrimaryContainer.copy(alpha = 0.13f),
-            contentColor = colors.onPrimaryContainer,
-          ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(6.dp),
+        item(contentType = "summary") {
+          DisableSelection {
+            Surface(
+              modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+              shape = MaterialTheme.shapes.extraLarge,
+              color = colors.primaryContainer,
+              contentColor = colors.onPrimaryContainer,
             ) {
-              Icon(
-                imageVector = Icons.RoundedFilled.ContentCopy,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-              )
-              Text(
-                text = stringResource(R.string.ui_copy_all),
-                style = MaterialTheme.typography.labelLarge,
-              )
+              Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Surface(
+                  shape = MaterialTheme.shapes.large,
+                  color = colors.onPrimaryContainer.copy(alpha = 0.12f),
+                ) {
+                  Box(modifier = Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.Article,
+                      contentDescription = null,
+                      modifier = Modifier.size(24.dp),
+                    )
+                  }
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = stringResource(R.string.media_info_tab_raw),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                  )
+                  Text(
+                    text = "${lines.size} lines  •  $sectionCount sections",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onPrimaryContainer.copy(alpha = 0.76f),
+                  )
+                }
+                Surface(
+                  onClick = {
+                    SafeClipboard.copyPlainText(context, "MediaInfo", rawText)
+                  },
+                  shape = MaterialTheme.shapes.large,
+                  color = colors.onPrimaryContainer.copy(alpha = 0.13f),
+                  contentColor = colors.onPrimaryContainer,
+                ) {
+                  Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    Icon(
+                      imageVector = Icons.RoundedFilled.ContentCopy,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                      text = stringResource(R.string.ui_copy_all),
+                      style = MaterialTheme.typography.labelLarge,
+                    )
+                  }
+                }
+              }
             }
           }
         }
-      }
-
-      // Keep source spacing exactly as received; only paint semantic spans.
-      SelectionContainer {
-        LazyColumn(
-          modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
-            .clip(MaterialTheme.shapes.extraLarge)
-            .background(colors.surfaceContainerLow),
-          contentPadding = PaddingValues(vertical = 8.dp),
-        ) {
-          items(count = lines.size) { index ->
-            val line = lines[index]
-            val trimmed = line.trim()
-            val delimiter = line.indexOf(" : ")
-            val isHeading = trimmed.isNotEmpty() &&
-              !line.startsWith(" ") && delimiter < 0 &&
-              !trimmed.startsWith("=") && !trimmed.contains("MEDIA INFO")
-            val annotated = buildAnnotatedString {
-              when {
-                isHeading -> withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold)) {
-                  append(line)
-                }
-                delimiter >= 0 -> {
-                  withStyle(SpanStyle(color = colors.onSurfaceVariant, fontWeight = FontWeight.SemiBold)) {
-                    append(line.substring(0, delimiter))
-                  }
-                  withStyle(SpanStyle(color = colors.primary)) {
-                    append(" : ")
-                  }
-                  withStyle(SpanStyle(color = colors.onSurface)) {
-                    append(line.substring(delimiter + 3))
-                  }
-                }
-                else -> append(line)
+        // Keep source spacing exactly as received; only paint semantic spans.
+        items(count = lines.size) { index ->
+          val line = lines[index]
+          val trimmed = line.trim()
+          val delimiter = line.indexOf(" : ")
+          val isHeading = trimmed.isNotEmpty() &&
+            !line.startsWith(" ") && delimiter < 0 &&
+            !trimmed.startsWith("=") && !trimmed.contains("MEDIA INFO")
+          val annotated = buildAnnotatedString {
+            when {
+              isHeading -> withStyle(SpanStyle(color = colors.primary, fontWeight = FontWeight.Bold)) {
+                append(line)
               }
+              delimiter >= 0 -> {
+                withStyle(SpanStyle(color = colors.onSurfaceVariant, fontWeight = FontWeight.SemiBold)) {
+                  append(line.substring(0, delimiter))
+                }
+                withStyle(SpanStyle(color = colors.primary)) {
+                  append(" : ")
+                }
+                withStyle(SpanStyle(color = colors.onSurface)) {
+                  append(line.substring(delimiter + 3))
+                }
+              }
+              else -> append(line)
             }
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .background(
-                  if (isHeading) colors.secondaryContainer.copy(alpha = 0.62f)
-                  else Color.Transparent,
-                )
-                .padding(horizontal = 12.dp, vertical = if (isHeading) 10.dp else 4.dp),
-              verticalAlignment = Alignment.Top,
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-              Text(
-                text = (index + 1).toString(),
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                color = colors.onSurfaceVariant.copy(alpha = 0.72f),
-                textAlign = TextAlign.End,
-                modifier = Modifier.width(32.dp),
+          }
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .background(
+                if (isHeading) colors.secondaryContainer.copy(alpha = 0.62f)
+                else Color.Transparent,
               )
-              Text(
-                text = annotated,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall.copy(
-                  fontFamily = FontFamily.Monospace,
-                  lineHeight = 19.sp,
-                ),
-                color = colors.onSurface,
-                softWrap = true,
-              )
-            }
+              .padding(horizontal = 12.dp, vertical = if (isHeading) 10.dp else 4.dp),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Text(
+              text = (index + 1).toString(),
+              style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+              color = colors.onSurfaceVariant.copy(alpha = 0.72f),
+              textAlign = TextAlign.End,
+              modifier = Modifier.width(32.dp),
+            )
+            Text(
+              text = annotated,
+              modifier = Modifier.weight(1f),
+              style = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace,
+                lineHeight = 19.sp,
+              ),
+              color = colors.onSurface,
+              softWrap = true,
+            )
           }
         }
       }
@@ -1803,7 +1854,7 @@ class MediaInfoActivity : AppCompatActivity() {
     text.lines().forEach { line ->
       val trimmed = line.trim()
       when {
-        trimmed.isEmpty() || trimmed.startsWith("=") || line.contains("MEDIA INFO") -> {}
+        trimmed.isEmpty() || trimmed.startsWith("=") || trimmed.startsWith("MEDIA INFO - ") -> {}
         !line.startsWith(" ") && !line.contains(" : ") -> {
           if (currentName != null && currentProps.isNotEmpty()) {
             sections.add(InfoSection(currentName, currentProps.toList()))
@@ -1830,59 +1881,4 @@ class MediaInfoActivity : AppCompatActivity() {
     val properties: List<Pair<String, String>>,
   )
 
-  private suspend fun copyToClipboard(
-    content: String,
-    fileName: String,
-  ) {
-    withContext(Dispatchers.Main) {
-      SafeClipboard.copyPlainText(
-        context = this@MediaInfoActivity,
-        label = "Media Info - $fileName",
-        text = content,
-      )
-    }
-  }
-
-  private suspend fun shareMediaInfo(
-    content: String,
-    fileName: String,
-    mediaUri: Uri?,
-  ) {
-    withContext(Dispatchers.IO) {
-      try {
-        val textFileName = "mediainfo_${fileName.substringBeforeLast('.')}.txt"
-        val file = File(cacheDir, textFileName)
-        file.writeText(content)
-
-        withContext(Dispatchers.Main) {
-          val fileUri =
-            FileProvider.getUriForFile(
-              this@MediaInfoActivity,
-              "$packageName.provider",
-              file,
-            )
-
-          val shareIntent =
-            Intent(Intent.ACTION_SEND).apply {
-              type = "text/plain"
-              putExtra(Intent.EXTRA_STREAM, fileUri)
-              putExtra(Intent.EXTRA_SUBJECT, "Media Info - $fileName")
-              putExtra(Intent.EXTRA_TEXT, "Media information for: $fileName")
-              addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-
-          startActivity(Intent.createChooser(shareIntent, "Share Media Info"))
-        }
-      } catch (e: Exception) {
-        withContext(Dispatchers.Main) {
-          Toast
-            .makeText(
-              this@MediaInfoActivity,
-              "Failed to share: ${e.message}",
-              Toast.LENGTH_LONG,
-            ).show()
-        }
-      }
-    }
-  }
 }

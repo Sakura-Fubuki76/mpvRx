@@ -721,8 +721,16 @@ class PlayerViewModel(
       .stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
 
   val videoQualityTracks: StateFlow<List<TrackNode>> =
-    combine(allTracks, PlaybackSession.state) { tracks, session ->
+    combine(
+      allTracks,
+      PlaybackSession.state,
+      PlaybackSession.propNode["edition-list"],
+      PlaybackSession.propInt["current-edition"],
+    ) { tracks, session, editionListNode, activeEdition ->
       if (session.phase != PlaybackPhase.READY && session.phase != PlaybackPhase.BACKGROUND) {
+        return@combine persistentListOf()
+      }
+      if (!supportsOnlineVideoQualitySelection(session.currentItem)) {
         return@combine persistentListOf()
       }
 
@@ -736,12 +744,39 @@ class PlayerViewModel(
             .thenByDescending { track -> track.demuxFps ?: 0.0 }
             .thenByDescending { track -> track.effectiveBitrate ?: 0L },
         ).toList()
-      if (qualityTracks.size <= 1 || !supportsOnlineVideoQualitySelection(session.currentItem)) {
-        persistentListOf()
-      } else {
-        qualityTracks.toImmutableList()
+      if (qualityTracks.size > 1) {
+        return@combine qualityTracks.toImmutableList()
       }
+
+      // mpv 0.42+ exposes HLS variants / TS programs as editions and only lists the selected
+      // variant's tracks, so track-list alone cannot offer a quality choice. Turn the edition list
+      // into the same quality entries the sheet already knows how to render and select.
+      val editions =
+        runCatching { editionListNode?.toObject<List<EditionQualityNode>>(json) }
+          .getOrNull()
+          .orEmpty()
+      if (editions.size <= 1) return@combine persistentListOf()
+      editions.mapIndexed { index, edition ->
+        val editionIndex = edition.id?.toInt() ?: index
+        TrackNode(
+          id = -(editionIndex + 1),
+          type = "video",
+          title = edition.title?.takeIf(String::isNotBlank) ?: "Quality ${index + 1}",
+          hlsBitrate = editionQualityBitrate(edition.title),
+          selected = editionIndex == activeEdition,
+          editionIndex = editionIndex,
+        )
+      }.toImmutableList()
     }.stateIn(viewModelScope, SharingStarted.Eagerly, persistentListOf())
+
+  private fun editionQualityBitrate(title: String?): Long? {
+    if (title.isNullOrBlank()) return null
+    val match = EDITION_BITRATE_REGEX.find(title) ?: return null
+    val value = match.groupValues.getOrNull(1)?.toDoubleOrNull() ?: return null
+    val unit = match.groupValues.getOrNull(2)
+    val factor = if (unit.equals("Mbps", ignoreCase = true)) 1_000_000L else 1_000L
+    return (value * factor).toLong().takeIf { it > 0L }
+  }
 
   val showVideoQualitySelector: StateFlow<Boolean> =
     videoQualityTracks
@@ -844,6 +879,12 @@ class PlayerViewModel(
       session.phase !in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND) ||
       videoQualityTracks.value.none { candidate -> candidate == track }
     ) return
+
+    val editionIndex = track.editionIndex
+    if (editionIndex != null) {
+      PlaybackSession.selectEdition(expectedGeneration, editionIndex)
+      return
+    }
 
     if (currentItemRequiresYtdlp() && !MpvConfigOverridePolicy.isOwnedByMpvConf("ytdl-format")) {
       val selectedAudio = pairedYtdlTrack(track, TrackNode::isAudio)
@@ -2310,10 +2351,6 @@ fun restartFromBeginning() {
   // Current aspect ratio value (for custom ratios and tracking)
   private val _currentAspectRatio = MutableStateFlow(-1.0)
   val currentAspectRatio: StateFlow<Double> = _currentAspectRatio.asStateFlow()
-  private val blackBarScanRequestedFor = MutableStateFlow<Long?>(null)
-  private var blackBarSource: BlackBarSource? = null
-  private var detectedBlackBars: Pair<BlackBarSource, VideoBlackBars>? = null
-  @Volatile private var isBlackBarScanInProgress = false
 
   // Timer
   private var timerJob: Job? = null
@@ -2819,7 +2856,6 @@ fun restartFromBeginning() {
     }
 
     // Crop, aspect and ambient work belongs to the video player's surface, never to the in-app sheet.
-    if (!hostedInBrowser) viewModelScope.launch { watchBlackBars() }
 
     if (!hostedInBrowser) viewModelScope.launch {
       val activeGeneration =
@@ -3802,6 +3838,7 @@ fun restartFromBeginning() {
     const val FRAME_SEEK_CORRECTION_INTERVAL_MS = 24L
     const val FRAME_SEEK_CORRECTION_SETTLE_MS = 40L
     val QUALITY_HEIGHT_REGEX = Regex("""(?i)(\d{3,4})p""")
+    val EDITION_BITRATE_REGEX = Regex("""Bitrate:\s*([\d.]+)\s*(kbps|Mbps)""", RegexOption.IGNORE_CASE)
     val VIDEO_QUALITY_STREAM_SCHEMES = setOf(
       "http", "https", "ftp", "ftps", "rtmp", "rtmps", "rtsp", "rtsps", "mms", "mmsh",
       "srt", "rist", "udp", "tcp", NetworkPlaybackUri.SCHEME, XtreamPlaybackUri.SCHEME,
@@ -5613,12 +5650,32 @@ fun restartFromBeginning() {
     PlaybackSession.command("seek", target.toString(), "absolute")
   }
 
+  /**
+   * With precise seeking off (hr-seek=no) an absolute seek to the end lands on the last keyframe,
+   * so the final GOP — often 5-10 s — plays out before end-of-file. Releasing at the end seeks
+   * exactly instead, like [seekBy], so the file ends at once.
+   */
+  private fun reachesMediaEnd(target: Double): Boolean {
+    if (isLiveMedia.value) return false
+    val loop = _abLoopState.value
+    if (loop.a != null && loop.b != null) return false
+    val durationSeconds = _preciseDuration.value.toDouble()
+    return durationSeconds > 0.0 && target >= durationSeconds - SCRUB_SEEK_STEP_SECONDS
+  }
+
+  private fun seekToMediaEnd() {
+    cancelFrameSeek()
+    PlaybackSession.command("seek", "100", "absolute-percent+exact")
+  }
+
   /** Ends a seekbar drag or tap, which already seeked live. */
   fun seekFromScrub(position: Float) {
     if (!position.isFinite()) return
     val target = clampSeekTarget(position.toDouble())
-    // Re-seeking within one step of the live seek would replay the decode and freeze the picture.
-    if (shouldIssueScrubSeek(lastScrubTarget, target)) {
+    if (reachesMediaEnd(target)) {
+      seekToMediaEnd()
+    } else if (shouldIssueScrubSeek(lastScrubTarget, target)) {
+      // Re-seeking within one step of the live seek would replay the decode and freeze the picture.
       cancelFrameSeek()
       PlaybackSession.command("seek", target.toString(), "absolute")
     }
@@ -5639,12 +5696,14 @@ fun restartFromBeginning() {
     PlaybackSession.command("seek", target.toString(), "absolute")
   }
 
-  /** Ends a swipe (null cancels it). Its live seeks already landed, so none is repeated here. */
+  /** Ends a swipe (null cancels it). Its live seeks already landed; only a swipe to the end re-seeks. */
   fun finishGestureSeek(position: Float?) {
     isGestureSeeking = false
     lastScrubTarget = Double.NaN
+    val target = position?.takeIf { it.isFinite() }?.let { clampSeekTarget(it.toDouble()) }
+    if (target != null && reachesMediaEnd(target)) seekToMediaEnd()
     PlaybackSession.getPropertyDouble("time-pos")?.let(::publishPrecisePosition)
-    val target = position?.takeIf { it.isFinite() }?.let { clampSeekTarget(it.toDouble()) } ?: return
+    if (target == null) return
     syncplayManager.updatePlayerState(target, paused ?: false, doSeek = true)
   }
 
@@ -5983,97 +6042,15 @@ fun restartFromBeginning() {
 
   // ==================== Video Aspect ====================
 
-  private suspend fun watchBlackBars() {
-    val activeGeneration = PlaybackSession.state.map { state ->
-      state.generation.takeIf {
-        state.surfaceAttached && state.activeGeneration == it &&
-          state.phase in setOf(PlaybackPhase.READY, PlaybackPhase.BACKGROUND)
-      }
-    }.distinctUntilChanged()
-    val sources = combine(
-      activeGeneration,
-      PlaybackSession.propString["vid"],
-      PlaybackSession.propInt["video-out-params/w"],
-      PlaybackSession.propInt["video-out-params/h"],
-      PlaybackSession.propInt["video-out-params/rotate"],
-    ) { generation, vid, width, height, rotation ->
-      val id = vid?.toIntOrNull()
-      if (generation != null && id != null && width != null && width >= 8 && height != null && height >= 8) {
-        BlackBarSource(generation, id, width, height, rotation ?: 0)
-      } else {
-        null
-      }
-    }.distinctUntilChanged()
-    val cropWanted = combine(
-      _videoAspect,
-      _currentAspectRatio,
-      _isAmbientEnabled,
-    ) { aspect, customRatio, ambientEnabled ->
-      customRatio <= 0 && wantsBlackBarCrop(aspect, ambientEnabled)
-    }
-    val detectionWanted = combine(
-      blackBarScanRequestedFor,
-      cropWanted,
-      isAudioOnly,
-    ) { requestedGeneration, cropEnabled, audioOnly ->
-      val shouldCrop = !audioOnly && cropEnabled
-      requestedGeneration.takeUnless { audioOnly || shouldCrop } to shouldCrop
-    }
-
-    combine(sources, detectionWanted, PlaybackSession.propString["video-crop"]) { source, demand, crop ->
-      Triple(source, demand, crop.isNullOrEmpty())
-    }.distinctUntilChanged().collectLatest { (source, demand, uncropped) ->
-      val (requestedGeneration, shouldCrop) = demand
-      blackBarSource = source
-      if (!shouldCrop) PlaybackSession.clearBlackBarCrop()
-      if (source == null) return@collectLatest
-      if (shouldCrop) PlaybackSession.clearBlackBarCrop(unlessSource = source)
-      if (!uncropped || MpvConfigOverridePolicy.isOwnedByMpvConf("video-crop")) return@collectLatest
-      if (!shouldCrop && requestedGeneration != source.generation) return@collectLatest
-      if (detectedBlackBars?.first != source) {
-        val state = PlaybackSession.state.first { !it.paused || it.generation != source.generation }
-        if (state.generation != source.generation) return@collectLatest
-        // Shader Ambient composites its picture in the OUTPUT pass, including in video screenshots.
-        isBlackBarScanInProgress = true
-        try {
-          if (_isAmbientEnabled.value && _ambientStyle.value != AmbientStyle.YouTube) disableAmbientShader()
-          detectBlackBars(source, appContext.cacheDir)?.let { bars -> detectedBlackBars = source to bars }
-          if (shouldCrop) applyDetectedBlackBars()
-        } finally {
-          isBlackBarScanInProgress = false
-          scheduleAmbientUpdate(0)
-        }
-      } else if (shouldCrop) {
-        applyDetectedBlackBars()
-      }
-    }
-  }
-
-  private fun wantsBlackBarCrop(aspect: VideoAspect, ambientEnabled: Boolean = _isAmbientEnabled.value): Boolean =
-    aspect == VideoAspect.Fit && ambientEnabled &&
-      !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.AMBIENT) &&
-      !MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT) &&
-      !MpvConfigOverridePolicy.isOwnedByMpvConf("video-crop")
-
-  private fun applyDetectedBlackBars() {
-    if (isAudioOnly.value || _currentAspectRatio.value > 0 ||
-      !wantsBlackBarCrop(_videoAspect.value)
-    ) return
-    val (source, bars) = detectedBlackBars ?: return
-    if (blackBarSource == source) PlaybackSession.applyBlackBarCrop(source, bars)
-  }
-
   fun changeVideoAspect(
     aspect: VideoAspect,
     showUpdate: Boolean = true,
     resetZoom: Boolean = true,
   ) {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
-    val shouldCrop = wantsBlackBarCrop(aspect)
-    if (!shouldCrop) PlaybackSession.clearBlackBarCrop()
     when (aspect) {
       VideoAspect.Fit -> {
-        // Fit the frame; a confirmed matte is removed from the source rectangle separately.
+        // Fit keeps the complete frame, including any encoded matte.
         PlaybackSession.setPropertyDouble("panscan", 0.0)
         PlaybackSession.setPropertyString("video-aspect-override", "no")
       }
@@ -6123,7 +6100,6 @@ fun restartFromBeginning() {
     _videoAspect.value = aspect
     _currentAspectRatio.value = -1.0 // Reset custom ratio when using standard modes
 
-    if (shouldCrop) applyDetectedBlackBars()
     onAmbientGeometryChanged()
     // Notify the UI
     if (showUpdate) {
@@ -6137,7 +6113,6 @@ fun restartFromBeginning() {
     resetZoom: Boolean = true,
   ) {
     if (MpvConfigOverridePolicy.ownsAny(MpvConfigControlledFeatures.VIDEO_ASPECT)) return
-    PlaybackSession.clearBlackBarCrop()
     PlaybackSession.setPropertyDouble("panscan", 0.0)
     PlaybackSession.setPropertyDouble("video-aspect-override", ratio)
     if (resetZoom) resetVideoZoom()
@@ -6372,13 +6347,8 @@ fun restartFromBeginning() {
     val videoHeight = PlaybackSession.getPropertyInt("video-out-params/h") ?: return emptyList()
     val aspect = VideoAspectGeometry.currentEffectiveDisplayAspect(videoWidth.toDouble(), videoHeight.toDouble())
       ?: return emptyList()
-    val uncropped = PlaybackSession.getPropertyString("video-crop").isNullOrEmpty()
-    if (uncropped) blackBarScanRequestedFor.value = PlaybackSession.state.value.generation
-    val bars = detectedBlackBars?.takeIf {
-      uncropped && it.first == blackBarSource && it.first.generation == PlaybackSession.state.value.generation
-    }?.second
     val panscan = PlaybackSession.getPropertyDouble("panscan") ?: 0.0
-    return videoZoomStops(width / height.toDouble(), aspect, panscan, bars)
+    return videoZoomStops(width / height.toDouble(), aspect, panscan)
   }
 
   internal fun snapVideoZoom(zoom: Float): Float {
@@ -7187,6 +7157,11 @@ fun restartFromBeginning() {
             item.networkConnectionId == null || abs(item.index - currentIndex) <= PLAYLIST_NETWORK_METADATA_PREFETCH_RADIUS
           }
 
+          val pendingEntries = metadataItems.mapTo(mutableSetOf()) { it.queueEntryId }
+          _playlistItems.value = _playlistItems.value.map { item ->
+            item.copy(metadataLoading = item.queueEntryId in pendingEntries)
+          }
+
         // Limit concurrent metadata extraction to avoid overwhelming resources
         val batchSize = 5
         metadataItems.chunked(batchSize).forEach { batch ->
@@ -7213,14 +7188,17 @@ fun restartFromBeginning() {
           }
 
           // Apply all batched updates at once (single playlist update)
-          if (updates.isNotEmpty()) {
+          val completedEntries = batch.mapTo(mutableSetOf()) { it.queueEntryId }
+          if (completedEntries.isNotEmpty()) {
             _playlistItems.update { current ->
               current.map { currentItem ->
+                if (currentItem.queueEntryId !in completedEntries) return@map currentItem
                 val cacheKey = currentItem.uri.toString()
-                val (durationStr, resolutionStr) = updates[cacheKey] ?: return@map currentItem
+                val (durationStr, resolutionStr) = updates[cacheKey] ?: (currentItem.duration to currentItem.resolution)
                 currentItem.copy(
                   duration = durationStr.ifBlank { currentItem.duration },
                   resolution = resolutionStr.ifBlank { currentItem.resolution },
+                  metadataLoading = false,
                 )
               }
             }
@@ -7560,7 +7538,7 @@ fun restartFromBeginning() {
 
   /** All shader styles share the same renderer and lifecycle. YouTube retains its capture renderer. */
   private fun isAmbientShaderRuntimeActive(): Boolean =
-    !isBlackBarScanInProgress && isAmbientRuntimeActive() && _ambientStyle.value != AmbientStyle.YouTube
+    isAmbientRuntimeActive() && _ambientStyle.value != AmbientStyle.YouTube
 
   fun setAmbientPipActive(active: Boolean) {
     isAmbientPipActive = active
