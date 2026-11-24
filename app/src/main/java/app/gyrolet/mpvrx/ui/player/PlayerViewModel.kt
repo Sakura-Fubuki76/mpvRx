@@ -5596,12 +5596,32 @@ fun restartFromBeginning() {
     PlaybackSession.command("seek", target.toString(), "absolute")
   }
 
+  /**
+   * With precise seeking off (hr-seek=no) an absolute seek to the end lands on the last keyframe,
+   * so the final GOP — often 5-10 s — plays out before end-of-file. Releasing at the end seeks
+   * exactly instead, like [seekBy], so the file ends at once.
+   */
+  private fun reachesMediaEnd(target: Double): Boolean {
+    if (isLiveMedia.value) return false
+    val loop = _abLoopState.value
+    if (loop.a != null && loop.b != null) return false
+    val durationSeconds = _preciseDuration.value.toDouble()
+    return durationSeconds > 0.0 && target >= durationSeconds - SCRUB_SEEK_STEP_SECONDS
+  }
+
+  private fun seekToMediaEnd() {
+    cancelFrameSeek()
+    PlaybackSession.command("seek", "100", "absolute-percent+exact")
+  }
+
   /** Ends a seekbar drag or tap, which already seeked live. */
   fun seekFromScrub(position: Float) {
     if (!position.isFinite()) return
     val target = clampSeekTarget(position.toDouble())
-    // Re-seeking within one step of the live seek would replay the decode and freeze the picture.
-    if (lastScrubTarget.isNaN() || abs(target - lastScrubTarget) >= SCRUB_SEEK_STEP_SECONDS) {
+    if (reachesMediaEnd(target)) {
+      seekToMediaEnd()
+    } else if (lastScrubTarget.isNaN() || abs(target - lastScrubTarget) >= SCRUB_SEEK_STEP_SECONDS) {
+      // Re-seeking within one step of the live seek would replay the decode and freeze the picture.
       cancelFrameSeek()
       PlaybackSession.command("seek", target.toString(), "absolute")
     }
@@ -5622,12 +5642,14 @@ fun restartFromBeginning() {
     PlaybackSession.command("seek", target.toString(), "absolute")
   }
 
-  /** Ends a swipe (null cancels it). Its live seeks already landed, so none is repeated here. */
+  /** Ends a swipe (null cancels it). Its live seeks already landed; only a swipe to the end re-seeks. */
   fun finishGestureSeek(position: Float?) {
     isGestureSeeking = false
     lastScrubTarget = Double.NaN
+    val target = position?.takeIf { it.isFinite() }?.let { clampSeekTarget(it.toDouble()) }
+    if (target != null && reachesMediaEnd(target)) seekToMediaEnd()
     PlaybackSession.getPropertyDouble("time-pos")?.let(::publishPrecisePosition)
-    val target = position?.takeIf { it.isFinite() }?.let { clampSeekTarget(it.toDouble()) } ?: return
+    if (target == null) return
     syncplayManager.updatePlayerState(target, paused ?: false, doSeek = true)
   }
 
