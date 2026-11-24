@@ -2,6 +2,14 @@
 
 These notes are written in plain English and focus on what changed for real use.
 
+## 3.1.2 - Upstream 3.1.1 Merge
+
+**Release date:** November 25, 2026
+
+- Synced upstream 3.1.1: audio output selection, DLNA live streams and metadata, media format badges, configurable video title, refined sheets and panels, and removal of automatic black-bar cropping.
+- Dropped the preview build channel together with upstream; CI keeps publishing Standard APKs only and the updater keeps checking this fork's releases.
+- Kept the fork's cloud metadata fields, localized strings, anime grid cards, atomic playlist metadata updates and the bottom-edge scrub timeline; seeking to the end of a file now follows upstream.
+
 ## 3.1.1 — Motion
 
 **Release date:** November 23, 2026 · [Compare every change since 3.0.2 →](https://github.com/Riteshp2001/mpvRx/compare/v3.0.2...v3.1.1)
