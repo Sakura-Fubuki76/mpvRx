@@ -420,6 +420,7 @@ dependencies {
   implementation(libs.androidx.media3.common)
   implementation(libs.androidx.media3.exoplayer.core)
   implementation(libs.androidx.media3.exoplayer.hls)
+  implementation(libs.androidx.media3.session)
   implementation(libs.androidx.media3.effect)
   implementation(libs.androidx.media3.transformer)
   implementation(libs.androidx.media3.ui)
