@@ -120,6 +120,7 @@ import app.gyrolet.mpvrx.ui.cast.CastPlaybackController
 import app.gyrolet.mpvrx.ui.player.controls.PlayerControls
 import app.gyrolet.mpvrx.ui.player.controls.components.panels.toColorHexString
 import app.gyrolet.mpvrx.ui.player.components.VideoAmbientBackground
+import app.gyrolet.mpvrx.ui.player.components.VideoAmbientOsdLift
 import app.gyrolet.mpvrx.ui.player.components.rememberVideoAmbientFrame
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
 import app.gyrolet.mpvrx.ui.player.ytdlp.YouTubeAuthenticationRecovery
@@ -1428,14 +1429,11 @@ class PlayerActivity :
       val picture = remember(osdDimensions, directRect) {
         MpvVideoRect.parse(directRect) ?: MpvVideoRect.fromOsdDimensions(osdDimensions)
       }
+      val viewScale = if (followZoom) videoZoomMultiplier(zoom) else 1f
+      val viewPanX = if (followZoom) panX else 0f
+      val viewPanY = if (followZoom) panY else 0f
       val pictureBounds = picture?.let {
-        youtubeAmbientPictureBounds(
-          it,
-          viewport,
-          if (followZoom) videoZoomMultiplier(zoom) else 1f,
-          if (followZoom) panX else 0f,
-          if (followZoom) panY else 0f,
-        )
+        youtubeAmbientPictureBounds(it, viewport, viewScale, viewPanX, viewPanY)
       } ?: Rect.Zero
       val hasMargins = !pictureBounds.isEmpty && (
         pictureBounds.left > 0f || pictureBounds.top > 0f ||
@@ -1460,13 +1458,7 @@ class PlayerActivity :
           playbackGeneration = playbackState.generation,
           hdrScreenMode = hdrScreenMode,
           orientation = orientation,
-          isSurfaceReadyProvider = {
-            val state = PlaybackSession.state.value
-            state.surfaceAttached &&
-              (state.phase == PlaybackPhase.READY || state.phase == PlaybackPhase.BACKGROUND) &&
-              binding.player.isSurfaceReady &&
-              !binding.player.isLayoutRequested
-          },
+          isSurfaceReadyProvider = ::isAmbientSurfaceReady,
           isPlayingProvider = {
             !PlaybackSession.state.value.paused
           },
@@ -1479,7 +1471,7 @@ class PlayerActivity :
           },
         )
       MpvrxTheme {
-        // Statistics no longer hide Ambient; it only steps back so their text stays readable.
+        // Statistics keep Ambient on, dimmed, and are lifted above it below.
         val fullOpacity = if (statisticsPage != 0) AMBIENT_OPACITY_WITH_STATISTICS else 1f
         val opacity = animateFloatAsState(
           targetValue = if (active && ambientFrame.frame != null) fullOpacity else 0f,
@@ -1504,10 +1496,28 @@ class PlayerActivity :
               edgeBlend = edgeBlend,
               modifier = Modifier.graphicsLayer { alpha = opacity.value },
             )
+            // mpv draws statistics under Ambient; redraw them on top of it at full strength.
+            VideoAmbientOsdLift(
+              surfaceView = binding.player,
+              active = active && statisticsPage != 0,
+              videoBounds = pictureBounds,
+              viewScale = viewScale,
+              panX = viewPanX,
+              panY = viewPanY,
+              isSurfaceReadyProvider = ::isAmbientSurfaceReady,
+            )
           }
         }
       }
     }
+  }
+
+  private fun isAmbientSurfaceReady(): Boolean {
+    val state = PlaybackSession.state.value
+    return state.surfaceAttached &&
+      (state.phase == PlaybackPhase.READY || state.phase == PlaybackPhase.BACKGROUND) &&
+      binding.player.isSurfaceReady &&
+      !binding.player.isLayoutRequested
   }
 
   private fun youtubeAmbientPictureBounds(
@@ -9360,8 +9370,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     private const val RENDERER_RECOVERY_WAKE_TIMEOUT_MS = 20_000L
     private const val VIDEO_SERVICE_END_DELAY_MS = 1_000L
 
-    // mpv draws the statistics into the video Surface, under the YouTube Ambient layer. While a
-    // page is open Ambient stays at this strength, so stats text in the painted margins reads through.
+    // YouTube Ambient stays dimmed to this strength while a statistics page is lifted above it.
     private const val AMBIENT_OPACITY_WITH_STATISTICS = 0.5f
 
     /**
