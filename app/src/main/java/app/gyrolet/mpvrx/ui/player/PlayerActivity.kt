@@ -9,7 +9,6 @@
 
 package app.gyrolet.mpvrx.ui.player
 
-import android.Manifest
 import android.animation.ValueAnimator
 import android.app.KeyguardManager
 import android.app.PendingIntent
@@ -20,7 +19,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.ActivityInfo
-import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.media.AudioAttributes
@@ -38,7 +36,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.MediaStore
-import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
@@ -69,7 +66,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.IntSize
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
@@ -122,6 +118,7 @@ import app.gyrolet.mpvrx.ui.cast.CastPlaybackController
 import app.gyrolet.mpvrx.ui.player.controls.PlayerControls
 import app.gyrolet.mpvrx.ui.player.controls.components.panels.toColorHexString
 import app.gyrolet.mpvrx.ui.player.components.VideoAmbientBackground
+import app.gyrolet.mpvrx.ui.player.components.VideoAmbientOsdLift
 import app.gyrolet.mpvrx.ui.player.components.rememberVideoAmbientFrame
 import app.gyrolet.mpvrx.ui.player.ytdlp.YtdlpManager
 import app.gyrolet.mpvrx.ui.player.ytdlp.YouTubeAuthenticationRecovery
@@ -174,12 +171,6 @@ import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-
-private enum class BackgroundPlaybackStartResult {
-  Started,
-  PendingPermission,
-  Blocked,
-}
 
 /**
  * Main player activity that handles video playback using the MPV library.
@@ -358,7 +349,6 @@ class PlayerActivity :
   @Volatile
   private var activeSaveMediaIdentifier: String = ""
 
-  private var pendingBackgroundPlaybackStart = false
   private var lastLockedControlsBackPressAtMs = 0L
 
   /**
@@ -466,6 +456,10 @@ class PlayerActivity :
   private var backPressHandlerInstalled = false
   private var noisyReceiverRegistered = false
   private var isInBackgroundPlayback = false // Track if we are currently in background playback mode
+
+  // A long press on the background button plays this video in the background once, even with
+  // the switch off, until the player is on screen again.
+  private var backgroundPlaybackOnce = false
   private var screenStateReceiverRegistered = false
   private var mpvInitialized = false // Track MPV initialization state
 
@@ -479,6 +473,7 @@ class PlayerActivity :
   private var wasPlayingBeforePause = false // Track if video was playing before pause
   private var resumeAfterUnlockJob: Job? = null
   private var rendererAfterUnlockJob: Job? = null
+  private var videoServiceEndJob: Job? = null
   // On older Android versions, LifecycleRegistry publishes STARTED after onStart returns.
   private var playbackActivityStarted = false
   private var rendererRecoveryWakeLock: PowerManager.WakeLock? = null
@@ -1184,25 +1179,19 @@ class PlayerActivity :
       }
     }
     returnToBrowserAfterMinimize = true
-    return when (startBackgroundPlayback()) {
-      BackgroundPlaybackStartResult.Started -> {
-        pendingBackNavigationBackgroundTransition = true
-        startSheetCollapse()
-        completePendingBackgroundHandoff()
-        true
-      }
-      BackgroundPlaybackStartResult.PendingPermission -> {
-        pendingBackNavigationBackgroundTransition = true
-        false
-      }
-      BackgroundPlaybackStartResult.Blocked -> {
-        returnToBrowserAfterMinimize = false
-        false
-      }
+    if (!startBackgroundPlayback()) {
+      returnToBrowserAfterMinimize = false
+      return false
     }
+    pendingBackNavigationBackgroundTransition = true
+    startSheetCollapse()
+    completePendingBackgroundHandoff()
+    return true
   }
 
   private fun handleBackPress() {
+    // The service is already taking over; a second Back must not start or bind it again.
+    if (pendingBackNavigationBackgroundTransition) return
     returnToBrowserAfterMinimize = false
     // Dismiss overlays first; touch devices keep the controls hidden after closing one.
     if (viewModel.sheetShown.value != Sheets.None) {
@@ -1230,7 +1219,25 @@ class PlayerActivity :
       return
     }
 
-    if (isReady && gesturePreferences.confirmBackToExit.get()) {
+    // With auto-PiP and "Back enters picture-in-picture" on, Back shrinks a video into PiP instead
+    // of closing it. It keeps playing, so it is not an exit and skips the "press again to exit" check.
+    if (!isTelevision && !isMiniPlayerEnabled() &&
+      shouldEnterPipOnNavigation() &&
+      playerPreferences.pipOnBack.get() &&
+      enterPipModeSmoothly()
+    ) {
+      lastExitBackPressAtMs = null
+      return
+    }
+
+    // With video background playback and "Back keeps the video playing" on, Back keeps the video
+    // playing in the background and returns to the previous screen, like Home. That is not an exit
+    // either. Android TV has no notification shade to stop it from, so Back still closes it there.
+    val videoContinuesInBackground =
+      !isTelevision && !isMiniPlayerEnabled() && isReady &&
+        playerPreferences.videoBackgroundPlayback.get() && playerPreferences.videoBackgroundOnBack.get()
+
+    if (!videoContinuesInBackground && isReady && gesturePreferences.confirmBackToExit.get()) {
       val now = android.os.SystemClock.elapsedRealtime()
       val previousPress = lastExitBackPressAtMs
       if (previousPress == null || now - previousPress !in 0L..2_000L) {
@@ -1241,17 +1248,6 @@ class PlayerActivity :
     }
     lastExitBackPressAtMs = null
 
-    // If mini player is enabled, back press within the app hands off playback to the mini player
-    // rather than entering PiP. If mini player is disabled, auto-PiP retains priority on Back
-    // unless the user restricted auto-PiP to the home gesture.
-    if (!isTelevision && !isMiniPlayerEnabled() &&
-      shouldEnterPipOnNavigation() &&
-      !playerPreferences.pipOnHomeGestureOnly.get() &&
-      enterPipModeSmoothly()
-    ) {
-      return
-    }
-
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
       runCatching {
         setPictureInPictureParams(
@@ -1260,32 +1256,27 @@ class PlayerActivity :
       }
     }
 
-    // Background playback or Mini Player handoff on Back: return to the browser while handing
-    // the live MPV session to the foreground service. This is also the PiP-failure fallback.
-    if (
-      isMiniPlayerEnabled() ||
-      PlayerLifecyclePolicy.shouldStartBackgroundPlaybackOnBack(
-        backgroundPlaybackEnabled = isBackgroundPlaybackEnabled(),
-        mediaReady = isReady,
-      )
-    ) {
-      when (startBackgroundPlayback()) {
-        BackgroundPlaybackStartResult.Started -> {
-          pendingBackNavigationBackgroundTransition = true
-          startSheetCollapse()
-          completePendingBackgroundHandoff()
-        }
-        BackgroundPlaybackStartResult.PendingPermission -> {
-          pendingBackNavigationBackgroundTransition = true
-        }
-        BackgroundPlaybackStartResult.Blocked -> {
-          isUserFinishing = true
-          finish()
-        }
+    // Audio hands the live session to the mini player; a video with background playback on hands
+    // it to the background service. If the service cannot take over, the player closes.
+    if (isMiniPlayerEnabled() || videoContinuesInBackground) {
+      // A dialog that paused the player may have left a delayed service stop; it must not cut
+      // this hand-off short.
+      videoServiceEndJob?.cancel()
+      if (startBackgroundPlayback()) {
+        pendingBackNavigationBackgroundTransition = true
+        startSheetCollapse()
+        completePendingBackgroundHandoff()
+      } else {
+        isUserFinishing = true
+        finish()
       }
       return
     }
 
+    // A screen-off handoff can outlive an unlock that restored the player through window focus.
+    // Closing must end it; otherwise finish() treats the service as a live background session
+    // and leaves the video playing after the player is gone.
+    if (isBackgroundPlaybackSessionActive) endBackgroundPlayback()
     isUserFinishing = true
     finish()
   }
@@ -1450,14 +1441,11 @@ class PlayerActivity :
       val picture = remember(osdDimensions, directRect) {
         MpvVideoRect.parse(directRect) ?: MpvVideoRect.fromOsdDimensions(osdDimensions)
       }
+      val viewScale = if (followZoom) videoZoomMultiplier(zoom) else 1f
+      val viewPanX = if (followZoom) panX else 0f
+      val viewPanY = if (followZoom) panY else 0f
       val pictureBounds = picture?.let {
-        youtubeAmbientPictureBounds(
-          it,
-          viewport,
-          if (followZoom) videoZoomMultiplier(zoom) else 1f,
-          if (followZoom) panX else 0f,
-          if (followZoom) panY else 0f,
-        )
+        youtubeAmbientPictureBounds(it, viewport, viewScale, viewPanX, viewPanY)
       } ?: Rect.Zero
       val hasMargins = !pictureBounds.isEmpty && (
         pictureBounds.left > 0f || pictureBounds.top > 0f ||
@@ -1472,8 +1460,7 @@ class PlayerActivity :
           !isAudioOnly &&
           !isAmbientPipMode &&
           playbackReady &&
-          playbackState.surfaceAttached &&
-          statisticsPage == 0
+          playbackState.surfaceAttached
       val active = enabled && canShowAmbient && hasMargins
       val fadeMillis = if (AppMotion.playerReducedMotion()) 0 else 200
       val ambientFrame =
@@ -1483,13 +1470,7 @@ class PlayerActivity :
           playbackGeneration = playbackState.generation,
           hdrScreenMode = hdrScreenMode,
           orientation = orientation,
-          isSurfaceReadyProvider = {
-            val state = PlaybackSession.state.value
-            state.surfaceAttached &&
-              (state.phase == PlaybackPhase.READY || state.phase == PlaybackPhase.BACKGROUND) &&
-              binding.player.isSurfaceReady &&
-              !binding.player.isLayoutRequested
-          },
+          isSurfaceReadyProvider = ::isAmbientSurfaceReady,
           isPlayingProvider = {
             !PlaybackSession.state.value.paused
           },
@@ -1502,8 +1483,10 @@ class PlayerActivity :
           },
         )
       MpvrxTheme {
+        // Statistics keep Ambient on, dimmed, and are lifted above it below.
+        val fullOpacity = if (statisticsPage != 0) AMBIENT_OPACITY_WITH_STATISTICS else 1f
         val opacity = animateFloatAsState(
-          targetValue = if (active && ambientFrame.frame != null) 1f else 0f,
+          targetValue = if (active && ambientFrame.frame != null) fullOpacity else 0f,
           animationSpec = tween(fadeMillis),
           label = "youtubeAmbientOpacity",
         )
@@ -1525,10 +1508,28 @@ class PlayerActivity :
               edgeBlend = edgeBlend,
               modifier = Modifier.graphicsLayer { alpha = opacity.value },
             )
+            // mpv draws statistics under Ambient; redraw them on top of it at full strength.
+            VideoAmbientOsdLift(
+              surfaceView = binding.player,
+              active = active && statisticsPage != 0,
+              videoBounds = pictureBounds,
+              viewScale = viewScale,
+              panX = viewPanX,
+              panY = viewPanY,
+              isSurfaceReadyProvider = ::isAmbientSurfaceReady,
+            )
           }
         }
       }
     }
+  }
+
+  private fun isAmbientSurfaceReady(): Boolean {
+    val state = PlaybackSession.state.value
+    return state.surfaceAttached &&
+      (state.phase == PlaybackPhase.READY || state.phase == PlaybackPhase.BACKGROUND) &&
+      binding.player.isSurfaceReady &&
+      !binding.player.isLayoutRequested
   }
 
   private fun youtubeAmbientPictureBounds(
@@ -1838,10 +1839,8 @@ class PlayerActivity :
       return true
     }
     if (holdsAudioFocus) return true
-    if (audioFocusRequestActive) {
-      playbackDelayedForAudioFocus = true
-      return false
-    }
+    // Every caller is about to play. Asking again also takes focus back from an app that only
+    // borrowed it, so playing in mpvRx pauses the other app. A call still makes it fail or wait.
     val req = audioFocusRequest ?: return false
     val result = audioManager.requestAudioFocus(req)
     return when (result) {
@@ -2252,6 +2251,7 @@ class PlayerActivity :
       }
 
       saveVideoPlaybackState(fileName, immediate = true)
+      startVideoBackgroundServiceWhileVisible()
     }.onFailure { e ->
       Log.e(TAG, "Error during onPause", e)
     }
@@ -2484,7 +2484,7 @@ class PlayerActivity :
           isScreenOffOrLocked = isDeviceScreenOffOrLocked(),
         )
       ) {
-        if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
+        if (startBackgroundPlayback()) {
           isBackgroundPlaybackSessionActive = true
           if (externalDisplayManager?.isActive != true) markPlaybackInBackground()
         } else {
@@ -2688,7 +2688,7 @@ class PlayerActivity :
     if (active) {
       window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
       if (!MediaPlaybackService.activityForeground && isReady && !isBackgroundPlaybackSessionActive) {
-        if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
+        if (startBackgroundPlayback()) {
           isBackgroundPlaybackSessionActive = true
         }
       }
@@ -3414,20 +3414,83 @@ class PlayerActivity :
     }
   }
 
-  private fun isMiniPlayerEnabled(): Boolean {
-    return if (isCurrentPlaybackAudio()) {
-      true
-    } else {
-      !isTelevision && playerPreferences.enableVideoMiniPlayer.get() &&
-        (audioPreferences.backgroundPlaybackBehavior.get() != app.gyrolet.mpvrx.preferences.BackgroundPlaybackBehavior.PerVideo ||
-          PlaybackSession.isVideoBackgroundPlaybackEnabled())
-    }
+  /** Only audio hands off to the browser's mini player. */
+  private fun isMiniPlayerEnabled(): Boolean = isCurrentPlaybackAudio()
+
+  /**
+   * As mpv-android does in onPause, a video that will keep playing starts its service while the
+   * player is still visible. Android always lets a visible app start a media foreground service,
+   * so its notification appears as soon as the player leaves. Audio already has its service.
+   * A pause that never reaches onStop (a dialog) ends it again when the player resumes.
+   */
+  private fun startVideoBackgroundServiceWhileVisible() {
+    if (isFinishing || isUserFinishing || isChangingConfigurations || !isReady) return
+    videoServiceEndJob?.cancel()
+    if (isInPictureInPictureMode || isInMultiWindowMode || isAudioBackgroundPlayback()) return
+    if (isBackgroundPlaybackSessionActive || externalDisplayManager?.isActive == true) return
+    if (!isBackgroundPlaybackEnabled()) return
+    if (startBackgroundPlayback()) isBackgroundPlaybackSessionActive = true
   }
 
+  /**
+   * Ends a video's background service now that the player is on screen. A service that is still
+   * starting (a dialog paused the player for a moment) ends a second later, as in mpv-android:
+   * Android kills an app whose foreground service stops before it called startForeground.
+   */
+  private fun endVideoBackgroundServiceOnScreen() {
+    videoServiceEndJob?.cancel()
+    isBackgroundPlaybackSessionActive = false
+    if (MediaPlaybackService.isNotificationOwnerReady()) {
+      endBackgroundPlayback()
+      return
+    }
+    videoServiceEndJob =
+      lifecycleScope.launch {
+        delay(VIDEO_SERVICE_END_DELAY_MS)
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) && !isBackgroundPlaybackSessionActive &&
+          !isAudioBackgroundPlayback() && !isInPictureInPictureMode
+        ) {
+          endBackgroundPlayback()
+        }
+      }
+  }
+
+  /**
+   * Every start of playback on this screen takes audio focus so other apps pause, including a new
+   * file that starts on its own after an earlier pause released focus. If Android refuses (a
+   * call), playback pauses and resumes when focus comes back. The service owns focus while
+   * playback is detached from this screen.
+   */
+  private fun ensureAudioFocusWhilePlaying() {
+    if (audioPreferences.ignoreAudioFocus.get() || holdsAudioFocus || audioFocusRequest == null) return
+    if (!MediaPlaybackService.activityForeground || !ownsPlaybackSession() || isFinishing || isDestroyed) return
+    if (!requestAudioFocus()) PlaybackSession.setPropertyBoolean("pause", true)
+  }
+
+  /** Audio and audiobooks always keep playing in the background. */
+  private fun isAudioBackgroundPlayback(): Boolean =
+    PlaybackSession.state.value.currentItem?.audiobook != null || isCurrentPlaybackAudio()
+
+  /** A video keeps playing after Home, an app switch or screen-off with the switch on, or once. */
   private fun isBackgroundPlaybackEnabled(): Boolean =
-    if (PlaybackSession.state.value.currentItem?.audiobook != null) true
-    else if (isCurrentPlaybackAudio()) audioPreferences.audioBackgroundPlayback.get()
-    else PlaybackSession.isVideoBackgroundPlaybackEnabled()
+    isAudioBackgroundPlayback() || playerPreferences.videoBackgroundPlayback.get() || backgroundPlaybackOnce
+
+  private fun hasBackgroundPlaybackService(): Boolean =
+    serviceBound || mediaPlaybackService != null || MediaPlaybackService.isNotificationOwnerReady()
+
+  /**
+   * While the player is on screen only audio keeps the playback service and its notification.
+   * A video starts the service once it actually leaves the screen.
+   */
+  private fun syncForegroundPlaybackService() {
+    if (isAudioBackgroundPlayback()) {
+      startBackgroundPlayback()
+    } else if (
+      MediaPlaybackService.activityForeground && !isInPictureInPictureMode && hasBackgroundPlaybackService()
+    ) {
+      endBackgroundPlayback()
+    }
+  }
 
   private fun isCurrentPlaybackAudio(): Boolean =
     when (currentDeclaredMediaKind()) {
@@ -3485,9 +3548,18 @@ class PlayerActivity :
       scheduleRendererRecoveryAfterUnlock()
       return false
     }
+    // The player is on screen again, which ends a one-time background request.
+    backgroundPlaybackOnce = false
     if (!MediaPlaybackService.activityForeground) {
       MediaPlaybackService.activityForeground = true
       if (viewModel.paused != true) requestAudioFocus()
+    }
+    // Every return path lands here, including unlocks that skip onStart. A video on screen drops
+    // its background service and notification; audio keeps them for its controls.
+    if (!isAudioBackgroundPlayback() && !isInPictureInPictureMode &&
+      (hasBackgroundPlaybackService() || isBackgroundPlaybackSessionActive)
+    ) {
+      endVideoBackgroundServiceOnScreen()
     }
     if (!player.isSurfaceReady) acquireRendererRecoveryWakeLock()
     player.attachSessionSurface()
@@ -4150,6 +4222,7 @@ class PlayerActivity :
    * @param isPaused true if playback is paused, false if playing
    */
   private fun handlePauseStateChange(isPaused: Boolean) {
+    if (!isPaused) ensureAudioFocusWhilePlaying()
     updateKeepScreenOn(isPaused)
     updateMediaSessionPlaybackState(!isPaused)
     runCatching {
@@ -4414,9 +4487,7 @@ class PlayerActivity :
         viewModel.motionInterpolation.refresh()
         handleFileLoaded(loadGeneration)
         scheduleDeferredUserMpvAssetRefresh()
-        if (isBackgroundPlaybackEnabled()) {
-          startBackgroundPlayback(allowUserPrompt = false)
-        }
+        syncForegroundPlaybackService()
       }
 
       MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> {
@@ -5551,7 +5622,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
           applyPlaybackBrightnessPolicy(isAudio = isCurrentMediaKnownAudio())
           applyLiveSessionOrientation(isAudioHint = isCurrentMediaKnownAudio())
           setOrientation()
-          if (isBackgroundPlaybackEnabled()) {
+          // Back on screen: audio keeps its service and controls, a video drops its notification.
+          if (isAudioBackgroundPlayback()) {
             if (!serviceBound || mediaPlaybackService == null) {
               startBackgroundPlaybackInternal(bindToActivity = true)
             }
@@ -6094,16 +6166,20 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
       positionRestoreOverride ?: scriptRestore ?: snapshotJump ?: AudiobookPlayback.positionForLoad(item, intent)
     val restoreSavedPosition = playerPreferences.savePositionOnQuit.get()
     val resumeMode = playerPreferences.resumePlaybackMode.get()
+    // A video that was never played has nothing to restore, so it must not start held paused
+    // behind the restore work that runs after FILE_LOADED.
+    val savedState =
+      if (effectivePositionOverride == null && restoreSavedPosition && !item.isDefinitelyAudioOnly()) {
+        resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+      } else {
+        null
+      }
     // Only Always Resume may use the fast load-local start option. Never starts at zero.
     val initialPositionSeconds =
       if (effectivePositionOverride != null) {
         effectivePositionOverride.positionSeconds?.takeIf { it.isFinite() && it > 0.0 }
-      } else if (
-        restoreSavedPosition &&
-        resumeMode == ResumePlaybackMode.Always &&
-        !item.isDefinitelyAudioOnly()
-      ) {
-        resolvePlaybackState(item.stableId, legacyMediaIdentifier)
+      } else if (resumeMode == ResumePlaybackMode.Always) {
+        savedState
           ?.lastPosition
           ?.takeIf { it > 3 }
           ?.toDouble()
@@ -6155,7 +6231,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     val generation =
       PlaybackSession.load(
           item = item,
-          restoreSavedPosition = restoreSavedPosition,
+          restoreSavedPosition = restoreSavedPosition && savedState != null,
           positionRestoreOverride = effectivePositionOverride,
           initialPositionSeconds = initialPositionSeconds,
           flattenEditions = requiresYtdlp && !MpvConfigOverridePolicy.isOwnedByMpvConf("flatten-editions"),
@@ -6560,8 +6636,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   /**
    * PiP normally remains in STARTED state, so onStop cannot be relied on to create the media
    * notification. Start or reuse the playback service after PiP is confirmed, regardless of the
-   * video-background preference. Explicit notification-style and Android permission choices are
-   * still respected by [startBackgroundPlayback].
+   * video-background preference.
    */
   private fun ensurePipPlaybackNotification() {
     if (isUserFinishing || isFinishing || isDestroyed || !isReady) return
@@ -6575,7 +6650,7 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     // stopped the service independently of the Activity.
     isBackgroundPlaybackSessionActive = false
 
-    if (startBackgroundPlayback(allowUserPrompt = false) == BackgroundPlaybackStartResult.Started) {
+    if (startBackgroundPlayback()) {
       isBackgroundPlaybackSessionActive = true
       startedBackgroundForPip = true
       // An existing bound service is synchronized immediately; a newly bound service performs
@@ -6900,12 +6975,12 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         }
         TvPlayerRemoteAction.SEEK_BACKWARD -> {
           consumedTvRemoteKeys += keyCode
-          viewModel.seekFromTvRemote(-tvScrubStepSeconds(event?.repeatCount ?: 0))
+          viewModel.seekFromTvRemote(-tvScrubStepSeconds(event?.repeatCount ?: 0, gesturePreferences.tvSeekDuration.get()))
           return true
         }
         TvPlayerRemoteAction.SEEK_FORWARD -> {
           consumedTvRemoteKeys += keyCode
-          viewModel.seekFromTvRemote(tvScrubStepSeconds(event?.repeatCount ?: 0))
+          viewModel.seekFromTvRemote(tvScrubStepSeconds(event?.repeatCount ?: 0, gesturePreferences.tvSeekDuration.get()))
           return true
         }
         TvPlayerRemoteAction.TOGGLE_PLAYBACK -> {
@@ -7186,16 +7261,11 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
               }
             },
           )
-          isActive = shouldPublishActivityMediaSession() && !MediaPlaybackService.isNotificationOwnerReady()
+          isActive = !MediaPlaybackService.isNotificationOwnerReady()
         }
       playbackStateBuilder = PlaybackState.Builder()
       mediaSessionInitialized = true
       updateMediaSessionPlaybackState(isPlaying = PlaybackSession.getPropertyBoolean("pause") == false)
-      lifecycleScope.launch {
-        advancedPreferences.notificationStyle.changes().drop(1).collect {
-          setActivityMediaSessionActive(!MediaPlaybackService.isNotificationOwnerReady())
-        }
-      }
     }.onFailure { e ->
       Log.e(TAG, "Failed to initialize MediaSession", e)
       mediaSessionInitialized = false
@@ -7298,13 +7368,6 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     )
   }
 
-  private fun shouldPublishActivityMediaSession(): Boolean =
-    advancedPreferences.notificationStyle
-      .get()
-      .takeIf { it.isSupportedOn(Build.VERSION.SDK_INT) }
-      ?.let { it == NotificationStyle.Media }
-      ?: true
-
   /**
    * Releases MediaSession resources.
    * Called during activity cleanup.
@@ -7319,11 +7382,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   }
 
   private fun setActivityMediaSessionActive(active: Boolean) {
-    val resolvedActive = active && shouldPublishActivityMediaSession()
-    if (!mediaSessionInitialized || mediaSession.isActive == resolvedActive) return
+    if (!mediaSessionInitialized || mediaSession.isActive == active) return
     runCatching {
-      mediaSession.isActive = resolvedActive
-      if (resolvedActive) {
+      mediaSession.isActive = active
+      if (active) {
         updateMediaSessionPlaybackState(isPlaying = PlaybackSession.getPropertyBoolean("pause") == false)
       }
     }.onFailure { error -> Log.e(TAG, "Error changing Activity MediaSession ownership", error) }
@@ -7364,45 +7426,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
 
   /**
-   * Starts the background playback service and binds to it.
-   *
-   * This should only be called if a video is loaded and playback is initialized.
-   * Responsible for starting and binding to the MediaPlaybackService, which
-   * handles background playback.
+   * Starts the background playback service and binds to it. Its media notification needs no
+   * notification permission, so only media that is not ready yet can block it.
    */
-  private fun startBackgroundPlayback(allowUserPrompt: Boolean = true): BackgroundPlaybackStartResult {
-    pendingBackgroundPlaybackStart = true
-
-    if (!shouldShowPlaybackNotification()) {
-      pendingBackgroundPlaybackStart = false
-      Log.d(TAG, "Playback notification disabled, skipping background playback service")
-      if (allowUserPrompt) {
-        Toast
-          .makeText(
-            this,
-            getString(R.string.notification_disabled_in_advanced_settings),
-            Toast.LENGTH_LONG,
-          ).show()
-      }
-      return BackgroundPlaybackStartResult.Blocked
-    }
-
-    when (ensureNotificationAccessForPlayback(allowUserPrompt)) {
-      BackgroundPlaybackStartResult.Started -> Unit
-      BackgroundPlaybackStartResult.PendingPermission -> return BackgroundPlaybackStartResult.PendingPermission
-      BackgroundPlaybackStartResult.Blocked -> {
-        pendingBackgroundPlaybackStart = false
-        return BackgroundPlaybackStartResult.Blocked
-      }
-    }
-
-    pendingBackgroundPlaybackStart = false
-    return if (startBackgroundPlaybackInternal(bindToActivity = true)) {
-      BackgroundPlaybackStartResult.Started
-    } else {
-      BackgroundPlaybackStartResult.Blocked
-    }
-  }
+  private fun startBackgroundPlayback(): Boolean = startBackgroundPlaybackInternal(bindToActivity = true)
 
   private fun startBackgroundPlaybackInternal(bindToActivity: Boolean): Boolean {
     if (fileName.isBlank() || !isReady) {
@@ -7462,57 +7489,6 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
   }
 
-  private fun ensureNotificationAccessForPlayback(allowUserPrompt: Boolean): BackgroundPlaybackStartResult {
-    if (!shouldShowPlaybackNotification()) {
-      if (allowUserPrompt) {
-        Toast
-          .makeText(
-            this,
-            getString(R.string.notification_disabled_in_advanced_settings),
-            Toast.LENGTH_LONG,
-          ).show()
-      }
-      return BackgroundPlaybackStartResult.Blocked
-    }
-
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-      ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-      PackageManager.PERMISSION_GRANTED
-    ) {
-      if (!allowUserPrompt) return BackgroundPlaybackStartResult.Blocked
-      Toast
-        .makeText(
-          this,
-          getString(R.string.notification_permission_denied),
-          Toast.LENGTH_LONG,
-        ).show()
-      return BackgroundPlaybackStartResult.Blocked
-    }
-
-    if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) {
-      if (!allowUserPrompt) return BackgroundPlaybackStartResult.Blocked
-      Toast
-        .makeText(
-          this,
-          getString(R.string.notification_permission_disabled),
-          Toast.LENGTH_LONG,
-        ).show()
-      openNotificationSettings()
-      return BackgroundPlaybackStartResult.Blocked
-    }
-
-    return BackgroundPlaybackStartResult.Started
-  }
-
-  private fun openNotificationSettings() {
-    val intent =
-      Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-        putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-      }
-    runCatching { startActivity(intent) }
-      .onFailure { Log.e(TAG, "Failed to open notification settings", it) }
-  }
-
   /**
    * Stops the background playback service and unbinds from it.
    *
@@ -7561,53 +7537,40 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
     }
   }
 
-  /** Toggles video background playback without changing the audio-player setting. */
+  /** The background button: turns video background playback on or off for every video. */
   fun toggleBackgroundPlayback() {
-    val enabled = !PlaybackSession.isVideoBackgroundPlaybackEnabled()
+    val enabled = !playerPreferences.videoBackgroundPlayback.get()
+    playerPreferences.videoBackgroundPlayback.set(enabled)
+    viewModel.showToast(
+      getString(if (enabled) R.string.toast_background_playback_on else R.string.toast_background_playback_off),
+    )
+  }
 
-    if (enabled && !shouldShowPlaybackNotification()) {
-      Toast
-        .makeText(
-          this,
-          getString(R.string.notification_disabled_in_advanced_settings),
-          Toast.LENGTH_LONG,
-        ).show()
-      return
-    }
-
-    PlaybackSession.setVideoBackgroundPlaybackEnabled(enabled)
-
-    if (enabled) {
-      ensureNotificationAccessForPlayback(allowUserPrompt = true)
-    } else {
-      pendingBackgroundTransition = false
-      isBackgroundPlaybackSessionActive = false
-      endBackgroundPlayback()
-      enableVideoAfterBackground()
-      viewModel.showToast("Background playback off")
-      return
-    }
-
-    if (fileName.isBlank() || !isReady) {
-      Log.w(TAG, "Cannot start background playback: media not ready")
-      viewModel.showToast("Background playback on")
-      return
-    }
-
-    Log.d(TAG, "Background playback enabled from player controls")
-    when (startBackgroundPlayback()) {
-      BackgroundPlaybackStartResult.Started -> {
-        isBackgroundPlaybackSessionActive = true
-        viewModel.showToast("Background playback on")
+  /**
+   * A long press on the background button: go Home and keep this video playing, even with the
+   * switch off. Returning to the player ends the exception.
+   */
+  fun playInBackgroundOnce() {
+    if (!mpvInitialized || !ownsPlaybackSession() || !isReady || isFinishing || isDestroyed) return
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      runCatching {
+        setPictureInPictureParams(android.app.PictureInPictureParams.Builder().setAutoEnterEnabled(false).build())
       }
-      BackgroundPlaybackStartResult.PendingPermission -> pendingBackgroundTransition = true
-      BackgroundPlaybackStartResult.Blocked -> {
-        PlaybackSession.setVideoBackgroundPlaybackEnabled(false)
-        isBackgroundPlaybackSessionActive = false
-        pendingBackgroundTransition = false
-      }
+    }
+    backgroundPlaybackOnce = true
+    if (!moveTaskToBack(true)) {
+      backgroundPlaybackOnce = false
+      if (::pipHelper.isInitialized) pipHelper.updatePictureInPictureParams()
     }
   }
+
+  /**
+   * True when this player's media keeps playing after the app leaves the screen: the service took
+   * it over, including a reopened player that handed it back before it finished attaching.
+   */
+  fun continuesPlaybackInBackground(): Boolean =
+    !ownsPlaybackSession() || isBackgroundPlaybackSessionActive ||
+      (!mpvInitialized && MediaPlaybackService.isForegroundActive())
 
   private fun finishIntoBackgroundPlayback() {
     isBackgroundPlaybackSessionActive = true
@@ -7649,6 +7612,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
         if (failedBackgroundHandoff) {
           returnToBrowserAfterMinimize = false
           cancelSheetCollapse()
+          // Back turned auto-PiP off for the hand-off; the player stays, so turn it back on.
+          if (::pipHelper.isInitialized) pipHelper.updatePictureInPictureParams()
           Toast.makeText(this@PlayerActivity, R.string.toast_playback_load_failed, Toast.LENGTH_LONG).show()
         }
         endBackgroundPlayback()
@@ -7918,8 +7883,8 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
 
   private fun syncBackgroundPlaybackService(updateThumbnail: Boolean) {
     if (!ownsPlaybackSession()) return
-    if (mediaPlaybackService == null && isBackgroundPlaybackEnabled() && isReady && fileName.isNotBlank()) {
-      startBackgroundPlayback(allowUserPrompt = false)
+    if (mediaPlaybackService == null && isAudioBackgroundPlayback() && isReady && fileName.isNotBlank()) {
+      startBackgroundPlayback()
     }
     val service = mediaPlaybackService ?: return
     val rawTitle = getPreferredCurrentTitle().ifBlank { fileName.ifBlank { getString(R.string.player_unknown_video) } }
@@ -8410,13 +8375,6 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
   private fun isRemotePlaybackUri(uri: Uri): Boolean =
     uri.scheme?.lowercase() in setOf("http", "https", "rtmp", "rtmps", "ftp", "rtsp", "mms")
 
-  private fun shouldShowPlaybackNotification(): Boolean =
-    advancedPreferences.notificationStyle
-      .get()
-      .takeIf { it.isSupportedOn(Build.VERSION.SDK_INT) }
-      ?.let { it != NotificationStyle.None }
-      ?: true
-
   private fun isVideoListLaunchSource(launchSource: String): Boolean =
     launchSource == "video_list" ||
       launchSource == "recently_played_button" ||
@@ -8862,6 +8820,10 @@ private suspend fun restorePlaybackPosition(state: PlaybackStateEntity?, loadGen
      */
     private const val MILLISECONDS_TO_SECONDS = 1000
     private const val RENDERER_RECOVERY_WAKE_TIMEOUT_MS = 20_000L
+    private const val VIDEO_SERVICE_END_DELAY_MS = 1_000L
+
+    // YouTube Ambient stays dimmed to this strength while a statistics page is lifted above it.
+    private const val AMBIENT_OPACITY_WITH_STATISTICS = 0.5f
 
     /**
      * Factor to divide subtitle and audio delays to convert from ms to seconds.

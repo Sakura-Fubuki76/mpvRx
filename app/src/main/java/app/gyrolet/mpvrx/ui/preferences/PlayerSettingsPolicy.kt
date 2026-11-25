@@ -34,20 +34,23 @@ private val livePlayerSettings = setOf(
   // Read whenever the current video's progress is saved.
   R.string.pref_player_watched_threshold_title,
   R.string.pref_player_close_after_eof,
+  // Read on every Home, app switch and screen-off.
   R.string.pref_video_background_playback_title,
-  R.string.pref_background_playback_behavior,
+  // Read on every Back.
+  R.string.pref_video_background_on_back_title,
   R.string.pref_player_remember_brightness,
   R.string.pref_autoplay_next_video_title,
   // Applied when the next item loads.
   R.string.pref_keep_video_frame_title,
   R.string.pref_auto_pip_title,
-  R.string.pref_auto_pip_home_only_title,
-  R.string.pref_enable_video_mini_player_title,
+  R.string.pref_pip_on_back_title,
   R.string.pref_player_autoplay_after_screen_unlock_title,
   R.string.pref_player_orientation,
   R.string.pref_player_keep_screen_on_when_paused_title,
   R.string.pref_player_external_display_projection_title,
   R.string.show_splash_ovals_on_double_tap_to_seek,
+  // Read on every D-pad seek.
+  R.string.pref_tv_seek_duration_title,
   R.string.show_time_on_double_tap_to_seek,
   R.string.pref_player_show_buffered_range_title,
   R.string.pref_player_show_chapter_indicators_title,
@@ -102,8 +105,6 @@ private val liveSubtitleSettings = setOf(
   R.string.player_sheets_sub_override_ass,
   R.string.player_sheets_sub_scale_by_window,
   R.string.pref_subtitles_secondary_pinch_zoom,
-  // The player starts or stops downloading fonts as soon as this changes.
-  R.string.pref_subtitles_auto_download_fonts,
   // These configure the next manual search, which can be performed in the current video.
   R.string.pref_subtitle_search_title,
   R.string.pref_subtitles_search_mode_title,

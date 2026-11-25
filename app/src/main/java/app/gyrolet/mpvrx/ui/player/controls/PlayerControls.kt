@@ -56,6 +56,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.areNavigationBarsVisible
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -63,6 +64,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.systemBarsIgnoringVisibility
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -167,7 +170,7 @@ import app.gyrolet.mpvrx.ui.player.controls.components.MultipleSpeedPlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.PlaybackFormatBadgeRow
 import app.gyrolet.mpvrx.ui.player.controls.components.ResumeAvailablePlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.ResumedFromPlayerUpdate
-import app.gyrolet.mpvrx.ui.player.controls.components.SeekPlayerUpdate
+import app.gyrolet.mpvrx.ui.player.controls.components.HorizontalSeekPlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.SeekbarWithTimers
 import app.gyrolet.mpvrx.ui.player.controls.components.TextPlayerUpdate
 import app.gyrolet.mpvrx.ui.player.controls.components.VolumeSlider
@@ -412,9 +415,12 @@ fun PlayerControls(
   val showSystemNavigationBar = navigationBarRequested || WindowInsets.areNavigationBarsVisible
   val showControlsDrawer by playerPreferences.showControlsDrawer.collectAsState()
   val requestedControlsShown by viewModel.controlsShown.collectAsState()
-  val gestureSeekUpdate by viewModel.playerUpdate.collectAsState()
-  val horizontalSeekFeedback = gestureSeekUpdate is PlayerUpdates.HorizontalSeek
-  val controlsShown = fullControlsVisible(requestedControlsShown, horizontalSeekFeedback)
+  val playerUpdateState = viewModel.playerUpdate.collectAsState()
+  val horizontalSeekUpdate by remember {
+    derivedStateOf { playerUpdateState.value as? PlayerUpdates.HorizontalSeek }
+  }
+  val isHorizontalSeekGesture = horizontalSeekUpdate != null
+  val controlsShown = fullControlsVisible(requestedControlsShown, isHorizontalSeekGesture)
   val controlsInteractionEpoch by viewModel.controlsInteractionEpoch.collectAsState()
   val tvPlayFocusRequester = rememberTvInitialFocusRequester(enabled = controlsShown)
   val statisticsPage by advancedPreferences.enabledStatisticsPage.collectAsState()
@@ -466,7 +472,7 @@ fun PlayerControls(
       } == true
   val bufferingState =
     rememberBufferingState(
-      enabled = bufferingFeedbackEnabled(showLoadingCircle, isSeeking, horizontalSeekFeedback),
+      enabled = bufferingFeedbackEnabled(showLoadingCircle, isSeeking, isHorizontalSeekGesture),
       sessionState = playbackSessionState,
       openingNetworkStream = openingNetworkStream,
     )
@@ -478,17 +484,18 @@ fun PlayerControls(
     } else {
       Modifier
     }
+  // The bottom safe area is reserved whether or not the navigation bar is showing. Following its
+  // visibility lifted the whole bottom cluster while Home or Recents revealed the bar and dropped
+  // it again on return.
   val navigationBarBottomInsetModifier =
-    if (showSystemNavigationBar) {
-      Modifier.windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
-    } else {
-      Modifier
-    }
-  val mpvSeeking by PlaybackSession.propBoolean["seeking"].collectAsStateWithLifecycle()
-  val isPlayerSeeking = isSeeking || (mpvSeeking ?: false)
+    Modifier.windowInsetsPadding(
+      WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout).only(WindowInsetsSides.Bottom),
+    )
+  // mpv toggles `seeking` for every seek of a scrub, so only the seekbar that needs it reads it.
+  val mpvSeekingState = PlaybackSession.propBoolean["seeking"].collectAsStateWithLifecycle()
   // mpv can remain "seeking" until its cache refills. Only active scrubbing suppresses the spinner;
   // a real cache wait stays visible even when the controls have faded out.
-  val showBufferingIndicator = bufferingState.visible && !horizontalSeekFeedback
+  val showBufferingIndicator = bufferingState.visible && !isHorizontalSeekGesture
   var resetControlsTimestamp by remember { mutableStateOf(0L) }
   val configuredDecoder by PlaybackSession.propString["hwdec"].collectAsStateWithLifecycle()
   val activeDecoder by PlaybackSession.propString["hwdec-current"].collectAsStateWithLifecycle()
@@ -524,9 +531,7 @@ fun PlayerControls(
   val isPostProcessingEnabled by viewModel.isPostProcessingEnabled.collectAsState()
   val motionInterpolationState by viewModel.motionInterpolation.state.collectAsState()
   val isMotionInterpolationEnabled = motionInterpolationState.config.enabled
-  val backgroundPlaybackEnabled by PlaybackSession.videoBackgroundPlaybackEnabled.collectAsState(
-    initial = PlaybackSession.isVideoBackgroundPlaybackEnabled(),
-  )
+  val backgroundPlaybackEnabled by playerPreferences.videoBackgroundPlayback.collectAsState()
 
   // Closing a sheet or panel leaves the controls hidden on touch devices; a TV remote needs
   // them back to keep a focus target.
@@ -708,7 +713,7 @@ fun PlayerControls(
     }
   val mediaTitle = configuredTitle ?: defaultMediaTitle
   // The auto-hide timer keeps running through a swipe-seek, even while paused.
-  val isPlayingForAutoHide = paused == false || gestureSeekUpdate is PlayerUpdates.HorizontalSeek
+  val isPlayingForAutoHide = paused == false || isHorizontalSeekGesture
 
   LaunchedEffect(
     controlsShown,
@@ -1170,11 +1175,13 @@ fun PlayerControls(
           fun portraitInset(slot: BottomSlot?): Dp =
             if (isPortrait) portraitGlassShadowRoom(slot, enableLiquidGlass) else 0.dp
 
+          // The lowest visible surface rests on the bottom safe area, with no extra gap below it.
+          // Its transparent glass shadow room may extend into the inset.
           val clusterEdge =
             if (isPortrait) {
-              PortraitSectionGap - portraitInset(bottomStack.firstOrNull { bandHeight(it) > 0.dp })
+              -portraitInset(bottomStack.firstOrNull { bandHeight(it) > 0.dp })
             } else {
-              spacing.medium
+              0.dp
             }
           val clusterGap = if (isPortrait) PortraitSectionGap else spacing.extraSmall
           val customButtonsGap = spacing.smaller * 2
@@ -1194,13 +1201,14 @@ fun PlayerControls(
               previousVisibleSlot = slot
             }
           }
-          val buttonsBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Buttons] ?: clusterEdge)
+          val idleBandCenter = clusterEdge.coerceAtLeast(0.dp)
+          val buttonsBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Buttons] ?: idleBandCenter)
           // A swipe that began over hidden controls owns the screen: only the timeline and its
           // thumbnail remain, so it rests on the bottom edge instead of floating over the empty
           // slot of the transport row. A swipe that began with the controls visible keeps the
           // slot it already occupies, so the timeline never travels while the gesture runs.
           val scrubStartedHidden =
-            (gestureSeekUpdate as? PlayerUpdates.HorizontalSeek)?.let { !it.startedWithControlsShown } == true
+            horizontalSeekUpdate?.startedWithControlsShown == false
           // Latched through the exit animation: the gesture ends a frame before the timeline fades,
           // and lifting the slot there would make the timeline rise just before it disappears.
           var scrubOverlayLatched by remember { mutableStateOf(false) }
@@ -1209,10 +1217,10 @@ fun PlayerControls(
             if (seekbarOnBottomEdge) {
               clusterEdge + bandHeight(BottomSlot.Seekbar) / 2
             } else {
-              bandCenters[BottomSlot.Seekbar] ?: clusterEdge
+              bandCenters[BottomSlot.Seekbar] ?: idleBandCenter
             }
           val seekbarBandCenter = createGuidelineFromBottom(seekbarCenterFromBottom)
-          val playbackBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Playback] ?: clusterEdge)
+          val playbackBandCenter = createGuidelineFromBottom(bandCenters[BottomSlot.Playback] ?: idleBandCenter)
           fun ConstrainScope.linkInBottomStack(slot: BottomSlot) {
             val center =
               when (slot) {
@@ -1356,7 +1364,7 @@ fun PlayerControls(
           }
 
           val holdForMultipleSpeed by playerPreferences.holdForMultipleSpeed.collectAsState()
-          val currentPlayerUpdate by viewModel.playerUpdate.collectAsState()
+          val currentPlayerUpdate by playerUpdateState
           val isHorizontalSeekActive = currentPlayerUpdate is PlayerUpdates.HorizontalSeek
           val isTranslatingSub by viewModel.isTranslatingSub.collectAsState()
           val translationProgress by viewModel.translationProgress.collectAsState()
@@ -1463,8 +1471,11 @@ fun PlayerControls(
           var updateInteracting by remember(currentPlayerUpdate) { mutableStateOf(false) }
           LaunchedEffect(currentPlayerUpdate, aspectRatio, videoZoom, updateInteracting) {
             if (updateInteracting) return@LaunchedEffect
+            // Held gestures own their chips. A swipe-seek chip lasts as long as the swipe; its
+            // GestureHandler dismisses it shortly after the finger lifts.
             if (currentPlayerUpdate is PlayerUpdates.MultipleSpeed ||
               currentPlayerUpdate is PlayerUpdates.DynamicSpeedControl ||
+              currentPlayerUpdate is PlayerUpdates.HorizontalSeek ||
               currentPlayerUpdate is PlayerUpdates.None
             ) {
               return@LaunchedEffect
@@ -1588,9 +1599,9 @@ fun PlayerControls(
 
                   is PlayerUpdates.HorizontalSeek -> {
                     val seekUpdate = currentPlayerUpdate as PlayerUpdates.HorizontalSeek
-                    SeekPlayerUpdate(
-                      currentTime = seekUpdate.currentTime,
-                      seekDelta = "[${seekUpdate.seekDelta}]",
+                    HorizontalSeekPlayerUpdate(
+                      startPosition = seekUpdate.startPosition,
+                      position = viewModel.precisePosition,
                     )
                   }
 
@@ -2189,7 +2200,6 @@ fun PlayerControls(
                   end.linkTo(parent.end, spacing.large)
                 },
           ) {
-            val position by PlaybackSession.propInt["time-pos"].collectAsStateWithLifecycle()
             val precisePosition by viewModel.precisePosition.collectAsStateWithLifecycle()
             val invertDuration by playerPreferences.invertDuration.collectAsState()
             val remaining  by PlaybackSession.propFloat["playtime-remaining"].collectAsStateWithLifecycle()
@@ -2197,6 +2207,7 @@ fun PlayerControls(
             val useWavySeekbar by playerPreferences.useWavySeekbar.collectAsState()
             // Upstream's live gesture target is also the preview target: no second seek pipeline.
             val scrubPreviewPosition = precisePosition.takeIf { isHorizontalSeekActive }
+            val isPlayerSeeking = isSeeking || (mpvSeekingState.value ?: false)
             // Memoize the immutable copies so they are not reallocated on every position
             // tick (this scope recomposes ~20x/sec while scrubbing).
             val seekbarChapters =

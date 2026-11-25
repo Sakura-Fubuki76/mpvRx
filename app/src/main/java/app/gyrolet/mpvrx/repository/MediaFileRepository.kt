@@ -38,7 +38,10 @@ import app.gyrolet.mpvrx.utils.storage.StorageVolumeUtils
 import app.gyrolet.mpvrx.utils.storage.TreeViewScanner
 import app.gyrolet.mpvrx.utils.storage.leafStorageName
 import app.gyrolet.mpvrx.utils.storage.VideoScanUtils
+import app.gyrolet.mpvrx.utils.storage.isMediaPathInFolder
 import app.gyrolet.mpvrx.utils.storage.mediaPathKey
+import app.gyrolet.mpvrx.utils.storage.normalizeStoragePath
+import app.gyrolet.mpvrx.utils.storage.parentStoragePath
 import app.gyrolet.mpvrx.utils.storage.storagePathKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +51,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
@@ -122,6 +126,107 @@ object MediaFileRepository : KoinComponent {
     Log.d(TAG, "Clearing all caches (FolderViewScanner + TreeViewScanner)")
     FolderViewScanner.clearCache()
     TreeViewScanner.clearCache()
+    scopedTreeFolders = null
+  }
+
+  /** A Play Store hidden folder from a SAF grant, at the real storage path Tree mode shows it under. */
+  private data class ScopedTreeFolder(
+    val path: String,
+    val folder: VideoFolder,
+  )
+
+  private class ScopedTreeSnapshot(
+    val key: String,
+    val createdAt: Long,
+    val folders: List<ScopedTreeFolder>,
+  )
+
+  // Walking the grants costs one provider query per directory; Tree asks on every folder it opens.
+  @Volatile private var scopedTreeFolders: ScopedTreeSnapshot? = null
+  private const val SCOPED_TREE_FOLDERS_TTL_MS = 30_000L
+
+  /**
+   * Play Store builds see hidden folders only through SAF grants, which MediaStore (and so the
+   * Tree) never lists. Grants on local storage resolve to a real path, so Tree mode can place
+   * them in the tree; other providers have no path and stay in Folder mode only.
+   */
+  private suspend fun scopedTreeFolders(
+    context: Context,
+    forceRefresh: Boolean = false,
+  ): List<ScopedTreeFolder> {
+    if (!BuildConfig.SCOPED_STORAGE_ONLY || !foldersPreferences.hiddenScanEnabled(HiddenScanScope.TREE)) {
+      return emptyList()
+    }
+    val options = currentScanOptions(scope = HiddenScanScope.TREE)
+    val key =
+      listOf(
+        foldersPreferences.scopedHiddenFolderUris.get().sorted(),
+        options.cacheKey,
+        foldersPreferences.scanMarkedFolders(HiddenScanScope.TREE),
+        foldersPreferences.scanDotFolders(HiddenScanScope.TREE),
+        foldersPreferences.ignoredMarkers(HiddenScanScope.TREE).sorted(),
+      ).toString()
+    val now = System.currentTimeMillis()
+    scopedTreeFolders?.let { cached ->
+      if (!forceRefresh && cached.key == key && now - cached.createdAt < SCOPED_TREE_FOLDERS_TTL_MS) {
+        return cached.folders
+      }
+    }
+    // A grant may cover ordinary folders too (say all of Movies, for one .nomedia folder inside).
+    // Those MediaStore already lists; only the folders it does not are hidden, as in Folder mode.
+    val mediaStoreFolders = FolderViewScanner.getAllVideoFolders(context, options)
+    val folders =
+      ScopedHiddenFolderScanner
+        .withoutLocalDuplicates(mediaStoreFolders, getScopedHiddenVideoFolders(context, scope = HiddenScanScope.TREE))
+        .mapNotNull { folder ->
+          val path = ScopedHiddenFolderScanner.localPathOf(Uri.parse(folder.bucketId))
+            ?.let(::normalizeStoragePath) ?: return@mapNotNull null
+          ScopedTreeFolder(path, folder)
+        }.distinctBy { storagePathKey(it.path) }
+    scopedTreeFolders = ScopedTreeSnapshot(key, now, folders)
+    return folders
+  }
+
+  private fun List<ScopedTreeFolder>.toExtraTreeFolders(): List<TreeViewScanner.ExtraFolder> =
+    map { scoped ->
+      TreeViewScanner.ExtraFolder(
+        path = scoped.path,
+        videoCount = scoped.folder.videoCount,
+        totalSize = scoped.folder.totalSize,
+        totalDuration = scoped.folder.totalDuration,
+        lastModified = scoped.folder.lastModified,
+      )
+    }
+
+  private fun storageRootKeys(context: Context): Set<String> =
+    buildSet {
+      storagePathKey(Environment.getExternalStorageDirectory().absolutePath)?.let(::add)
+      StorageVolumeUtils.getExternalStorageVolumes(context).forEach { volume ->
+        storagePathKey(StorageVolumeUtils.getVolumePath(volume))?.let(::add)
+      }
+    }
+
+  /**
+   * Whether a Tree folder is hidden: a dot folder or one holding a hidden marker (.nomedia by
+   * default), or inside one, up to its storage root. [memo] shares ancestor answers across a listing.
+   */
+  private fun isHiddenStoragePath(
+    path: String,
+    markerNames: Set<String>,
+    rootKeys: Set<String>,
+    memo: MutableMap<String, Boolean>,
+  ): Boolean {
+    val normalized = normalizeStoragePath(path) ?: return false
+    val key = storagePathKey(normalized) ?: return false
+    if (key in rootKeys || normalized == "/") return false
+    memo[key]?.let { return it }
+    val directory = File(normalized)
+    val hidden =
+      directory.name.startsWith(".") ||
+        markerNames.any { runCatching { File(directory, it).isFile }.getOrDefault(false) } ||
+        parentStoragePath(normalized)?.let { isHiddenStoragePath(it, markerNames, rootKeys, memo) } == true
+    memo[key] = hidden
+    return hidden
   }
 
   /** Invalidates only the album MediaStore snapshot, preserving tree and filesystem indexes. */
@@ -454,6 +559,26 @@ object MediaFileRepository : KoinComponent {
       dao = database.directoryScanDao(),
       forceDiscovery = forceDiscovery,
     )
+
+  /**
+   * Library reads hidden folders from an index kept under its own scan options (its mode switch,
+   * and audio always included). Folder mode only fills the index under its own options, and only
+   * while it runs, so Library has to keep this one itself. Root discovery is shared, so after the
+   * first run this only revisits stale directories. Returns true when the indexed folders changed.
+   */
+  suspend fun refreshLibraryHiddenFolders(
+    context: Context,
+    includeAudioOverride: Boolean? = null,
+  ): Boolean =
+    withContext(Dispatchers.IO) {
+      if (BuildConfig.SCOPED_STORAGE_ONLY) return@withContext false
+      val options = currentScanOptions(includeAudioOverride, HiddenScanScope.LIBRARY)
+      if (!options.scanHiddenFolders) return@withContext false
+      val dao = database.directoryScanDao()
+      val before = FolderViewScanner.getIndexedNoMediaFolders(options, dao)
+      FolderViewScanner.scanNoMediaFoldersIncrementally(context, options, dao).collect()
+      FolderViewScanner.getIndexedNoMediaFolders(options, dao) != before
+    }
 
   // =============================================================================
   // VIDEO FILE OPERATIONS
@@ -883,9 +1008,17 @@ object MediaFileRepository : KoinComponent {
     withContext(Dispatchers.IO) {
       try {
         val scanOptions = currentScanOptions(scope = HiddenScanScope.TREE)
+        val scopedFolders = scopedTreeFolders(context, forceRefresh = forceFileSystemCheck)
+        val extraFolders = scopedFolders.toExtraTreeFolders()
         val directory = File(path)
         val indexedDirectory = if (BuildConfig.SCOPED_STORAGE_ONLY) {
-          TreeViewScanner.getFolderDataRecursive(context, path, scanOptions, forceFileSystemCheck)
+          TreeViewScanner.getFolderDataRecursive(
+            context,
+            path,
+            scanOptions,
+            forceFileSystemCheck,
+            extraFolders = extraFolders,
+          )
         } else {
           null
         }
@@ -969,7 +1102,17 @@ object MediaFileRepository : KoinComponent {
             maxAutoFlattenLevels = browserPreferences.treeFlattenDepth.get().maxLevels,
             newLabelOverrides = newLabelOverrides,
             blacklistedPaths = foldersPreferences.blacklistedFolders.get(),
+            extraFolders = extraFolders,
           )
+        val rootKeys = storageRootKeys(context)
+        val hiddenMemo = hashMapOf<String, Boolean>()
+        fun isHiddenFolder(folderPath: String): Boolean =
+          if (BuildConfig.SCOPED_STORAGE_ONLY) {
+            // Scoped storage cannot see .nomedia files; a granted hidden folder marks its subtree.
+            scopedFolders.any { isMediaPathInFolder(folderPath, it.path) }
+          } else {
+            isHiddenStoragePath(folderPath, scanOptions.normalizedHiddenFolderMarkerNames, rootKeys, hiddenMemo)
+          }
         folders.forEach { folderData ->
           items.add(
             FileSystemItem.Folder(
@@ -981,6 +1124,7 @@ object MediaFileRepository : KoinComponent {
               totalDuration = folderData.totalDuration,
               hasSubfolders = folderData.hasSubfolders,
               newCount = folderData.newCount,
+              isHidden = isHiddenFolder(folderData.path),
             ),
           )
         }
@@ -1016,7 +1160,17 @@ object MediaFileRepository : KoinComponent {
             Log.e(TAG, "Error listing media in directory: $path", error)
             emptyList()
           }
-        videos.forEach { items.add(toVideoItem(it)) }
+        // MediaStore has nothing for a granted hidden folder; its items come through its grant.
+        val pathKey = storagePathKey(path)
+        val grantedVideos =
+          scopedFolders
+            .firstOrNull { storagePathKey(it.path) == pathKey }
+            ?.let { scoped ->
+              val listed = videos.mapTo(hashSetOf()) { it.displayName }
+              getVideosInFolder(context, scoped.folder.bucketId, scope = HiddenScanScope.TREE)
+                .filterNot { it.displayName in listed }
+            }.orEmpty()
+        (videos + grantedVideos).forEach { items.add(toVideoItem(it)) }
 
         Result.success(items)
       } catch (error: kotlinx.coroutines.CancellationException) {
@@ -1103,6 +1257,7 @@ suspend fun getStorageRoots(
 
         if (includeCounts) {
           val (showNewLabels, thresholdDays, playedMediaTitles, newLabelOverrides) = getTreeViewNewBadgeParams()
+          val extraFolders = scopedTreeFolders(context, forceRefresh = forceFileSystemCheck).toExtraTreeFolders()
           for (index in roots.indices) {
             currentCoroutineContext().ensureActive()
             val root = roots[index]
@@ -1116,6 +1271,7 @@ suspend fun getStorageRoots(
                 showNewLabels,
                 thresholdDays,
                 newLabelOverrides,
+                extraFolders,
               )
             if (folderData == null) continue
             roots[index] =

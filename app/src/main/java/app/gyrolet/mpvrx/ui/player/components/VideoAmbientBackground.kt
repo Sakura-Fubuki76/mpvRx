@@ -18,6 +18,7 @@ import app.gyrolet.mpvrx.ui.player.MPVView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -37,8 +39,10 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -54,8 +58,11 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.exp
+import kotlin.math.floor
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import androidx.compose.ui.geometry.Rect as ComposeRect
 
 private const val SAMPLE_WIDTH = 96
@@ -65,6 +72,8 @@ private const val DISPLAY_HEIGHT = 18
 private const val DECIMATION = 3
 
 private const val CAPTURE_INTERVAL_MS = 350L
+private const val OSD_LIFT_INTERVAL_MS = 150L
+private const val OSD_LIFT_FAILURES_BEFORE_CLEAR = 3
 private const val IDLE_INTERVAL_MS = 1000L
 private const val SMOOTH_INTERVAL_MS = 60L
 private const val SMOOTH_IDLE_INTERVAL_MS = 200L
@@ -698,5 +707,162 @@ private fun Modifier.videoAmbientMask(videoBounds: ComposeRect, edgeBlend: Float
         }
       }
     }
+  }
+}
+
+/**
+ * mpv draws its statistics into the video Surface, which Android composites below the app window
+ * and so below Ambient. While [active], this copies that Surface under Ambient's margins at screen
+ * resolution and screens it over Ambient: mpv's black margins leave Ambient as it is, so only what
+ * mpv drew there, the statistics, shows on top of it.
+ */
+@Composable
+fun VideoAmbientOsdLift(
+  surfaceView: MPVView,
+  active: Boolean,
+  videoBounds: ComposeRect,
+  viewScale: Float,
+  panX: Float,
+  panY: Float,
+  isSurfaceReadyProvider: () -> Boolean,
+) {
+  val geometry = OsdLiftGeometry(videoBounds, viewScale, panX, panY)
+  var lift by remember(surfaceView) { mutableStateOf<OsdLift?>(null) }
+  val currentGeometry by rememberUpdatedState(geometry)
+  val currentIsSurfaceReady by rememberUpdatedState(isSurfaceReadyProvider)
+  val lifecycleOwner = LocalLifecycleOwner.current
+
+  LaunchedEffect(active, surfaceView, lifecycleOwner) {
+    lift = null
+    if (!active) return@LaunchedEffect
+    lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+      val capturer = OsdLiftCapturer()
+      var failures = 0
+      try {
+        while (isActive) {
+          val captured = capturer.capture(surfaceView, currentGeometry, currentIsSurfaceReady)
+          if (captured != null) {
+            failures = 0
+            lift = captured
+          } else if (++failures >= OSD_LIFT_FAILURES_BEFORE_CLEAR) {
+            lift = null
+          }
+          delay(OSD_LIFT_INTERVAL_MS)
+        }
+      } finally {
+        lift = null
+      }
+    }
+  }
+
+  // A copy taken for another picture placement would print the statistics in the wrong place.
+  val shown = lift?.takeIf { it.geometry == geometry }
+  if (shown != null) {
+    Spacer(
+      Modifier
+        .fillMaxSize()
+        .drawBehind {
+          clipRect(
+            videoBounds.left,
+            videoBounds.top,
+            videoBounds.right,
+            videoBounds.bottom,
+            clipOp = ClipOp.Difference,
+          ) {
+            for (patch in shown.patches) {
+              drawImage(patch.image, dstOffset = patch.offset, blendMode = BlendMode.Screen)
+            }
+          }
+        },
+    )
+  }
+}
+
+private data class OsdLiftGeometry(
+  val videoBounds: ComposeRect,
+  val scale: Float,
+  val panX: Float,
+  val panY: Float,
+)
+
+private class OsdLiftPatch(val offset: IntOffset, val image: ImageBitmap)
+
+private class OsdLift(val geometry: OsdLiftGeometry, val patches: List<OsdLiftPatch>)
+
+private class OsdLiftRegion(val source: Rect, val screen: Rect)
+
+/** Ambient's margins on screen, mapped through the player view's zoom and pan onto its Surface. */
+private fun OsdLiftGeometry.regions(width: Int, height: Int): List<OsdLiftRegion> {
+  if (videoBounds.isEmpty || scale <= 0f) return emptyList()
+  val top = ceil(videoBounds.top).toInt().coerceIn(0, height)
+  val bottom = floor(videoBounds.bottom).toInt().coerceIn(top, height)
+  val left = ceil(videoBounds.left).toInt().coerceIn(0, width)
+  val right = floor(videoBounds.right).toInt().coerceIn(left, width)
+  // The player view scales around its centre, then translates by the pan.
+  val dx = (1f - scale) * width / 2f + panX
+  val dy = (1f - scale) * height / 2f + panY
+  return listOf(
+    Rect(0, 0, width, top),
+    Rect(0, bottom, width, height),
+    Rect(0, top, left, bottom),
+    Rect(right, top, width, bottom),
+  ).mapNotNull { band ->
+    if (band.isEmpty) return@mapNotNull null
+    val source =
+      Rect(
+        floor((band.left - dx) / scale).toInt(),
+        floor((band.top - dy) / scale).toInt(),
+        ceil((band.right - dx) / scale).toInt(),
+        ceil((band.bottom - dy) / scale).toInt(),
+      )
+    if (!source.intersect(0, 0, width, height)) return@mapNotNull null
+    val screen =
+      Rect(
+        (source.left * scale + dx).roundToInt(),
+        (source.top * scale + dy).roundToInt(),
+        (source.right * scale + dx).roundToInt(),
+        (source.bottom * scale + dy).roundToInt(),
+      )
+    OsdLiftRegion(source, screen).takeIf { !screen.isEmpty }
+  }
+}
+
+private class OsdLiftCapturer {
+  private val handler = Handler(Looper.getMainLooper())
+
+  // Two sets, so a copy never writes into bitmaps that are still on screen.
+  private val buffers = Array(2) { arrayOfNulls<Bitmap>(4) }
+  private var front = 0
+
+  suspend fun capture(
+    surfaceView: MPVView,
+    geometry: OsdLiftGeometry,
+    isSurfaceReady: () -> Boolean,
+  ): OsdLift? {
+    if (!isSurfaceReady()) return null
+    val surface = surfaceView.osdCaptureSurface ?: return null
+    val width = surfaceView.width
+    val height = surfaceView.height
+    if (width <= 0 || height <= 0) return null
+    val regions = geometry.regions(width, height)
+    if (regions.isEmpty()) return null
+    val back = 1 - front
+    val patches = ArrayList<OsdLiftPatch>(regions.size)
+    for ((slot, region) in regions.withIndex()) {
+      val bitmap = bitmap(back, slot, region.screen.width(), region.screen.height())
+      if (captureSurface(surface, region.source, bitmap, handler) != CAPTURE_OK) return null
+      patches += OsdLiftPatch(IntOffset(region.screen.left, region.screen.top), bitmap.asImageBitmap())
+    }
+    if (surfaceView.osdCaptureSurface !== surface || !isSurfaceReady()) return null
+    front = back
+    return OsdLift(geometry, patches)
+  }
+
+  private fun bitmap(buffer: Int, slot: Int, width: Int, height: Int): Bitmap {
+    val reusable = buffers[buffer][slot]?.takeIf { it.width == width && it.height == height }
+    // Erasing marks the pixels changed, so the next frame uploads the new copy, not a cached texture.
+    reusable?.eraseColor(0)
+    return reusable
+      ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { buffers[buffer][slot] = it }
   }
 }

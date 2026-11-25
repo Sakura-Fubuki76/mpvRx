@@ -9,7 +9,6 @@
 
 package app.gyrolet.mpvrx.preferences
 
-import app.gyrolet.mpvrx.preferences.preference.DependentBooleanPreference
 import app.gyrolet.mpvrx.preferences.preference.PreferenceStore
 import app.gyrolet.mpvrx.preferences.preference.getEnum
 import app.gyrolet.mpvrx.ui.player.AmbientStyle
@@ -163,11 +162,17 @@ class PlayerPreferences(
 
   val autoPiPOnNavigation = preferenceStore.getBoolean("auto_pip_on_navigation", false)
 
-  // MX/VLC-style: only the home gesture auto-enters PiP; Back keeps its normal close/handoff.
-  val pipOnHomeGestureOnly = preferenceStore.getBoolean("auto_pip_home_gesture_only", false)
-  private val videoBackgroundPlayback = preferenceStore.getBoolean("automatic_background_playback", false)
-  private val storedEnableVideoMiniPlayer = preferenceStore.getBoolean("enable_video_mini_player", false)
-  val enableVideoMiniPlayer = DependentBooleanPreference(storedEnableVideoMiniPlayer, videoBackgroundPlayback)
+  /** With Auto PiP on, Back shrinks a video into picture-in-picture. Off, only Home does and Back closes it. */
+  val pipOnBack = preferenceStore.getBoolean("auto_pip_on_back", true)
+
+  /**
+   * Keeps a video playing after Home, an app switch or screen-off, and after Back while
+   * [videoBackgroundOnBack] is on. Audio always plays in the background.
+   */
+  val videoBackgroundPlayback = preferenceStore.getBoolean("automatic_background_playback", false)
+
+  /** With [videoBackgroundPlayback] on, Back also keeps the video playing. Off, Back closes it. */
+  val videoBackgroundOnBack = preferenceStore.getBoolean("video_background_on_back", true)
 
   val keepScreenOnWhenPaused = preferenceStore.getBoolean("keep_screen_on_when_paused", false)
   val externalDisplayProjection = preferenceStore.getBoolean("external_display_projection", false)
@@ -378,6 +383,21 @@ class PlayerPreferences(
 
   /** Animation duration multiplier (0.5 = twice as fast, 2.0 = twice as slow). */
   val animationSpeed = preferenceStore.getFloat("animation_speed", 1.0f)
+
+  init {
+    // The video mini player and the screen-off-only option were removed; drop their switches.
+    listOf(
+      preferenceStore.getBoolean("enable_video_mini_player"),
+      preferenceStore.getBoolean("video_background_only_when_screen_off"),
+    ).filter { it.isSet() }.forEach { it.delete() }
+
+    // "PiP on home gesture only" became "Back enters picture-in-picture", its inverse.
+    val pipOnHomeGestureOnly = preferenceStore.getBoolean("auto_pip_home_gesture_only")
+    if (pipOnHomeGestureOnly.isSet()) {
+      if (!pipOnBack.isSet()) pipOnBack.set(!pipOnHomeGestureOnly.get())
+      pipOnHomeGestureOnly.delete()
+    }
+  }
 
   companion object {
     /** Sentinel for `lastSnapshotFolderId`; folder ids start at 1, so it cannot be a real folder. */

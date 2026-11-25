@@ -18,12 +18,12 @@ internal object TvSettingsPolicy {
     R.string.pref_audio_orientation_title,
     R.string.pref_floating_lyrics_title,
     R.string.pref_player_remember_brightness,
-    R.string.pref_auto_pip_home_only_title,
+    R.string.pref_pip_on_back_title,
+    // Back always closes a video on TV.
+    R.string.pref_video_background_on_back_title,
     R.string.pref_auto_pip_title,
-    R.string.pref_enable_video_mini_player_title,
     R.string.pref_player_autoplay_after_screen_unlock_title,
     R.string.pref_player_external_display_projection_title,
-    R.string.pref_advanced_notification_style,
     R.string.pref_player_controls_drawer_title,
     R.string.pref_player_display_show_status_bar,
     R.string.pref_nav_bar_title,
@@ -70,7 +70,7 @@ internal object TvSettingsPolicy {
   fun supportsTitle(@StringRes title: Int?): Boolean = title !in mobileTitles
 
   // Remote-only behaviour that phones never show.
-  private val televisionTitles = setOf(R.string.pref_tv_double_back_exit_title)
+  private val televisionTitles = setOf(R.string.pref_tv_double_back_exit_title, R.string.pref_tv_seek_duration_title)
 
   fun supportsMobileSearch(preference: SearchablePreference): Boolean =
     preference.titleRes !in televisionTitles && preference.targetRes !in televisionTitles

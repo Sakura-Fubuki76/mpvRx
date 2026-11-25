@@ -74,6 +74,8 @@ private val holdSpeedPresets = listOf(0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f)
 private const val SPEED_HOLD_INTENT_THRESHOLD_MS = 250L
 private const val MULTI_TAP_SEEK_TIMEOUT_MS = 1_200L
 private const val CENTER_SINGLE_TAP_VERTICAL_EDGE_FRACTION = 0.35f
+// How long a seek chip stays up after the finger lifts.
+private const val HORIZONTAL_SEEK_UPDATE_LINGER_MS = 300L
 
 private data class TapSeekFeedback(
   val region: String,
@@ -175,7 +177,6 @@ fun GestureHandler(
   val rightTapGesture by gesturePreferences.rightSingleActionGesture.collectAsState()
   val centerVerticalSubtitlePositionGesture by gesturePreferences.centerVerticalSubtitlePositionGesture.collectAsState()
   val enableCenterSwipeUpGesture by gesturePreferences.enableCenterSwipeUpGesture.collectAsState()
-  val enableVideoMiniPlayer by playerPreferences.enableVideoMiniPlayer.collectAsState()
   val pinchToZoomSubtitles by gesturePreferences.pinchToZoomSubtitles.collectAsState()
   val secondarySubPinchZoomEnabled by subtitlesPreferences.secondarySubPinchZoom.collectAsState()
   val swipeSubtitlesToSeekDialog by gesturePreferences.swipeSubtitlesToSeekDialog.collectAsState()
@@ -242,7 +243,6 @@ fun GestureHandler(
   )
   val brightnessHaptics = app.gyrolet.mpvrx.ui.utils.rememberAdjustmentHaptics(0f, 1f)
   val coroutineScope = rememberCoroutineScope()
-  var horizontalSeekHideJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
   val density = LocalDensity.current
   val topStatusBarInsetPx = WindowInsets.statusBars.getTop(density).toFloat()
   val bottomNavigationInsetPx = WindowInsets.navigationBars.getBottom(density).toFloat()
@@ -621,7 +621,6 @@ fun GestureHandler(
           pinchToZoomSubtitles,
           secondarySubPinchZoomEnabled,
           enableCenterSwipeUpGesture,
-          enableVideoMiniPlayer,
           externalPanelShown,
           anyPanelShown,
           allowGesturesInPanels,
@@ -633,7 +632,6 @@ fun GestureHandler(
                 !statisticsScrolling &&
                 !centerVerticalSubtitlePositionGesture &&
                 !enableCenterSwipeUpGesture &&
-                !enableVideoMiniPlayer &&
                 multipleSpeedGesture <= 0f
             ) ||
             areControlsLocked || (anyPanelShown && !allowGesturesInPanels)
@@ -773,7 +771,6 @@ fun GestureHandler(
               }
 
             var gestureType: String? = null
-            var minimizeDistance = 0f
 
             try {
               do {
@@ -896,8 +893,6 @@ fun GestureHandler(
                           speedHoldPending = false
                           val isCenterTouch =
                             enableCenterSwipeUpGesture && startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
-                          val isMinimizeTouch = enableVideoMiniPlayer && !externalPanelShown &&
-                            !isVerticalGestureDeadZone && startPosition.x in (size.width / 3f)..(size.width * 2f / 3f)
                           if (statisticsScrolling && isVerticalDrag && !isVerticalGestureDeadZone &&
                             claimGesture(GestureOwner.VERTICAL)
                           ) {
@@ -911,9 +906,6 @@ fun GestureHandler(
                           ) {
                             longPressJob.cancel()
                             gestureType = "speed_control"
-                          } else if (isMinimizeTouch && isVerticalDrag && deltaY > 20f && claimGesture(GestureOwner.VERTICAL)) {
-                            longPressJob.cancel()
-                            gestureType = "minimize"
                           } else if (isCenterTouch && isVerticalDrag) {
                             longPressJob.cancel()
                             // The ancestor handles playlist swipes across the full center strip.
@@ -993,10 +985,6 @@ fun GestureHandler(
                             PlaybackSession.scrollStatisticsPage(lines)
                             statisticsRemainder -= lines * statisticsLineHeight
                           }
-                          change.consume()
-                        }
-                        "minimize" -> {
-                          minimizeDistance = deltaY.coerceAtLeast(0f)
                           change.consume()
                         }
                         "speed_control" -> {
@@ -1224,10 +1212,6 @@ fun GestureHandler(
               if (isSubtitleHoldActive) {
                 isSubtitleHoldActive = false
                 viewModel.playerUpdate.update { PlayerUpdates.None }
-              }
-
-              if (gestureType == "minimize" && minimizeDistance >= 80.dp.toPx()) {
-                if (viewModel.minimizeToMiniPlayer()) actionHaptics.pickup()
               }
 
               when (gestureType) {
@@ -1538,9 +1522,9 @@ fun GestureHandler(
 
             var gestureType: String? = null
             var hasStartedSeeking = false
-            var seekStartedWithControlsShown = false
             var gestureEndedNormally = false
             var initialVideoPosition = 0f
+            var seekOriginX = 0f
             var pendingSeekPosition: Float? = null
             // Use the sensitivity preference instead of hardcoded value
             val seekSensitivity = horizontalSwipeSensitivity
@@ -1574,11 +1558,12 @@ fun GestureHandler(
                         // Don't conflict with long press
                         !isDynamicSpeedControlActive &&
                         // Don't conflict with speed control
-                        (!anyPanelShown || allowGesturesInPanels)
+                        (!anyPanelShown || allowGesturesInPanels) &&
+                        // Like mpv-android, a swipe cannot seek media of unknown length.
+                        (duration ?: 0) > 0
                       ) {
                         if (claimGesture(GestureOwner.HORIZONTAL_SEEK)) {
-                          horizontalSeekHideJob?.cancel()
-                          seekStartedWithControlsShown = viewModel.controlsShown.value
+                          val seekStartedWithControlsShown = viewModel.controlsShown.value
                           viewModel.beginGestureSeek()
                           gestureType = "horizontal_seek"
                           hasStartedSeeking = true
@@ -1587,42 +1572,24 @@ fun GestureHandler(
                             .takeIf { it.isFinite() && it >= 0f }
                             ?: position?.toFloat()
                             ?: 0f
+                          // Measure from here, so the thumb starts where playback is instead of
+                          // jumping by the distance it took to recognise the swipe.
+                          seekOriginX = currentPosition.x
                           pendingSeekPosition = initialVideoPosition
+                          viewModel.showHorizontalSeekUpdate(initialVideoPosition, seekStartedWithControlsShown)
 
                           change.consume()
                         }
                       }
 
                       if (gestureType == "horizontal_seek" && hasStartedSeeking) {
-                        // Calculate seek amount based on horizontal movement
-                        val seekAmount = deltaX * seekSensitivity
-                        val targetPosition = (initialVideoPosition + seekAmount).coerceAtLeast(0f)
-                        val maxDuration = duration?.toFloat() ?: 0f
-                        val clampedPosition = targetPosition.coerceAtMost(maxDuration)
-                        viewModel.gestureSeekTo(clampedPosition)
-                        pendingSeekPosition = clampedPosition
-
-                        // Format and display time position updates
-                        val currentPos = clampedPosition.toInt()
-                        val seekDelta = (clampedPosition - initialVideoPosition).toInt()
-
-                        val currentTimeStr = formatSeekTime(currentPos)
-
-                        // Format seek delta with +/- prefix
-                        val deltaStr =
-                          if (seekDelta >= 0) {
-                            "+${formatSeekTime(seekDelta)}"
-                          } else {
-                            "-${formatSeekTime(-seekDelta)}"
-                          }
-
-                        // Use PlayerUpdates system like zoom updates
-                        viewModel.playerUpdate.update {
-                          PlayerUpdates.HorizontalSeek(
-                            currentTimeStr,
-                            deltaStr,
-                            startedWithControlsShown = seekStartedWithControlsShown,
-                          )
+                        // The ViewModel clamps to the media and an active A-B loop. Moves only update
+                        // the thumb; the chip and seeks follow from there, off this frame's work.
+                        val targetPosition =
+                          (initialVideoPosition + (currentPosition.x - seekOriginX) * seekSensitivity).coerceAtLeast(0f)
+                        if (targetPosition != pendingSeekPosition) {
+                          viewModel.gestureSeekTo(targetPosition)
+                          pendingSeekPosition = targetPosition
                         }
 
                         change.consume()
@@ -1642,30 +1609,18 @@ fun GestureHandler(
               } while (event.changes.any { it.pressed })
               gestureEndedNormally = true
             } finally {
-              if (gestureType == "subtitle_dialog_seek") viewModel.setSubtitleGestureHighlight(false)
               // Also runs on cancellation, so the seekbar never stays detached from playback.
               if (gestureType == "horizontal_seek") {
                 viewModel.finishGestureSeek(pendingSeekPosition.takeIf { hasStartedSeeking && gestureEndedNormally })
                 if (!gestureEndedNormally || !hasStartedSeeking) {
                   viewModel.playerUpdate.update { if (it is PlayerUpdates.HorizontalSeek) PlayerUpdates.None else it }
                   viewModel.hideSeekBar()
+                } else {
+                  viewModel.dismissHorizontalSeekUpdate(HORIZONTAL_SEEK_UPDATE_LINGER_MS)
                 }
               }
               releaseGesture(GestureOwner.HORIZONTAL_SEEK)
             }
-
-            if (hasStartedSeeking) {
-              // Briefly retain the timeline; an older gesture must not clear a newer one.
-              val completedUpdate = viewModel.playerUpdate.value
-              horizontalSeekHideJob = coroutineScope.launch {
-                delay(300)
-                viewModel.playerUpdate.compareAndSet(completedUpdate, PlayerUpdates.None)
-                // Other gesture handlers may already have cleared the feedback update.
-                // Timeline cleanup must still run; a new swipe cancels this job above.
-                viewModel.hideSeekBar()
-              }
-            }
-            releaseGesture(GestureOwner.HORIZONTAL_SEEK)
           }
         }
 
@@ -1688,15 +1643,3 @@ fun calculateNewVerticalGestureValue(
   newY: Float,
   sensitivity: Float,
 ): Float = originalValue + ((startingY - newY) * sensitivity)
-
-private fun formatSeekTime(seconds: Int): String {
-  val absSeconds = kotlin.math.abs(seconds)
-  val hours = absSeconds / 3600
-  val minutes = (absSeconds % 3600) / 60
-  val secs = absSeconds % 60
-  return if (hours > 0) {
-    String.format("%d:%02d:%02d", hours, minutes, secs)
-  } else {
-    String.format("%02d:%02d", minutes, secs)
-  }
-}

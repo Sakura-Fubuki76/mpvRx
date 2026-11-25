@@ -710,7 +710,6 @@ private fun RecentItemsContent(
   val showExtensionField by viewPreferences.showExtensionField.collectAsState()
   val showDurationField by viewPreferences.showDurationField.collectAsState()
   val centerGridTitles by viewPreferences.centerGridTitles.collectAsState()
-  val thumbnailQuality by browserPreferences.thumbnailQuality.collectAsState()
   val thumbnailGenerator by browserPreferences.thumbnailGenerator.collectAsState()
   val swipeLeft by browserPreferences.videoSwipeLeft.collectAsState()
   val swipeRight by browserPreferences.videoSwipeRight.collectAsState()
@@ -766,7 +765,6 @@ private fun RecentItemsContent(
       showExtensionField,
       showDurationField,
       centerGridTitles,
-      thumbnailQuality,
       thumbnailGenerator,
       swipeLeft,
       swipeRight,
@@ -786,7 +784,6 @@ private fun RecentItemsContent(
         showExtensionField = showExtensionField,
         showDurationField = showDurationField,
         centerGridTitles = centerGridTitles,
-        thumbnailQuality = thumbnailQuality,
         thumbnailGenerator = thumbnailGenerator,
         swipeLeft = swipeLeft,
         swipeRight = swipeRight,

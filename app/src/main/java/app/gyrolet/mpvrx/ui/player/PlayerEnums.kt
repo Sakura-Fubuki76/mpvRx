@@ -162,6 +162,7 @@ enum class Sheets {
   Chapters,
   Decoders,
   More,
+  SleepTimer,
   VideoZoom,
   AspectRatios,
   Playlist,
@@ -214,9 +215,12 @@ sealed class PlayerUpdates {
     val secondary: Boolean = false,
   ) : PlayerUpdates()
 
+  /**
+   * A horizontal swipe seek, published once when the swipe starts. The chip reads the live target
+   * from [PlayerViewModel.precisePosition], so finger moves never replace the player update.
+   */
   data class HorizontalSeek(
-    val currentTime: String,
-    val seekDelta: String,
+    val startPosition: Float,
     // Preserve the visible timeline even after screen scrubbing hides the other controls.
     val startedWithControlsShown: Boolean = false,
   ) : PlayerUpdates()
@@ -466,26 +470,4 @@ enum class DebandSettings(
     0,
     200,
   ),
-}
-
-/** Controls whether the playback service shows a notification, and which style it uses. */
-enum class NotificationStyle(
-  val displayName: String,
-) {
-  /** Do not show any playback notification. */
-  None("No Notification"),
-
-  /** Classic MediaStyle with transport controls rendered by the system. */
-  Media("Media Controls"),
-
-  /** Progress-centric style with chapter segment indicators (Android 16+ only). */
-  Progress("Progress with Chapters"),
-
-  ;
-
-  fun isSupportedOn(sdkInt: Int): Boolean =
-    when (this) {
-      Progress -> sdkInt >= 36
-      None, Media -> true
-    }
 }

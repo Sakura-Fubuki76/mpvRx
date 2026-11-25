@@ -118,6 +118,10 @@ abstract class MpvSurfaceHost(context: Context, attributes: AttributeSet) : Fram
     private set
   internal var osdSurfaceHeight = 0
     private set
+
+  /** The Surface mpv draws its OSD into across the whole player, in this view's coordinates. */
+  internal val osdCaptureSurface: Surface?
+    get() = if (videoRect != null) osdSurface else renderSurface
   private var videoView: View? = null
   private var videoRect: MpvVideoRect? = null
 

@@ -22,6 +22,8 @@ class GesturePreferences(
   // Screen scrubbing hides the full controls; keep its timeline and attached preview visible by default.
   val showSeekbarDuringHorizontalSeeking = preferenceStore.getBoolean("show_seekbar_during_horizontal_seeking", true)
   val doubleTapToSeekDuration = preferenceStore.getInt("double_tap_to_seek_duration", 10)
+  /** Base step of a D-pad seek on TV; holding the key scales it up. */
+  val tvSeekDuration = preferenceStore.getInt("tv_seek_duration", 10)
   val requireDoubleTapForEverySeek = preferenceStore.getBoolean("require_double_tap_for_every_seek", false)
   val doubleTapSeekAreaWidth = preferenceStore.getInt("double_tap_seek_area_width", 35)
   val leftSingleActionGesture = preferenceStore.getEnum("left_double_tap_gesture", SingleActionGesture.Seek)

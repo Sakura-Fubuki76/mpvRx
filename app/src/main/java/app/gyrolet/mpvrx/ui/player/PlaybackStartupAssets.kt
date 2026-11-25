@@ -40,6 +40,9 @@ object PlaybackStartupAssets : KoinComponent {
   private const val USER_MPV_ASSET_SELECTION = "user_mpv_asset_selection_v1"
   private const val USER_MPV_ASSET_SCRIPTS = "user_mpv_asset_scripts_v1"
 
+  private const val LEGACY_FALLBACK_FONTS_DIRECTORY = "fallback-fonts"
+  private const val LEGACY_FONTS_CONF_MARKER = "<!-- Written by mpvRx. Remove this line to keep your own changes. -->"
+
   /** Serializes startup and deferred user-asset synchronization across Activity instances. */
   private val assetLock = Any()
 
@@ -92,7 +95,6 @@ object PlaybackStartupAssets : KoinComponent {
     val startedAt = SystemClock.elapsedRealtime()
     synchronized(assetLock) {
       syncBundledAssetsIfNeeded()
-      app.gyrolet.mpvrx.domain.fonts.MpvFontConfig.ensure(context)
       prepareUserMpvAssetsForStartup()
       googleFontsRepository.syncMpvFonts()
     }
@@ -440,7 +442,16 @@ object PlaybackStartupAssets : KoinComponent {
     Log.d(TAG, "Fonts sync: $count file(s) from MPV directory")
   }
 
+  private fun removeLegacySubtitleFallbackFonts() {
+    File(filesDir, LEGACY_FALLBACK_FONTS_DIRECTORY).takeIf(File::exists)?.deleteRecursively()
+    val fontsConf = File(filesDir, "fonts.conf")
+    if (fontsConf.isFile && fontsConf.bufferedReader().use { it.readLine() } == LEGACY_FONTS_CONF_MARKER) {
+      fontsConf.delete()
+    }
+  }
+
   private fun syncBundledAssetsIfNeeded() {
+    removeLegacySubtitleFallbackFonts()
     val syncPrefs = assetSyncPreferences
     val currentVersion = longVersionCode()
 

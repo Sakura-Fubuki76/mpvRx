@@ -9,18 +9,15 @@
 
 package app.gyrolet.mpvrx.ui.preferences
 
-import android.Manifest
 import android.content.ComponentName
 import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
 import app.gyrolet.mpvrx.presentation.components.AppAlertDialog as AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -30,7 +27,6 @@ import androidx.compose.material3.Text
 import app.gyrolet.mpvrx.presentation.components.AppDialogTextButton as TextButton
 import app.gyrolet.mpvrx.presentation.components.AppTextField as TextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,21 +36,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import app.gyrolet.mpvrx.R
-import app.gyrolet.mpvrx.preferences.AdvancedPreferences
-import app.gyrolet.mpvrx.preferences.AudioPreferences
-import app.gyrolet.mpvrx.preferences.BackgroundPlaybackBehavior
 import app.gyrolet.mpvrx.preferences.BrowserPreferences
+import app.gyrolet.mpvrx.preferences.GesturePreferences
 import app.gyrolet.mpvrx.preferences.IntroSegmentProvider
 import app.gyrolet.mpvrx.preferences.PlayerPreferences
 import app.gyrolet.mpvrx.preferences.preference.collectAsState
-import app.gyrolet.mpvrx.ui.player.NotificationStyle
-import app.gyrolet.mpvrx.ui.player.PlaybackPhase
-import app.gyrolet.mpvrx.ui.player.PlaybackSession
 import app.gyrolet.mpvrx.ui.player.PlayerOrientation
 import app.gyrolet.mpvrx.ui.player.ResumePlaybackMode
+import app.gyrolet.mpvrx.ui.player.controls.TV_SEEK_DURATION_RANGE
 import app.gyrolet.mpvrx.ui.player.screenshot.ScreenshotFormat
 import app.gyrolet.mpvrx.ui.preferences.components.SwitchPreference
 import app.gyrolet.mpvrx.ui.player.PlayerActivity
@@ -80,17 +72,12 @@ object PlayerPreferencesScreen : ScrollableSettingsScreen {
     val preferences = koinInject<PlayerPreferences>()
     val browserPreferences = koinInject<BrowserPreferences>()
     val configOwnedOptions = currentMpvConfigOverrideOptions()
-    val audioPreferences = koinInject<AudioPreferences>()
-    val backgroundPlaybackBehavior by audioPreferences.backgroundPlaybackBehavior.collectAsState()
-    val playbackState by PlaybackSession.state.collectAsState()
-    val advancedPreferences = koinInject<AdvancedPreferences>()
-    val notificationPermissionLauncher =
-      rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-      ) { _ -> }
     var showTemplateDialog by remember { mutableStateOf(false) }
     var templateDraft by remember { mutableStateOf("") }
-    var showVideoMiniPlayerDependencyDialog by remember { mutableStateOf(false) }
+    val gesturePreferences = koinInject<GesturePreferences>()
+    val television = app.gyrolet.mpvrx.ui.tv.isTelevision()
+    var showTvSeekCustomDialog by remember { mutableStateOf(false) }
+    var tvSeekCustomDraft by remember { mutableStateOf("") }
     Scaffold(
       contentWindowInsets = settingsContentWindowInsets(),
       topBar = {
@@ -229,40 +216,15 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
 
               PreferenceDivider()
 
-              val videoBackgroundPlayback by PlaybackSession.videoBackgroundPlaybackEnabled.collectAsState(
-                initial = PlaybackSession.isVideoBackgroundPlaybackEnabled(),
-              )
+              val videoBackgroundPlayback by preferences.videoBackgroundPlayback.collectAsState()
               SwitchPreference(
                 modifier = Modifier.settingsSearchTarget(R.string.pref_video_background_playback_title),
                 value = videoBackgroundPlayback,
-                enabled = backgroundPlaybackBehavior == BackgroundPlaybackBehavior.Remember ||
-                  (PlaybackSession.videoBackgroundPlaybackId(playbackState) != null &&
-                    playbackState.phase in setOf(PlaybackPhase.LOADING, PlaybackPhase.READY, PlaybackPhase.BACKGROUND)),
-                onValueChange = { enabled ->
-                  PlaybackSession.setVideoBackgroundPlaybackEnabled(enabled)
-                  if (!enabled) {
-                    if (backgroundPlaybackBehavior == BackgroundPlaybackBehavior.Remember) {
-                      preferences.enableVideoMiniPlayer.set(false)
-                    }
-                    showVideoMiniPlayerDependencyDialog = false
-                  }
-                  if (enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                    PackageManager.PERMISSION_GRANTED
-                  ) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                  }
-                },
+                onValueChange = preferences.videoBackgroundPlayback::set,
                 title = { Text(stringResource(R.string.pref_video_background_playback_title)) },
                 summary = {
                   Text(
-                    stringResource(
-                      if (backgroundPlaybackBehavior == BackgroundPlaybackBehavior.PerVideo) {
-                        R.string.pref_background_playback_per_video_summary
-                      } else {
-                        R.string.pref_video_background_playback_summary
-                      },
-                    ),
+                    stringResource(R.string.pref_video_background_playback_summary),
                     color = MaterialTheme.colorScheme.outline,
                   )
                 },
@@ -270,19 +232,24 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
 
               PreferenceDivider()
 
-              ExpressivePreferenceItem {
-              ListPreference(
-                modifier = Modifier.settingsSearchTarget(R.string.pref_background_playback_behavior),
-                value = backgroundPlaybackBehavior,
-                onValueChange = audioPreferences.backgroundPlaybackBehavior::set,
-                values = app.gyrolet.mpvrx.preferences.BackgroundPlaybackBehavior.entries,
-                valueToText = { AnnotatedString(resources.getString(it.titleRes)) },
-                title = { Text(stringResource(R.string.pref_background_playback_behavior)) },
-                summary = { Text(stringResource(backgroundPlaybackBehavior.summaryRes), color = MaterialTheme.colorScheme.outline) },
-              )
-              }
+              DevicePreference(R.string.pref_video_background_on_back_title) {
+                val videoBackgroundOnBack by preferences.videoBackgroundOnBack.collectAsState()
+                SwitchPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_video_background_on_back_title),
+                  value = videoBackgroundOnBack,
+                  onValueChange = preferences.videoBackgroundOnBack::set,
+                  enabled = videoBackgroundPlayback,
+                  title = { Text(stringResource(R.string.pref_video_background_on_back_title)) },
+                  summary = {
+                    Text(
+                      stringResource(R.string.pref_video_background_on_back_summary),
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
 
-              PreferenceDivider()
+                PreferenceDivider()
+              }
 
               DevicePreference(R.string.pref_player_external_display_projection_title) {
                 val externalDisplayProjection by preferences.externalDisplayProjection.collectAsState()
@@ -301,33 +268,6 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                     )
                   },
                 )
-
-                PreferenceDivider()
-
-                val notificationStyle by advancedPreferences.notificationStyle.collectAsState()
-                val supportedNotificationStyles =
-                  remember {
-                    NotificationStyle.entries.filter { it.isSupportedOn(Build.VERSION.SDK_INT) }
-                  }
-                val selectedNotificationStyle =
-                  notificationStyle.takeIf { it.isSupportedOn(Build.VERSION.SDK_INT) }
-                    ?: NotificationStyle.Media
-                ExpressivePreferenceItem {
-                ListPreference(
-                  modifier = Modifier.settingsSearchTarget(R.string.pref_advanced_notification_style),
-                  value = selectedNotificationStyle,
-                  onValueChange = advancedPreferences.notificationStyle::set,
-                  values = supportedNotificationStyles,
-                  valueToText = { AnnotatedString(it.displayName) },
-                  title = { Text(text = stringResource(R.string.pref_advanced_notification_style)) },
-                  summary = {
-                    Text(
-                      text = selectedNotificationStyle.displayName,
-                      color = MaterialTheme.colorScheme.outline,
-                    )
-                  },
-                )
-                }
 
                 PreferenceDivider()
               }
@@ -419,45 +359,17 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
                 PreferenceDivider()
               }
 
-              DevicePreference(R.string.pref_auto_pip_home_only_title) {
-                val pipOnHomeGestureOnly by preferences.pipOnHomeGestureOnly.collectAsState()
+              DevicePreference(R.string.pref_pip_on_back_title) {
+                val pipOnBack by preferences.pipOnBack.collectAsState()
                 SwitchPreference(
-                  modifier = Modifier.settingsSearchTarget(R.string.pref_auto_pip_home_only_title),
-                  value = pipOnHomeGestureOnly,
-                  onValueChange = preferences.pipOnHomeGestureOnly::set,
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_pip_on_back_title),
+                  value = pipOnBack,
+                  onValueChange = preferences.pipOnBack::set,
                   enabled = autoPiPOnNavigation,
-                  title = { Text(stringResource(R.string.pref_auto_pip_home_only_title)) },
+                  title = { Text(stringResource(R.string.pref_pip_on_back_title)) },
                   summary = {
                     Text(
-                      stringResource(R.string.pref_auto_pip_home_only_summary),
-                      color = MaterialTheme.colorScheme.outline,
-                    )
-                  },
-                )
-
-                PreferenceDivider()
-              }
-
-              DevicePreference(R.string.pref_enable_video_mini_player_title) {
-                val enableVideoMiniPlayer by preferences.enableVideoMiniPlayer.collectAsState()
-                SwitchPreference(
-                  modifier = Modifier.settingsSearchTarget(R.string.pref_enable_video_mini_player_title),
-                  value = enableVideoMiniPlayer,
-                  onValueChange = { enabled ->
-                    when {
-                      !enabled -> preferences.enableVideoMiniPlayer.set(false)
-                      videoBackgroundPlayback || backgroundPlaybackBehavior == BackgroundPlaybackBehavior.PerVideo ->
-                        preferences.enableVideoMiniPlayer.set(true)
-                      else -> {
-                        preferences.enableVideoMiniPlayer.set(false)
-                        showVideoMiniPlayerDependencyDialog = true
-                      }
-                    }
-                  },
-                  title = { Text(stringResource(R.string.pref_enable_video_mini_player_title)) },
-                  summary = {
-                    Text(
-                      stringResource(R.string.pref_enable_video_mini_player_summary),
+                      stringResource(R.string.pref_pip_on_back_summary),
                       color = MaterialTheme.colorScheme.outline,
                     )
                   },
@@ -588,6 +500,46 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
           item { PreferenceSectionHeader(position = PreferenceSectionPosition.Middle, title = stringResource(R.string.pref_player_seeking_title)) }
           item {
             PreferenceCard {
+              if (television) {
+                // The phone's tap seek duration lives on Gestures, which TV does not show.
+                val tvSeekDuration by gesturePreferences.tvSeekDuration.collectAsState()
+                val tvSeekPresets = listOf(3, 5, 10, 15, 20, 25, 30)
+                val tvSeekIsCustom = tvSeekDuration !in tvSeekPresets
+                ExpressivePreferenceItem {
+                ListPreference(
+                  modifier = Modifier.settingsSearchTarget(R.string.pref_tv_seek_duration_title),
+                  value = if (tvSeekIsCustom) -1 else tvSeekDuration,
+                  onValueChange = { value ->
+                    if (value == -1) {
+                      tvSeekCustomDraft = tvSeekDuration.toString()
+                      showTvSeekCustomDialog = true
+                    } else {
+                      gesturePreferences.tvSeekDuration.set(value)
+                    }
+                  },
+                  values = tvSeekPresets + -1,
+                  valueToText = { value ->
+                    AnnotatedString(
+                      if (value == -1) resources.getString(R.string.pref_gesture_double_tap_custom) else "${value}s",
+                    )
+                  },
+                  title = { Text(stringResource(R.string.pref_tv_seek_duration_title)) },
+                  summary = {
+                    Text(
+                      if (tvSeekIsCustom) {
+                        stringResource(R.string.pref_custom_seek_summary_format, tvSeekDuration)
+                      } else {
+                        "${tvSeekDuration}s"
+                      },
+                      color = MaterialTheme.colorScheme.outline,
+                    )
+                  },
+                )
+                }
+
+                PreferenceDivider()
+              }
+
               DevicePreference(R.string.show_splash_ovals_on_double_tap_to_seek) {
                 val showDoubleTapOvals by preferences.showDoubleTapOvals.collectAsState()
                 SwitchPreference(
@@ -1278,35 +1230,38 @@ val savePositionOnQuit by preferences.savePositionOnQuit.collectAsState()
         }
       }
     }
-    if (showVideoMiniPlayerDependencyDialog) {
+    if (showTvSeekCustomDialog) {
       AlertDialog(
-        onDismissRequest = { showVideoMiniPlayerDependencyDialog = false },
-        title = { Text(stringResource(R.string.pref_video_mini_player_dependency_title)) },
-        text = { Text(stringResource(R.string.pref_video_mini_player_dependency_message)) },
+        onDismissRequest = { showTvSeekCustomDialog = false },
+        title = { Text(stringResource(R.string.pref_tv_seek_duration_title)) },
+        text = {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.pref_custom_seek_dialog_text))
+            OutlinedTextField(
+              value = tvSeekCustomDraft,
+              onValueChange = { tvSeekCustomDraft = it },
+              label = { Text(stringResource(R.string.pref_custom_seek_label)) },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              modifier = Modifier.fillMaxWidth(),
+              singleLine = true,
+            )
+          }
+        },
         confirmButton = {
           TextButton(
             onClick = {
-              PlaybackSession.setVideoBackgroundPlaybackEnabled(true)
-              preferences.enableVideoMiniPlayer.set(true)
-              showVideoMiniPlayerDependencyDialog = false
-              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-              ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+              val seconds = tvSeekCustomDraft.trim().toIntOrNull()
+              if (seconds != null && seconds in TV_SEEK_DURATION_RANGE) {
+                gesturePreferences.tvSeekDuration.set(seconds)
+                showTvSeekCustomDialog = false
               }
             },
           ) {
-            Text(stringResource(R.string.pref_video_mini_player_dependency_confirm))
+            Text(stringResource(R.string.generic_ok))
           }
         },
         dismissButton = {
-          TextButton(
-            onClick = {
-              preferences.enableVideoMiniPlayer.set(false)
-              showVideoMiniPlayerDependencyDialog = false
-            },
-          ) {
+          TextButton(onClick = { showTvSeekCustomDialog = false }) {
             Text(stringResource(R.string.generic_cancel))
           }
         },

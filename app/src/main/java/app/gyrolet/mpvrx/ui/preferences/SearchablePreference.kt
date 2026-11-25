@@ -222,15 +222,6 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
-          titleRes = R.string.pref_appearance_thumbnail_quality_title,
-          summaryRes = R.string.pref_appearance_thumbnail_quality_summary,
-          keywords = listOf("thumbnail", "quality", "resolution", "720p", "1080p", "1440p", "storage"),
-          category = "Appearance",
-          screen = AppearancePreferencesScreen,
-        ),
-      )
-      add(
-        SearchablePreference(
           titleRes = R.string.pref_gesture_tap_thumbnail_to_select_title,
           summaryRes = R.string.pref_gesture_tap_thumbnail_to_select_summary,
           keywords = listOf("thumbnail", "selection", "select", "tap", "gesture"),
@@ -388,9 +379,9 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
-          titleRes = R.string.pref_auto_pip_home_only_title,
-          summaryRes = R.string.pref_auto_pip_home_only_summary,
-          keywords = listOf("pip", "picture", "home", "gesture", "swipe", "back", "close"),
+          titleRes = R.string.pref_pip_on_back_title,
+          summaryRes = R.string.pref_pip_on_back_summary,
+          keywords = listOf("pip", "picture", "back", "button", "home", "gesture", "close"),
           category = "Player",
           screen = PlayerPreferencesScreen,
         ),
@@ -442,6 +433,14 @@ object SearchablePreferences {
         SearchablePreference(
           titleRes = R.string.pref_player_use_precise_seeking,
           keywords = listOf("precise", "seek", "keyframes", "accurate", "navigation"),
+          category = "Player",
+          screen = PlayerPreferencesScreen,
+        ),
+      )
+      add(
+        SearchablePreference(
+          titleRes = R.string.pref_tv_seek_duration_title,
+          keywords = listOf("seek", "duration", "remote", "dpad", "skip", "seconds", "custom", "tv"),
           category = "Player",
           screen = PlayerPreferencesScreen,
         ),
@@ -1222,15 +1221,6 @@ object SearchablePreferences {
       )
       add(
         SearchablePreference(
-          titleRes = R.string.pref_audio_background_playback_title,
-          summaryRes = R.string.pref_audio_background_playback_summary,
-          keywords = listOf("background", "playback", "audio", "service", "music"),
-          category = "Audio",
-          screen = AudioPreferencesScreen,
-        ),
-      )
-      add(
-        SearchablePreference(
           titleRes = R.string.pref_autoplay_next_audio_title,
           summaryRes = R.string.pref_autoplay_next_audio_summary,
           keywords = listOf("autoplay", "next", "audio", "music", "advance", "continuous"),
@@ -1242,16 +1232,16 @@ object SearchablePreferences {
         SearchablePreference(
           titleRes = R.string.pref_video_background_playback_title,
           summaryRes = R.string.pref_video_background_playback_summary,
-          keywords = listOf("background", "playback", "video", "service", "media"),
+          keywords = listOf("background", "playback", "video", "home", "screen off", "long press", "once"),
           category = "Player",
           screen = PlayerPreferencesScreen,
         ),
       )
       add(
         SearchablePreference(
-          titleRes = R.string.pref_background_playback_behavior,
-          summaryRes = R.string.pref_background_playback_per_video_summary,
-          keywords = listOf("background", "remember", "per video", "individual", "save", "video"),
+          titleRes = R.string.pref_video_background_on_back_title,
+          summaryRes = R.string.pref_video_background_on_back_summary,
+          keywords = listOf("background", "playback", "video", "back", "button", "close", "keep playing"),
           category = "Player",
           screen = PlayerPreferencesScreen,
         ),
@@ -1421,24 +1411,6 @@ object SearchablePreferences {
           keywords = listOf("clear", "fonts", "cache", "reset"),
           category = "Advanced",
           screen = AdvancedPreferencesScreen,
-        ),
-      )
-      add(
-        SearchablePreference(
-          titleRes = R.string.pref_advanced_notification_style,
-          summary = "Choose media controls, progress with chapters, or no playback notification.",
-          keywords =
-            listOf(
-              "notification",
-              "media controls",
-              "progress",
-              "chapters",
-              "no notification",
-              "hide notification",
-              "background playback",
-            ),
-          category = "Player",
-          screen = PlayerPreferencesScreen,
         ),
       )
       add(
@@ -1636,8 +1608,15 @@ object SearchablePreferences {
         anchorItemIndex = 3,
         SearchEntrySpec(R.string.pref_tree_flatten_depth_title, listOf("tree", "folder", "path", "flatten", "compression")),
         SearchEntrySpec(R.string.ui_dual_pane_view, listOf("tablet", "two pane", "split", "folder")),
-        SearchEntrySpec(R.string.ui_delete_folder_all_contents, listOf("delete", "folder", "all files", "media only")),
       )
+      if (!app.gyrolet.mpvrx.BuildConfig.SCOPED_STORAGE_ONLY) {
+        addSearchEntries(
+          category = "Appearance",
+          screen = AppearancePreferencesScreen,
+          anchorItemIndex = 3,
+          SearchEntrySpec(R.string.ui_delete_folder_all_contents, listOf("delete", "folder", "all files", "media only")),
+        )
+      }
       addSearchEntries(
         category = "Appearance",
         screen = AppearancePreferencesScreen,
@@ -1646,10 +1625,6 @@ object SearchablePreferences {
           R.string.pref_appearance_thumbnail_position_title,
           listOf("thumbnail", "frame", "position", "percent", "preview"),
           R.string.pref_appearance_thumbnail_generation_title,
-        ),
-        SearchEntrySpec(
-          R.string.pref_appearance_thumbnail_parallelism_title,
-          listOf("thumbnail", "cores", "threads", "parallel", "cpu", "speed", "performance"),
         ),
       )
       addSearchEntries(
@@ -1747,7 +1722,6 @@ object SearchablePreferences {
         screen = PlayerPreferencesScreen,
         anchorItemIndex = 1,
         SearchEntrySpec(R.string.pref_playlist_mode_title, listOf("playlist", "next", "previous", "navigation", "queue")),
-        SearchEntrySpec(R.string.pref_enable_video_mini_player_title, listOf("mini player", "video", "background", "continue")),
         SearchEntrySpec(R.string.ui_show_media_info_in_chooser, listOf("media info", "chooser", "open with", "system")),
       )
       addSearchEntries(
@@ -1891,10 +1865,6 @@ object SearchablePreferences {
         category = "Subtitles",
         screen = SubtitlesPreferencesScreen,
         anchorItemIndex = 3,
-        SearchEntrySpec(
-          R.string.pref_subtitles_auto_download_fonts,
-          listOf("subtitle", "font", "download", "missing", "emoji", "script", "language", "google"),
-        ),
         SearchEntrySpec(R.string.reload_fonts, listOf("subtitle", "font", "reload", "rescan")),
         SearchEntrySpec(R.string.clear_font_directory, listOf("subtitle", "font", "clear", "folder"), R.string.pref_subtitles_fonts_dir),
       )
@@ -2171,7 +2141,6 @@ object SearchablePreferences {
         category = "Advanced",
         screen = AdvancedPreferencesScreen,
         anchorItemIndex = 1,
-        SearchEntrySpec(R.string.pref_advanced_notification_style, listOf("notification", "style", "media", "compact")),
         SearchEntrySpec(R.string.pref_auto_backup_title, listOf("automatic", "backup", "settings", "restore", "folder")),
         SearchEntrySpec(R.string.pref_debug_log_size_title, listOf("debug", "log", "size", "limit", "storage")),
       )

@@ -69,6 +69,8 @@ class MediaLibraryViewModel(
 
   private val hiddenVideoPaths = MutableStateFlow<Map<String, DeletionState>>(emptyMap())
   private val whitelistFlow = foldersPreferences.whitelistChanges()
+  // Library's own hidden-folder index refresh; see loadData.
+  private var hiddenIndexJob: Job? = null
   private val _videos = MutableStateFlow<List<Video>>(emptyList())
   val videos: StateFlow<List<Video>> =
     combine(
@@ -141,6 +143,7 @@ class MediaLibraryViewModel(
       ).collectLatest { mediaChanged ->
         // A media event makes every generation-stamped cache suspect; a scan-policy change does
         // not, because the Library snapshot is namespaced by the options that produced it.
+        hiddenIndexJob?.cancel()
         if (mediaChanged) MediaStoreGenerationGuard.invalidate(getApplication())
         loadData()
       }
@@ -266,6 +269,23 @@ class MediaLibraryViewModel(
               _videos.value = eligible
               loadPlaybackInfo(eligible)
               saveSnapshot(eligible.filterNot { hiddenVideoPaths.value[it.path] == DeletionState.Confirmed })
+            }
+
+            // .nomedia folders come from Library's own index. Keep it current off the load queue and
+            // list again only when hidden folders were added, changed or removed; the next pass then
+            // finds nothing stale, so this settles.
+            if (foldersPreferences.hiddenScanEnabled(HiddenScanScope.LIBRARY) && hiddenIndexJob?.isActive != true) {
+              hiddenIndexJob = viewModelScope.launch(Dispatchers.IO) {
+                try {
+                  if (MediaFileRepository.refreshLibraryHiddenFolders(getApplication(), includeAudioOverride = true)) {
+                    loadData()
+                  }
+                } catch (cancelled: CancellationException) {
+                  throw cancelled
+                } catch (error: Exception) {
+                  Log.w(tag, "Could not refresh hidden Library folders", error)
+                }
+              }
             }
           } catch (e: CancellationException) {
             throw e
