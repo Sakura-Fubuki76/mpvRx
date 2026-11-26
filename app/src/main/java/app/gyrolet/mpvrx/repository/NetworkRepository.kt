@@ -19,6 +19,7 @@ import app.gyrolet.mpvrx.database.dao.NetworkConnectionDao
 import app.gyrolet.mpvrx.domain.network.ConnectionStatus
 import app.gyrolet.mpvrx.domain.network.NetworkConnection
 import app.gyrolet.mpvrx.domain.network.NetworkFile
+import app.gyrolet.mpvrx.domain.network.NetworkProtocol
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.CancellationException
@@ -46,8 +47,8 @@ class NetworkRepository(
 ) {
   private val activeClients = ConcurrentHashMap<Long, NetworkClient>()
 
-  // ponytail: network connections are uncommon, so one lifecycle lock is simpler and safer.
-  // Replace it with per-connection locks only if parallel connection setup becomes measurable.
+  // Protect client creation/replacement and stateful protocol operations. HTTP directory
+  // requests run outside this lock so a background scan cannot stall folder navigation.
   private val clientLifecycleMutex = Mutex()
   private val credentialMutex = Mutex()
 
@@ -287,8 +288,9 @@ class NetworkRepository(
     forceRefresh: Boolean = false,
   ): Result<List<NetworkFile>> =
     withContext(Dispatchers.IO) {
-      clientLifecycleMutex.withLock {
-        try {
+      var listingClient: NetworkClient? = null
+      try {
+        val readyClient = clientLifecycleMutex.withLock {
           val stored = dao.getConnectionById(connection.id) ?: connection
           val resolved = resolveCredential(stored)
           var client = activeClients[connection.id]
@@ -314,40 +316,64 @@ class NetworkRepository(
           }
 
           val readyClient = checkNotNull(client)
-          readyClient.listFiles(path, forceRefresh).also { result ->
-            result.exceptionOrNull()?.let { error ->
-              if (error is CancellationException) throw error
-              val stillConnected = readyClient.isConnected()
-              if (!stillConnected) {
-                activeClients.remove(connection.id, readyClient)
-                closeClient(readyClient)
-              }
-              updateConnectionStatus(
-                connection.id,
-                ConnectionStatus(
-                  connectionId = connection.id,
-                  isConnected = stillConnected,
-                  error = error.safeMessage(),
-                ),
-              )
-            }
+          listingClient = readyClient
+          if (resolved.protocol != NetworkProtocol.WEBDAV && resolved.protocol != NetworkProtocol.OPENLIST) {
+            // FTP/SFTP/SMB clients keep session state and must remain serialized with disconnect.
+            return@withContext finishListing(connection.id, readyClient, readyClient.listFiles(path, forceRefresh))
           }
-        } catch (e: CancellationException) {
-          restoreIdleStatus(connection.id)
-          throw e
-        } catch (e: Exception) {
-          updateConnectionStatus(
-            connection.id,
-            ConnectionStatus(
-              connectionId = connection.id,
-              isConnected = hasConnectedClient(connection.id),
-              error = e.safeMessage(),
-            ),
-          )
-          Result.failure(e)
+          readyClient
         }
+
+        // WebDAV/OpenList listings are independent HTTP calls. In particular, cancelling a
+        // blocking DAV call need not stop its socket immediately; it must not hold up the next path.
+        val result = readyClient.listFiles(path, forceRefresh)
+        coroutineContext.ensureActive()
+        clientLifecycleMutex.withLock {
+          if (activeClients[connection.id] !== readyClient) {
+            throw CancellationException("Network connection changed during directory listing")
+          }
+          finishListing(connection.id, readyClient, result)
+        }
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        clientLifecycleMutex.withLock {
+          // A late failure from an old request must not overwrite a replacement's status.
+          if (listingClient == null || activeClients[connection.id] === listingClient) {
+            updateConnectionStatus(
+              connection.id,
+              ConnectionStatus(
+                connectionId = connection.id,
+                isConnected = hasConnectedClient(connection.id),
+                error = e.safeMessage(),
+              ),
+            )
+          }
+        }
+        Result.failure(e)
       }
     }
+
+  /** Called only with [clientLifecycleMutex] held. */
+  private suspend fun finishListing(
+    connectionId: Long,
+    client: NetworkClient,
+    result: Result<List<NetworkFile>>,
+  ): Result<List<NetworkFile>> {
+    result.exceptionOrNull()?.let { error ->
+      if (error is CancellationException) throw error
+      val stillConnected = client.isConnected()
+      if (!stillConnected) {
+        activeClients.remove(connectionId, client)
+        closeClient(client)
+      }
+      updateConnectionStatus(
+        connectionId,
+        ConnectionStatus(connectionId = connectionId, isConnected = stillConnected, error = error.safeMessage()),
+      )
+    }
+    return result
+  }
 
   fun isConnected(connectionId: Long): Boolean = hasConnectedClient(connectionId)
 
